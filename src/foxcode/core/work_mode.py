@@ -1,11 +1,10 @@
 """
-FoxCode 公司模式管理器
+FoxCode Work模式管理器
 
-整合公司模式的所有功能，包括：
+专注于代码编写任务管理，包括：
 - 模式开关控制
-- QQbot 服务管理
-- 安全验证管理
 - 长期工作模式执行
+- 任务记录保存
 - 状态监控和报告
 """
 
@@ -17,7 +16,6 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,31 +24,13 @@ if TYPE_CHECKING:
     from foxcode.core.config import Config
     from foxcode.core.orchestrator import MultiAgentOrchestrator
 
-from foxcode.core.company_mode_config import (
-    CompanyModeConfig,
-    CompanyModeStatus,
-)
-from foxcode.core.qqbot_logger import (
-    LogEventType,
-    QQbotLogger,
-)
-from foxcode.core.qqbot_service import (
-    QQbotMessage,
-    QQbotService,
-    QQbotStatus,
-)
-from foxcode.core.security_filter import (
-    SecurityManager,
+from foxcode.core.work_mode_config import (
+    AgentExecutionMode,
+    WorkModeConfig,
+    WorkModeStatus,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class AgentExecutionMode(str, Enum):
-    """Agent 执行模式枚举"""
-    SIMULATION = "simulation"     # 模拟模式（默认，不调用真实 AI）
-    SINGLE_AGENT = "single_agent" # 单代理模式（使用 FoxCodeAgent）
-    MULTI_AGENT = "multi_agent"   # 多代理模式（使用 MultiAgentOrchestrator）
 
 
 @dataclass
@@ -88,14 +68,12 @@ class WorkTask:
 
 
 @dataclass
-class CompanyModeState:
-    """公司模式状态"""
-    status: CompanyModeStatus = CompanyModeStatus.DISABLED
-    qqbot_status: QQbotStatus = QQbotStatus.DISCONNECTED
+class WorkModeState:
+    """Work模式状态"""
+    status: WorkModeStatus = WorkModeStatus.ENABLED
     active_tasks: list[str] = field(default_factory=list)
     completed_tasks: int = 0
     failed_tasks: int = 0
-    security_events: int = 0
     uptime_seconds: float = 0
     last_activity: str = ""
 
@@ -103,73 +81,61 @@ class CompanyModeState:
         """转换为字典"""
         return {
             "status": self.status.value,
-            "qqbot_status": self.qqbot_status.value,
             "active_tasks": self.active_tasks,
             "completed_tasks": self.completed_tasks,
             "failed_tasks": self.failed_tasks,
-            "security_events": self.security_events,
             "uptime_seconds": self.uptime_seconds,
             "last_activity": self.last_activity,
         }
 
 
-class CompanyModeManager:
+class WorkModeManager:
     """
-    公司模式管理器
+    Work模式管理器
     
-    管理公司模式的启用/禁用、QQbot 服务、安全验证和工作任务
+    管理Work模式的启用/禁用和工作任务执行
     
     支持三种执行模式：
-    - SIMULATION: 模拟模式，不调用真实 AI（默认）
+    - SIMULATION: 模拟模式，不调用真实 AI
     - SINGLE_AGENT: 单代理模式，使用 FoxCodeAgent 执行任务
     - MULTI_AGENT: 多代理模式，使用 MultiAgentOrchestrator 协调多代理协作
     """
 
-    STATE_FILE = ".foxcode/company_mode_state.json"
+    STATE_FILE = ".foxcode/work_mode_state.json"
+    RECORDS_FILE = ".foxcode/work_records.json"
 
     def __init__(
         self,
-        config: CompanyModeConfig,
+        config: WorkModeConfig,
         working_dir: Path | None = None,
         foxcode_config: Config | None = None,
-        execution_mode: AgentExecutionMode = AgentExecutionMode.SIMULATION,
+        execution_mode: AgentExecutionMode | None = None,
     ):
         """
-        初始化公司模式管理器
+        初始化Work模式管理器
         
         Args:
-            config: 公司模式配置
+            config: Work模式配置
             working_dir: 工作目录
             foxcode_config: FoxCode 主配置（用于创建 Agent）
-            execution_mode: Agent 执行模式
+            execution_mode: Agent 执行模式（如果提供，覆盖配置中的模式）
         """
         self.config = config
         self.working_dir = working_dir or Path.cwd()
-        self.execution_mode = execution_mode
+        # 使用传入的执行模式或配置中的模式
+        self.execution_mode = execution_mode or config.execution_mode
 
         # FoxCode 配置（用于创建 Agent）
         self._foxcode_config = foxcode_config
 
         # 状态
-        self.state = CompanyModeState()
+        self.state = WorkModeState()
         self._start_time: float = 0
-
-        # QQbot 服务
-        self._qqbot_service: QQbotService | None = None
-
-        # 安全管理器
-        self._security_manager: SecurityManager | None = None
-
-        # 日志记录器
-        self._logger: QQbotLogger | None = None
 
         # 工作任务
         self._tasks: dict[str, WorkTask] = {}
         self._task_queue: asyncio.Queue | None = None
         self._worker_task: asyncio.Task | None = None
-
-        # 消息处理器
-        self._message_handlers: list[Callable] = []
 
         # 报告回调
         self._report_callback: Callable | None = None
@@ -180,8 +146,11 @@ class CompanyModeManager:
 
         # 加载状态
         self._load_state()
+        
+        # 加载任务记录
+        self._load_records()
 
-        logger.info(f"公司模式管理器初始化完成，执行模式: {execution_mode.value}")
+        logger.info(f"Work模式管理器初始化完成，执行模式: {self.execution_mode.value}")
 
     def _load_state(self) -> None:
         """加载状态"""
@@ -190,7 +159,7 @@ class CompanyModeManager:
             try:
                 with open(state_file, encoding="utf-8") as f:
                     data = json.load(f)
-                self.state.status = CompanyModeStatus(data.get("status", "disabled"))
+                self.state.status = WorkModeStatus(data.get("status", "enabled"))
                 self.state.completed_tasks = data.get("completed_tasks", 0)
                 self.state.failed_tasks = data.get("failed_tasks", 0)
                 logger.debug(f"加载状态: {self.state.status.value}")
@@ -206,94 +175,119 @@ class CompanyModeManager:
                 json.dump(self.state.to_dict(), f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"保存状态失败: {e}")
+    
+    def _load_records(self) -> None:
+        """加载任务记录"""
+        if not self.config.save_records:
+            return
+        
+        records_file = self.working_dir / self.RECORDS_FILE
+        if records_file.exists():
+            try:
+                with open(records_file, encoding="utf-8") as f:
+                    records = json.load(f)
+                # 加载历史任务
+                for task_data in records.get("tasks", []):
+                    task = WorkTask(
+                        id=task_data["id"],
+                        description=task_data["description"],
+                        target_subfolder=task_data["target_subfolder"],
+                        status=task_data.get("status", "pending"),
+                        created_at=task_data.get("created_at", ""),
+                        started_at=task_data.get("started_at"),
+                        completed_at=task_data.get("completed_at"),
+                        current_phase=task_data.get("current_phase", ""),
+                        phases=task_data.get("phases", []),
+                        result=task_data.get("result", ""),
+                        error=task_data.get("error"),
+                        metadata=task_data.get("metadata", {}),
+                    )
+                    self._tasks[task.id] = task
+                logger.info(f"加载了 {len(self._tasks)} 条任务记录")
+            except Exception as e:
+                logger.warning(f"加载任务记录失败: {e}")
+    
+    def _save_records(self) -> None:
+        """保存任务记录"""
+        if not self.config.save_records:
+            return
+        
+        records_file = self.working_dir / self.RECORDS_FILE
+        try:
+            records_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 获取所有任务，按创建时间排序
+            all_tasks = sorted(
+                self._tasks.values(),
+                key=lambda t: t.created_at,
+                reverse=True
+            )
+            
+            # 限制记录数量
+            tasks_to_save = all_tasks[:self.config.max_records]
+            
+            records = {
+                "tasks": [t.to_dict() for t in tasks_to_save],
+                "total_tasks": len(self._tasks),
+                "last_updated": datetime.now().isoformat(),
+            }
+            
+            with open(records_file, "w", encoding="utf-8") as f:
+                json.dump(records, f, ensure_ascii=False, indent=2)
+            
+            logger.debug(f"保存了 {len(tasks_to_save)} 条任务记录")
+        except Exception as e:
+            logger.error(f"保存任务记录失败: {e}")
 
     # ==================== 模式控制 ====================
 
     async def enable(self) -> tuple[bool, str]:
         """
-        启用公司模式
+        启用Work模式
         
         Returns:
             (是否成功, 消息)
         """
-        if self.state.status == CompanyModeStatus.ENABLED:
-            return True, "公司模式已启用"
+        if self.state.status == WorkModeStatus.ENABLED:
+            return True, "Work模式已启用"
 
-        if self.state.status == CompanyModeStatus.STARTING:
-            return False, "公司模式正在启动中"
+        if self.state.status == WorkModeStatus.STARTING:
+            return False, "Work模式正在启动中"
 
         try:
-            self.state.status = CompanyModeStatus.STARTING
+            self.state.status = WorkModeStatus.STARTING
             self._start_time = datetime.now().timestamp()
-
-            # 初始化日志记录器
-            self._logger = QQbotLogger(
-                config=self.config.logging,
-                working_dir=self.working_dir,
-            )
-
-            # 初始化安全管理器
-            self._security_manager = SecurityManager(
-                content_filter_config=self.config.content_filter,
-                security_config=self.config.security,
-            )
-
-            # 检查是否可以启动 QQbot
-            if self.config.can_start_qqbot():
-                # 初始化 QQbot 服务
-                self._qqbot_service = QQbotService(self.config.qqbot)
-
-                # 注册消息处理器
-                self._qqbot_service.on_message(self._handle_qqbot_message)
-
-                # 启动 QQbot 服务
-                success = await self._qqbot_service.start()
-                if success:
-                    self.state.qqbot_status = QQbotStatus.READY
-                    self._logger.log_connection(LogEventType.CONNECTED)
-                else:
-                    logger.warning("QQbot 服务启动失败，公司模式将以无机器人模式运行")
-                    self.state.qqbot_status = QQbotStatus.ERROR
-            else:
-                logger.info("QQbot 配置不完整，公司模式将以无机器人模式运行")
-                self.state.qqbot_status = QQbotStatus.DISCONNECTED
 
             # 启动工作任务处理器
             if self.config.long_work_mode:
                 self._task_queue = asyncio.Queue()
                 self._worker_task = asyncio.create_task(self._work_loop())
 
-            self.state.status = CompanyModeStatus.ENABLED
+            self.state.status = WorkModeStatus.ENABLED
             self.state.last_activity = datetime.now().isoformat()
 
             self._save_state()
 
-            if self._logger:
-                self._logger.log_work_mode(
-                    event_type=LogEventType.WORK_MODE_STARTED,
-                    content="公司模式已启用",
-                )
-
-            logger.info("公司模式已启用")
-            return True, "公司模式已启用"
+            logger.info("Work模式已启用")
+            return True, "Work模式已启用"
 
         except Exception as e:
-            logger.error(f"启用公司模式失败: {e}")
-            self.state.status = CompanyModeStatus.ERROR
+            logger.error(f"启用Work模式失败: {e}")
+            self.state.status = WorkModeStatus.ERROR
             return False, f"启用失败: {str(e)}"
 
     async def disable(self) -> tuple[bool, str]:
         """
-        禁用公司模式
+        禁用Work模式
         
         Returns:
             (是否成功, 消息)
         """
-        if self.state.status == CompanyModeStatus.DISABLED:
-            return True, "公司模式已禁用"
+        if self.state.status == WorkModeStatus.DISABLED:
+            return True, "Work模式已禁用"
 
         try:
-            self.state.status = CompanyModeStatus.STOPPING
+            self.state.status = WorkModeStatus.STOPPING
 
             # 停止工作任务处理器
             if self._worker_task:
@@ -304,147 +298,27 @@ class CompanyModeManager:
                     pass
                 self._worker_task = None
 
-            # 停止 QQbot 服务
-            if self._qqbot_service:
-                await self._qqbot_service.stop()
-                self.state.qqbot_status = QQbotStatus.DISCONNECTED
-
-                if self._logger:
-                    self._logger.log_connection(LogEventType.DISCONNECTED)
-
             # 计算运行时间
             if self._start_time > 0:
                 self.state.uptime_seconds = datetime.now().timestamp() - self._start_time
 
-            self.state.status = CompanyModeStatus.DISABLED
+            self.state.status = WorkModeStatus.DISABLED
 
-            if self._logger:
-                self._logger.log_work_mode(
-                    event_type=LogEventType.WORK_MODE_STOPPED,
-                    content="公司模式已禁用",
-                )
-
+            # 保存任务记录
+            self._save_records()
             self._save_state()
 
-            logger.info("公司模式已禁用")
-            return True, "公司模式已禁用"
+            logger.info("Work模式已禁用")
+            return True, "Work模式已禁用"
 
         except Exception as e:
-            logger.error(f"禁用公司模式失败: {e}")
-            self.state.status = CompanyModeStatus.ERROR
+            logger.error(f"禁用Work模式失败: {e}")
+            self.state.status = WorkModeStatus.ERROR
             return False, f"禁用失败: {str(e)}"
 
     def is_enabled(self) -> bool:
-        """检查公司模式是否启用"""
-        return self.state.status == CompanyModeStatus.ENABLED
-
-    # ==================== QQbot 消息处理 ====================
-
-    async def _handle_qqbot_message(self, message: QQbotMessage) -> None:
-        """
-        处理 QQbot 消息
-        
-        Args:
-            message: QQbot 消息
-        """
-        if not self._security_manager or not self._logger:
-            return
-
-        # 记录收到的消息
-        self._logger.log_message_received(
-            message_id=message.id,
-            channel_id=message.channel_id,
-            author_id=message.author_id,
-            content=message.content,
-        )
-
-        # 安全验证
-        allowed, filtered, reason = self._security_manager.validate_request(
-            content=message.content,
-            identifier=message.author_id,
-        )
-
-        if not allowed:
-            # 记录阻止
-            self._logger.log_message_blocked(
-                author_id=message.author_id,
-                content=message.content,
-                block_reason=reason,
-            )
-            self.state.security_events += 1
-            return
-
-        if filtered.was_filtered:
-            # 记录过滤
-            self._logger.log_message_filtered(
-                author_id=message.author_id,
-                content=message.content,
-                filter_reason=", ".join(filtered.matched_rules),
-            )
-
-        # 使用过滤后的内容
-        safe_content = filtered.filtered
-
-        # 调用消息处理器
-        for handler in self._message_handlers:
-            try:
-                if asyncio.iscoroutinefunction(handler):
-                    await handler(message, safe_content)
-                else:
-                    handler(message, safe_content)
-            except Exception as e:
-                logger.error(f"消息处理器执行失败: {e}")
-
-        self.state.last_activity = datetime.now().isoformat()
-
-    def register_message_handler(self, handler: Callable) -> None:
-        """
-        注册消息处理器
-        
-        Args:
-            handler: 处理函数，接收 (message, safe_content) 参数
-        """
-        self._message_handlers.append(handler)
-        logger.debug(f"注册消息处理器: {handler.__name__ if hasattr(handler, '__name__') else 'anonymous'}")
-
-    async def send_qqbot_message(
-        self,
-        channel_id: str,
-        content: str,
-    ) -> tuple[bool, str]:
-        """
-        发送 QQbot 消息
-        
-        Args:
-            channel_id: 频道 ID
-            content: 消息内容
-            
-        Returns:
-            (是否成功, 消息)
-        """
-        if not self._qqbot_service or not self._qqbot_service.is_ready():
-            return False, "QQbot 服务未就绪"
-
-        # 内容过滤
-        if self._security_manager:
-            filtered = self._security_manager.content_filter.filter(content)
-            content = filtered.filtered
-
-        # 发送消息
-        response = await self._qqbot_service.send_message(
-            channel_id=channel_id,
-            content=content,
-        )
-
-        # 记录日志
-        if self._logger:
-            self._logger.log_message_sent(
-                channel_id=channel_id,
-                content=content,
-                success=response.success,
-            )
-
-        return response.success, response.error or "发送成功"
+        """检查Work模式是否启用"""
+        return self.state.status == WorkModeStatus.ENABLED
 
     # ==================== 工作任务管理 ====================
 
@@ -477,14 +351,9 @@ class CompanyModeManager:
         )
 
         self._tasks[task_id] = task
-
-        if self._logger:
-            self._logger.log_work_mode(
-                event_type=LogEventType.TASK_STARTED,
-                task_id=task_id,
-                content=f"创建任务: {description}",
-                metadata={"target_subfolder": target_subfolder},
-            )
+        
+        # 保存记录
+        self._save_records()
 
         logger.info(f"创建工作任务: {task_id} - {description}")
         return task
@@ -500,7 +369,7 @@ class CompanyModeManager:
             是否成功启动
         """
         if not self.is_enabled():
-            logger.warning("公司模式未启用，无法启动任务")
+            logger.warning("Work模式未启用，无法启动任务")
             return False
 
         if task.status != "pending":
@@ -551,13 +420,6 @@ class CompanyModeManager:
         Args:
             task: 工作任务
         """
-        if self._logger:
-            self._logger.log_work_mode(
-                event_type=LogEventType.TASK_STARTED,
-                task_id=task.id,
-                content=f"开始执行任务: {task.description}",
-            )
-
         logger.info(f"[WORK] 开始执行任务: {task.id} - {task.description}")
 
         try:
@@ -588,15 +450,6 @@ class CompanyModeManager:
                     f"{'成功' if phase_result['success'] else '失败'}"
                 )
 
-                # 报告阶段进度
-                if self._logger:
-                    self._logger.log_phase_report(
-                        task_id=task.id,
-                        phase=phase["name"],
-                        status=phase["status"],
-                        content=phase["result"],
-                    )
-
                 # 调用报告回调
                 if self._report_callback:
                     try:
@@ -618,13 +471,6 @@ class CompanyModeManager:
 
             self.state.completed_tasks += 1
 
-            if self._logger:
-                self._logger.log_work_mode(
-                    event_type=LogEventType.TASK_COMPLETED,
-                    task_id=task.id,
-                    content=f"任务完成: {task.description}",
-                )
-
             logger.info(f"[WORK] 任务完成: {task.id} - {task.description}")
 
         except Exception as e:
@@ -634,13 +480,6 @@ class CompanyModeManager:
 
             self.state.failed_tasks += 1
 
-            if self._logger:
-                self._logger.log_work_mode(
-                    event_type=LogEventType.TASK_FAILED,
-                    task_id=task.id,
-                    content=f"任务失败: {str(e)}",
-                )
-
             logger.error(f"[WORK] 任务失败: {task.id} - {e}")
 
         finally:
@@ -649,6 +488,7 @@ class CompanyModeManager:
                 self.state.active_tasks.remove(task.id)
 
             self._save_state()
+            self._save_records()
 
     async def _execute_phase(
         self,
@@ -826,7 +666,7 @@ class CompanyModeManager:
             analysis_result["target_stats"] = {"exists": False, "path": str(target_path)}
 
         output_lines = [
-            f"✅ 任务分析完成",
+            f"[OK] 任务分析完成",
             f"",
             f"**任务类型**: {analysis_result['task_type']}",
             f"**涉及文件类型**: {', '.join(analysis_result['file_types'])}",
@@ -927,13 +767,12 @@ class CompanyModeManager:
         Returns:
             执行结果
         """
-        import random
         from datetime import datetime
 
         execution_log = []
-        execution_log.append(f"🕐 开始时间: {datetime.now().isoformat()}")
+        execution_log.append(f"[TIME] 开始时间: {datetime.now().isoformat()}")
         execution_log.append(f"")
-        execution_log.append(f"📋 任务信息:")
+        execution_log.append(f"[LIST] 任务信息:")
         execution_log.append(f"  - 描述: {task.description}")
         execution_log.append(f"  - 目标路径: {task.target_subfolder}")
         execution_log.append(f"  - 执行模式: 模拟模式 (SIMULATION)")
@@ -945,7 +784,7 @@ class CompanyModeManager:
         complexity = analysis.get("complexity", "medium")
         suggested_actions = analysis.get("suggested_actions", ["分析任务", "执行操作", "验证结果"])
 
-        execution_log.append(f"📊 任务分析结果:")
+        execution_log.append(f"[STATS] 任务分析结果:")
         execution_log.append(f"  - 类型: {task_type}")
         execution_log.append(f"  - 文件类型: {', '.join(file_types)}")
         execution_log.append(f"  - 复杂度: {complexity}")
@@ -955,7 +794,7 @@ class CompanyModeManager:
         scanned_files = []
         scanned_dirs = []
 
-        execution_log.append(f"🔍 扫描目标目录...")
+        execution_log.append(f"[VIEW] 扫描目标目录...")
         if target_path.exists():
             try:
                 for item in target_path.rglob("*"):
@@ -964,24 +803,24 @@ class CompanyModeManager:
                     elif item.is_dir():
                         scanned_dirs.append(str(item.relative_to(target_path)))
                 
-                execution_log.append(f"  ✅ 扫描完成")
+                execution_log.append(f"  [OK] 扫描完成")
                 execution_log.append(f"  - 发现文件: {len(scanned_files)} 个")
                 execution_log.append(f"  - 发现目录: {len(scanned_dirs)} 个")
                 
                 if scanned_files:
                     execution_log.append(f"  - 主要文件:")
                     for f in scanned_files[:10]:
-                        execution_log.append(f"    • {f}")
+                        execution_log.append(f"    * {f}")
                     if len(scanned_files) > 10:
                         execution_log.append(f"    ... 还有 {len(scanned_files) - 10} 个文件")
             except Exception as e:
-                execution_log.append(f"  ⚠️ 扫描失败: {e}")
+                execution_log.append(f"  [WARN] 扫描失败: {e}")
         else:
-            execution_log.append(f"  ⚠️ 目标目录不存在，将创建")
+            execution_log.append(f"  [WARN] 目标目录不存在，将创建")
             scanned_dirs.append(task.target_subfolder)
         execution_log.append(f"")
 
-        execution_log.append(f"⚙️ 执行模拟操作...")
+        execution_log.append(f"[TOOL] 执行模拟操作...")
         simulated_operations = []
         
         for i, action in enumerate(suggested_actions, 1):
@@ -1000,27 +839,27 @@ class CompanyModeManager:
         
         execution_log.append(f"")
 
-        execution_log.append(f"📁 模拟文件变更:")
+        execution_log.append(f"[SAVE] 模拟文件变更:")
         simulated_changes = self._generate_simulated_changes(task, task_type, file_types, scanned_files)
         for change in simulated_changes:
-            execution_log.append(f"  • {change}")
+            execution_log.append(f"  * {change}")
         execution_log.append(f"")
 
-        execution_log.append(f"📈 执行统计:")
+        execution_log.append(f"[STATS] 执行统计:")
         execution_log.append(f"  - 执行步骤: {len(simulated_operations)}")
         execution_log.append(f"  - 模拟变更: {len(simulated_changes)} 个文件")
         execution_log.append(f"  - 扫描文件: {len(scanned_files)} 个")
         execution_log.append(f"")
 
-        execution_log.append(f"💡 后续建议:")
+        execution_log.append(f"[INFO] 后续建议:")
         suggestions = self._generate_suggestions(task_type, complexity, scanned_files)
         for suggestion in suggestions:
-            execution_log.append(f"  • {suggestion}")
+            execution_log.append(f"  * {suggestion}")
         execution_log.append(f"")
 
-        execution_log.append(f"🕐 完成时间: {datetime.now().isoformat()}")
+        execution_log.append(f"[TIME] 完成时间: {datetime.now().isoformat()}")
         execution_log.append(f"")
-        execution_log.append(f"⚠️ 注意: 这是模拟执行，实际文件未被修改。")
+        execution_log.append(f"[NOTE] 这是模拟执行，实际文件未被修改。")
         execution_log.append(f"   要执行真实操作，请切换到 SINGLE_AGENT 或 MULTI_AGENT 模式。")
 
         return {
@@ -1419,24 +1258,24 @@ class CompanyModeManager:
         }
 
         verify_log = []
-        verify_log.append(f"🔍 开始验证任务: {task.id}")
-        verify_log.append(f"🕐 验证时间: {datetime.now().isoformat()}")
+        verify_log.append(f"[VIEW] 开始验证任务: {task.id}")
+        verify_log.append(f"[TIME] 验证时间: {datetime.now().isoformat()}")
         verify_log.append(f"")
 
         target_path = self.working_dir / task.target_subfolder
         analysis = task.metadata.get("analysis", {})
         task_type = analysis.get("task_type", "general")
 
-        verify_log.append(f"📁 检查目标目录...")
+        verify_log.append(f"[SAVE] 检查目标目录...")
         if target_path.exists():
             verify_result["checks"].append({"name": "目录存在", "status": "passed"})
-            verify_log.append(f"  ✅ 目标目录存在: {target_path}")
+            verify_log.append(f"  [OK] 目标目录存在: {target_path}")
             
             try:
                 file_count = sum(1 for _ in target_path.rglob("*") if _.is_file())
                 dir_count = sum(1 for _ in target_path.rglob("*") if _.is_dir())
-                verify_log.append(f"  ✅ 文件数量: {file_count}")
-                verify_log.append(f"  ✅ 目录数量: {dir_count}")
+                verify_log.append(f"  [OK] 文件数量: {file_count}")
+                verify_log.append(f"  [OK] 目录数量: {dir_count}")
                 verify_result["checks"].append({
                     "name": "目录结构", 
                     "status": "passed",
@@ -1444,53 +1283,53 @@ class CompanyModeManager:
                     "dir_count": dir_count,
                 })
             except Exception as e:
-                verify_log.append(f"  ⚠️ 无法统计目录: {e}")
+                verify_log.append(f"  [WARN] 无法统计目录: {e}")
                 verify_result["warnings"].append(f"目录统计失败: {e}")
         else:
             verify_result["checks"].append({"name": "目录存在", "status": "warning"})
-            verify_log.append(f"  ⚠️ 目标目录不存在: {target_path}")
+            verify_log.append(f"  [WARN] 目标目录不存在: {target_path}")
             verify_result["warnings"].append("目标目录不存在")
 
         verify_log.append(f"")
-        verify_log.append(f"📝 检查文件类型...")
+        verify_log.append(f"[NOTE] 检查文件类型...")
         file_type_checks = self._verify_file_types(target_path, analysis.get("file_types", []))
         for check in file_type_checks:
             verify_result["checks"].append(check)
             if check["status"] == "passed":
-                verify_log.append(f"  ✅ {check['name']}")
+                verify_log.append(f"  [OK] {check['name']}")
             elif check["status"] == "warning":
-                verify_log.append(f"  ⚠️ {check['name']}: {check.get('message', '')}")
+                verify_log.append(f"  [WARN] {check['name']}: {check.get('message', '')}")
                 verify_result["warnings"].append(check.get("message", ""))
             else:
-                verify_log.append(f"  ❌ {check['name']}: {check.get('message', '')}")
+                verify_log.append(f"  [FAIL] {check['name']}: {check.get('message', '')}")
                 verify_result["errors"].append(check.get("message", ""))
 
         verify_log.append(f"")
-        verify_log.append(f"🔧 检查代码语法...")
+        verify_log.append(f"[TOOL] 检查代码语法...")
         syntax_checks = await self._verify_code_syntax(target_path)
         for check in syntax_checks:
             verify_result["checks"].append(check)
             if check["status"] == "passed":
-                verify_log.append(f"  ✅ {check['name']}")
+                verify_log.append(f"  [OK] {check['name']}")
             elif check["status"] == "warning":
-                verify_log.append(f"  ⚠️ {check['name']}: {check.get('message', '')}")
+                verify_log.append(f"  [WARN] {check['name']}: {check.get('message', '')}")
                 verify_result["warnings"].append(check.get("message", ""))
             else:
-                verify_log.append(f"  ❌ {check['name']}: {check.get('message', '')}")
+                verify_log.append(f"  [FAIL] {check['name']}: {check.get('message', '')}")
                 verify_result["errors"].append(check.get("message", ""))
 
         verify_log.append(f"")
-        verify_log.append(f"📋 检查任务完成度...")
+        verify_log.append(f"[LIST] 检查任务完成度...")
         completion_check = self._verify_task_completion(task, task_type, target_path)
         verify_result["checks"].append(completion_check)
         if completion_check["status"] == "passed":
-            verify_log.append(f"  ✅ {completion_check['name']}")
+            verify_log.append(f"  [OK] {completion_check['name']}")
         else:
-            verify_log.append(f"  ⚠️ {completion_check['name']}: {completion_check.get('message', '')}")
+            verify_log.append(f"  [WARN] {completion_check['name']}: {completion_check.get('message', '')}")
             verify_result["warnings"].append(completion_check.get("message", ""))
 
         verify_log.append(f"")
-        verify_log.append(f"📊 验证统计:")
+        verify_log.append(f"[STATS] 验证统计:")
         passed_count = sum(1 for c in verify_result["checks"] if c["status"] == "passed")
         warning_count = sum(1 for c in verify_result["checks"] if c["status"] == "warning")
         failed_count = sum(1 for c in verify_result["checks"] if c["status"] == "failed")
@@ -1504,11 +1343,11 @@ class CompanyModeManager:
 
         if failed_count > 0:
             verify_result["success"] = False
-            verify_log.append(f"❌ 验证结果: 存在失败项")
+            verify_log.append(f"[FAIL] 验证结果: 存在失败项")
         elif warning_count > 0:
-            verify_log.append(f"⚠️ 验证结果: 通过（存在警告）")
+            verify_log.append(f"[WARN] 验证结果: 通过（存在警告）")
         else:
-            verify_log.append(f"✅ 验证结果: 全部通过")
+            verify_log.append(f"[OK] 验证结果: 全部通过")
 
         verify_result["output"] = "\n".join(verify_log)
         verify_result["stats"] = {
@@ -1785,7 +1624,7 @@ class CompanyModeManager:
         report_parts = []
 
         report_parts.append("=" * 60)
-        report_parts.append(f"📋 任务执行报告")
+        report_parts.append(f"[LIST] 任务执行报告")
         report_parts.append("=" * 60)
         report_parts.append("")
 
@@ -1823,7 +1662,7 @@ class CompanyModeManager:
 
         phase_summary = []
         for phase in task.phases:
-            status_icon = "✅" if phase.get("status") == "completed" else "❌"
+            status_icon = "[OK]" if phase.get("status") == "completed" else "[FAIL]"
             result_summary = phase.get("result", "")[:30]
             if len(phase.get("result", "")) > 30:
                 result_summary += "..."
@@ -1860,7 +1699,7 @@ class CompanyModeManager:
             if verify_data.get("warnings"):
                 report_parts.append("**警告项**:")
                 for warning in verify_data["warnings"][:3]:
-                    report_parts.append(f"- ⚠️ {warning}")
+                    report_parts.append(f"- [WARN] {warning}")
                 report_parts.append("")
 
         report_parts.append("## 执行统计")
@@ -1888,7 +1727,7 @@ class CompanyModeManager:
         report_parts.append("")
         suggestions = self._generate_final_suggestions(task, analysis, verify_data)
         for suggestion in suggestions:
-            report_parts.append(f"- 💡 {suggestion}")
+            report_parts.append(f"- [INFO] {suggestion}")
         report_parts.append("")
 
         if task.error:
@@ -2227,34 +2066,20 @@ class CompanyModeManager:
 
     def get_status(self) -> dict[str, Any]:
         """
-        获取公司模式状态
+        获取Work模式状态
         
         Returns:
             状态信息字典
         """
         # 更新运行时间
-        if self._start_time > 0 and self.state.status == CompanyModeStatus.ENABLED:
+        if self._start_time > 0 and self.state.status == WorkModeStatus.ENABLED:
             self.state.uptime_seconds = datetime.now().timestamp() - self._start_time
 
         # 动态计算活动任务（从 _tasks 字典中获取 running 状态的任务）
         running_tasks = [t for t in self._tasks.values() if t.status == "running"]
         self.state.active_tasks = [t.id for t in running_tasks]
 
-        status = self.state.to_dict()
-
-        # 添加 QQbot 统计
-        if self._qqbot_service:
-            status["qqbot_stats"] = self._qqbot_service.get_stats()
-
-        # 添加安全报告
-        if self._security_manager:
-            status["security_report"] = self._security_manager.get_security_report()
-
-        # 添加日志统计
-        if self._logger:
-            status["log_stats"] = self._logger.get_stats()
-
-        return status
+        return self.state.to_dict()
 
     def get_summary_report(self) -> str:
         """
@@ -2264,15 +2089,13 @@ class CompanyModeManager:
             格式化的摘要报告
         """
         lines = [
-            "# 公司模式状态报告",
+            "# Work模式状态报告",
             "",
             f"**状态**: {self.state.status.value}",
-            f"**QQbot 状态**: {self.state.qqbot_status.value}",
             f"**运行时间**: {self.state.uptime_seconds:.1f} 秒",
             f"**活动任务**: {len(self.state.active_tasks)}",
             f"**完成任务**: {self.state.completed_tasks}",
             f"**失败任务**: {self.state.failed_tasks}",
-            f"**安全事件**: {self.state.security_events}",
             "",
         ]
 
@@ -2286,23 +2109,13 @@ class CompanyModeManager:
                     lines.append(f"- {task.id}: {task.description[:50]}... ({task.current_phase})")
             lines.append("")
 
-        # 最近日志摘要
-        if self._logger:
-            log_summary = self._logger.get_summary_report(hours=1)
-            lines.append("## 最近 1 小时日志")
-            lines.append("")
-            lines.append(f"- 总事件数: {log_summary['total_events']}")
-            for event_type, count in log_summary.get("event_distribution", {}).items():
-                lines.append(f"  - {event_type}: {count}")
-            lines.append("")
-
         return "\n".join(lines)
 
-    def get_config(self) -> CompanyModeConfig:
+    def get_config(self) -> WorkModeConfig:
         """获取当前配置"""
         return self.config
 
-    def update_config(self, config: CompanyModeConfig) -> None:
+    def update_config(self, config: WorkModeConfig) -> None:
         """
         更新配置
         
@@ -2310,4 +2123,4 @@ class CompanyModeManager:
             config: 新配置
         """
         self.config = config
-        logger.info("公司模式配置已更新")
+        logger.info("Work模式配置已更新")

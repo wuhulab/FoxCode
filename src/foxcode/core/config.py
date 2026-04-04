@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import ClassVar
 
-from foxcode.core.company_mode_config import CompanyModeConfig
+from foxcode.core.work_mode_config import WorkModeConfig
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -497,7 +497,7 @@ class Config(BaseSettings):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
     workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
-    company_mode: CompanyModeConfig = Field(default_factory=CompanyModeConfig, description="公司模式配置")
+    work_mode: WorkModeConfig = Field(default_factory=WorkModeConfig, description="Work模式配置（默认启用）")
     
     # 工作目录
     working_dir: Path = Field(default_factory=lambda: Path.cwd())

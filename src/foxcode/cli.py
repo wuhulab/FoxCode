@@ -1078,13 +1078,10 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
     elif cmd_name == "/phase":
         _handle_phase_command(agent, config, cmd_arg)
     
-    # ==================== 公司模式命令 ====================
+    # ==================== Work模式命令 ====================
     
     elif cmd_name == "/work":
         _handle_work_command(agent, config, cmd_arg)
-    
-    elif cmd_name == "/company":
-        _handle_company_command(agent, config, cmd_arg)
     
     # ==================== 高级功能命令 (v2.0 新增) ====================
     
@@ -1588,35 +1585,34 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
     """
     处理 /work 命令
     
-    以长期工作模式启动任务，分析任务并锁定目标子文件夹
+    以长期工作模式启动任务，分析任务并锁定目标子文件夹，自动保存记录
     
     用法:
-        /work <任务描述>              - 启动新工作任务
+        /work                         - 前台启用Work模式（默认行为）
+        /work off                     - 关闭Work模式
+        /work <任务描述>              - 启动新工作任务（自动保存记录）
         /work status                  - 查看当前任务状态
         /work list                    - 列出所有任务
         /work stop <task_id>          - 停止指定任务
+        /work records                 - 查看任务记录
     """
-    from foxcode.core.company_mode import CompanyModeManager, AgentExecutionMode
-    from foxcode.core.company_mode_config import CompanyModeStatus
+    from foxcode.core.work_mode import WorkModeManager
+    from foxcode.core.work_mode_config import AgentExecutionMode, WorkModeStatus
     
-    # 获取或创建公司模式管理器
-    if not hasattr(agent, '_company_mode_manager'):
+    # 获取或创建Work模式管理器
+    if not hasattr(agent, '_work_mode_manager'):
         # 根据配置决定执行模式
-        # 如果启用了长期工作模式，使用单代理模式；否则使用模拟模式
-        execution_mode = (
-            AgentExecutionMode.SINGLE_AGENT
-            if config.long_running.enable_long_running_mode
-            else AgentExecutionMode.SIMULATION
-        )
+        # 默认使用单代理模式进行代码编写
+        execution_mode = AgentExecutionMode.SINGLE_AGENT
         
-        agent._company_mode_manager = CompanyModeManager(
-            config=config.company_mode,
+        agent._work_mode_manager = WorkModeManager(
+            config=config.work_mode,
             working_dir=config.working_dir,
             foxcode_config=config,
             execution_mode=execution_mode,
         )
     
-    manager = agent._company_mode_manager
+    manager = agent._work_mode_manager
     
     # 解析子命令
     if cmd_arg:
@@ -1628,24 +1624,62 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
         sub_arg = None
     
     try:
+        # 不带参数时，前台启用Work模式
+        if sub_cmd is None:
+            if manager.is_enabled():
+                console.print("[yellow]Work模式已启用[/yellow]")
+                status = manager.get_status()
+                console.print(Panel(
+                    f"[bold]Work模式状态:[/bold] {status['status']}\n"
+                    f"[bold]活动任务:[/bold] {len(status['active_tasks'])}\n"
+                    f"[bold]完成任务:[/bold] {status['completed_tasks']}\n"
+                    f"[bold]失败任务:[/bold] {status['failed_tasks']}\n"
+                    f"[bold]运行时间:[/bold] {status['uptime_seconds']:.1f} 秒",
+                    title="[WORK] Work模式已启用",
+                    style="cyan",
+                ))
+                console.print("[dim]使用 /work off 关闭，/work <任务描述> 启动任务[/dim]")
+            else:
+                console.print("[cyan]正在启用Work模式（前台模式）...[/cyan]")
+                success, msg = run_async(manager.enable())
+                if success:
+                    console.print(f"[green][OK] {msg}[/green]")
+                    console.print("[dim]使用 /work off 关闭，/work <任务描述> 启动任务[/dim]")
+                else:
+                    console.print(f"[red]启用失败: {msg}[/red]")
+            return
+        
+        # 关闭Work模式
+        if sub_cmd == "off":
+            if not manager.is_enabled():
+                console.print("[yellow]Work模式未启用[/yellow]")
+                return
+            console.print("[cyan]正在关闭Work模式...[/cyan]")
+            success, msg = run_async(manager.disable())
+            if success:
+                console.print(f"[green][OK] {msg}[/green]")
+            else:
+                console.print(f"[red]关闭失败: {msg}[/red]")
+            return
+        
         # 启动新任务
-        if sub_cmd and sub_cmd not in ["status", "list", "stop"]:
+        if sub_cmd and sub_cmd not in ["status", "list", "stop", "records", "off"]:
             # 整个 cmd_arg 是任务描述
             task_description = cmd_arg
             
-            # 确保公司模式已启用
+            # 确保Work模式已启用（默认启用）
             if not manager.is_enabled():
-                console.print("[cyan]正在启用公司模式...[/cyan]")
+                console.print("[cyan]正在启用Work模式...[/cyan]")
                 success, msg = run_async(manager.enable())
                 if not success:
-                    console.print(f"[red]启用公司模式失败: {msg}[/red]")
+                    console.print(f"[red]启用Work模式失败: {msg}[/red]")
                     return
                 console.print(f"[green]✅ {msg}[/green]")
             
             # 分析任务，尝试提取目标子文件夹
             target_subfolder = _extract_target_subfolder(task_description, config.working_dir)
             
-            # 创建任务
+            # 创建任务（自动保存记录）
             task = manager.create_work_task(
                 description=task_description,
                 target_subfolder=target_subfolder,
@@ -1655,44 +1689,45 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                 f"[bold cyan]任务 ID:[/bold cyan] {task.id}\n"
                 f"[bold cyan]描述:[/bold cyan] {task_description}\n"
                 f"[bold cyan]目标子文件夹:[/bold cyan] {target_subfolder or '自动检测'}\n"
-                f"[bold cyan]状态:[/bold cyan] 待执行",
-                title="📋 创建工作任务",
+                f"[bold cyan]状态:[/bold cyan] 待执行\n"
+                f"[bold cyan]执行模式:[/bold cyan] {manager.execution_mode.value}",
+                title="[WORK] 创建工作任务",
                 style="cyan",
             ))
             
             # 设置报告回调
             def report_callback(task, phase, result):
-                console.print(f"\n[cyan]📊 阶段报告 [{task.id}][/cyan]")
+                console.print(f"\n[cyan][REPORT] 阶段报告 [{task.id}][/cyan]")
                 console.print(f"   阶段: {phase['description']}")
-                console.print(f"   状态: {'✅ 完成' if result['success'] else '❌ 失败'}")
+                console.print(f"   状态: {'[OK] 完成' if result['success'] else '[FAIL] 失败'}")
                 if result.get('output'):
-                    console.print(f"   输出: {result['output'][:200]}...")
+                    output_preview = result['output'][:200]
+                    console.print(f"   输出: {output_preview}...")
             
             manager.set_report_callback(report_callback)
             
             # 启动任务
             success = run_async(manager.start_work_task(task))
             if success:
-                console.print(f"[green]✅ 任务已启动: {task.id}[/green]")
-                console.print("[dim]使用 /work status 查看进度[/dim]")
+                console.print(f"[green][OK] 任务已启动: {task.id}[/green]")
+                console.print("[dim]使用 /work status 查看进度，/work records 查看记录[/dim]")
             else:
                 console.print(f"[red]启动任务失败[/red]")
         
         # 查看状态
         elif sub_cmd == "status":
             if not manager.is_enabled():
-                console.print("[yellow]公司模式未启用[/yellow]")
+                console.print("[yellow]Work模式未启用[/yellow]")
                 return
             
             status = manager.get_status()
             console.print(Panel(
-                f"[bold]公司模式状态:[/bold] {status['status']}\n"
-                f"[bold]QQbot 状态:[/bold] {status['qqbot_status']}\n"
+                f"[bold]Work模式状态:[/bold] {status['status']}\n"
                 f"[bold]活动任务:[/bold] {len(status['active_tasks'])}\n"
                 f"[bold]完成任务:[/bold] {status['completed_tasks']}\n"
                 f"[bold]失败任务:[/bold] {status['failed_tasks']}\n"
                 f"[bold]运行时间:[/bold] {status['uptime_seconds']:.1f} 秒",
-                title="📊 公司模式状态",
+                title="[STATS] Work模式状态",
                 style="cyan",
             ))
             
@@ -1702,7 +1737,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                 for task_id in status['active_tasks']:
                     task = manager.get_task(task_id)
                     if task:
-                        console.print(f"  🔄 {task_id}: {task.description[:40]}... ({task.current_phase})")
+                        console.print(f"  [LOOP] {task_id}: {task.description[:40]}... ({task.current_phase})")
         
         # 列出任务
         elif sub_cmd == "list":
@@ -1738,6 +1773,41 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
             
             console.print(table)
         
+        # 查看任务记录
+        elif sub_cmd == "records":
+            tasks = manager.list_tasks(limit=20)
+            
+            if not tasks:
+                console.print("[yellow]暂无任务记录[/yellow]")
+                return
+            
+            from rich.table import Table
+            table = Table(title="任务记录")
+            table.add_column("ID", style="cyan", width=15)
+            table.add_column("描述", style="white")
+            table.add_column("状态", style="green")
+            table.add_column("创建时间", style="yellow")
+            table.add_column("完成时间", style="magenta")
+            
+            for task in tasks:
+                status_color = {
+                    "pending": "white",
+                    "running": "yellow",
+                    "completed": "green",
+                    "failed": "red",
+                }.get(task.status, "white")
+                
+                table.add_row(
+                    task.id,
+                    task.description[:25] + "..." if len(task.description) > 25 else task.description,
+                    f"[{status_color}]{task.status}[/{status_color}]",
+                    task.created_at[:16] if task.created_at else "-",
+                    task.completed_at[:16] if task.completed_at else "-",
+                )
+            
+            console.print(table)
+            console.print(f"\n[dim]记录保存位置: {config.working_dir}/.foxcode/work_records.json[/dim]")
+        
         # 停止任务
         elif sub_cmd == "stop" and sub_arg:
             task = manager.get_task(sub_arg)
@@ -1747,189 +1817,14 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
             
             task.status = "failed"
             task.error = "用户手动停止"
+            manager._save_records()  # 保存记录
             console.print(f"[yellow]已停止任务: {sub_arg}[/yellow]")
         
         else:
-            console.print("[yellow]用法: /work <任务描述> | status | list | stop <id>[/yellow]")
+            console.print("[yellow]用法: /work [off] | <任务描述> | status | list | records | stop <id>[/yellow]")
     
     except Exception as e:
         console.print(f"[red]处理 /work 命令失败: {markup.escape(str(e))}[/red]")
-
-
-def _handle_company_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
-    """
-    处理 /company 命令
-    
-    管理公司模式和 QQbot
-    
-    用法:
-        /company                     - 显示公司模式状态
-        /company enable              - 启用公司模式
-        /company disable             - 禁用公司模式
-        /company status              - 详细状态报告
-        /company qqbot status        - QQbot 状态
-        /company qqbot send <消息>   - 发送测试消息
-        /company security            - 安全报告
-        /company logs                - 日志摘要
-        /company config              - 显示配置
-    """
-    from foxcode.core.company_mode import CompanyModeManager, AgentExecutionMode
-    from foxcode.core.company_mode_config import CompanyModeStatus
-    
-    # 获取或创建公司模式管理器
-    if not hasattr(agent, '_company_mode_manager'):
-        # 根据配置决定执行模式
-        execution_mode = (
-            AgentExecutionMode.SINGLE_AGENT
-            if config.long_running.enable_long_running_mode
-            else AgentExecutionMode.SIMULATION
-        )
-        
-        agent._company_mode_manager = CompanyModeManager(
-            config=config.company_mode,
-            working_dir=config.working_dir,
-            foxcode_config=config,
-            execution_mode=execution_mode,
-        )
-    
-    manager = agent._company_mode_manager
-    
-    # 解析子命令
-    if cmd_arg:
-        parts = cmd_arg.split(maxsplit=2)
-        sub_cmd = parts[0]
-        sub_arg1 = parts[1] if len(parts) > 1 else None
-        sub_arg2 = parts[2] if len(parts) > 2 else None
-    else:
-        sub_cmd = None
-        sub_arg1 = None
-        sub_arg2 = None
-    
-    try:
-        # 显示状态（默认）
-        if not sub_cmd:
-            status = manager.get_status()
-            status_icon = "🟢" if status['status'] == 'enabled' else "🔴"
-            
-            console.print(Panel(
-                f"{status_icon} [bold]公司模式:[/bold] {status['status']}\n"
-                f"{'🟢' if status['qqbot_status'] == 'ready' else '🔴'} [bold]QQbot:[/bold] {status['qqbot_status']}\n"
-                f"[bold]活动任务:[/bold] {len(status['active_tasks'])}\n"
-                f"[bold]完成/失败:[/bold] {status['completed_tasks']}/{status['failed_tasks']}\n"
-                f"[bold]安全事件:[/bold] {status.get('security_report', {}).get('total_security_events', 0)}",
-                title="🏢 公司模式",
-                style="cyan",
-            ))
-        
-        # 启用
-        elif sub_cmd == "enable":
-            if manager.is_enabled():
-                console.print("[yellow]公司模式已启用[/yellow]")
-                return
-            
-            console.print("[cyan]正在启用公司模式...[/cyan]")
-            success, msg = run_async(manager.enable())
-            
-            if success:
-                console.print(f"[green]✅ {msg}[/green]")
-            else:
-                console.print(f"[red]❌ {msg}[/red]")
-        
-        # 禁用
-        elif sub_cmd == "disable":
-            if not manager.is_enabled():
-                console.print("[yellow]公司模式未启用[/yellow]")
-                return
-            
-            console.print("[cyan]正在禁用公司模式...[/cyan]")
-            success, msg = run_async(manager.disable())
-            
-            if success:
-                console.print(f"[green]✅ {msg}[/green]")
-            else:
-                console.print(f"[red]❌ {msg}[/red]")
-        
-        # 详细状态
-        elif sub_cmd == "status":
-            report = manager.get_summary_report()
-            console.print(Panel(report, title="📊 详细状态报告", style="cyan"))
-        
-        # QQbot 相关
-        elif sub_cmd == "qqbot":
-            if sub_arg1 == "status":
-                status = manager.get_status()
-                qqbot_stats = status.get('qqbot_stats', {})
-                
-                console.print(Panel(
-                    f"[bold]状态:[/bold] {qqbot_stats.get('status', 'unknown')}\n"
-                    f"[bold]发送消息:[/bold] {qqbot_stats.get('messages_sent', 0)}\n"
-                    f"[bold]接收消息:[/bold] {qqbot_stats.get('messages_received', 0)}\n"
-                    f"[bold]处理事件:[/bold] {qqbot_stats.get('events_processed', 0)}\n"
-                    f"[bold]错误次数:[/bold] {qqbot_stats.get('errors', 0)}\n"
-                    f"[bold]重连次数:[/bold] {qqbot_stats.get('reconnects', 0)}",
-                    title="🤖 QQbot 状态",
-                    style="green",
-                ))
-            
-            elif sub_arg1 == "send" and sub_arg2:
-                # 发送测试消息（需要配置频道 ID）
-                console.print("[yellow]发送消息功能需要配置目标频道 ID[/yellow]")
-                console.print("[dim]请在配置文件中设置 company_mode.qqbot.allowed_channels[/dim]")
-            
-            else:
-                console.print("[yellow]用法: /company qqbot status | send <消息>[/yellow]")
-        
-        # 安全报告
-        elif sub_cmd == "security":
-            status = manager.get_status()
-            security_report = status.get('security_report', {})
-            
-            console.print(Panel(
-                f"[bold]安全事件总数:[/bold] {security_report.get('total_security_events', 0)}\n"
-                f"[bold]事件类型分布:[/bold]\n" + 
-                "\n".join(f"  - {k}: {v}" for k, v in security_report.get('event_types', {}).items()) +
-                f"\n[bold]严重程度分布:[/bold]\n" +
-                "\n".join(f"  - {k}: {v}" for k, v in security_report.get('severity_distribution', {}).items()) +
-                f"\n[bold]活跃会话:[/bold] {security_report.get('active_sessions', 0)}",
-                title="🔒 安全报告",
-                style="red",
-            ))
-        
-        # 日志
-        elif sub_cmd == "logs":
-            status = manager.get_status()
-            log_stats = status.get('log_stats', {})
-            
-            console.print(Panel(
-                f"[bold]日志总数:[/bold] {log_stats.get('total_logs', 0)}\n"
-                f"[bold]缓存大小:[/bold] {log_stats.get('cache_size', 0)}\n"
-                f"[bold]日志目录:[/bold] {log_stats.get('log_dir', 'N/A')}\n"
-                f"[bold]事件分布:[/bold]\n" +
-                "\n".join(f"  - {k}: {v}" for k, v in log_stats.get('by_event_type', {}).items()),
-                title="📝 日志统计",
-                style="yellow",
-            ))
-        
-        # 配置
-        elif sub_cmd == "config":
-            company_config = manager.get_config()
-            
-            console.print(Panel(
-                f"[bold]启用状态:[/bold] {company_config.enabled}\n"
-                f"[bold]长期工作模式:[/bold] {company_config.long_work_mode}\n"
-                f"[bold]安全级别:[/bold] {company_config.content_filter.security_level.value}\n"
-                f"[bold]QQbot App ID:[/bold] {company_config.qqbot.app_id[:8] + '...' if company_config.qqbot.app_id else '未配置'}\n"
-                f"[bold]日志启用:[/bold] {company_config.logging.enable_logging}\n"
-                f"[bold]审计日志:[/bold] {company_config.security.enable_audit_log}",
-                title="⚙️ 公司模式配置",
-                style="magenta",
-            ))
-        
-        else:
-            console.print("[yellow]用法: /company [enable|disable|status|qqbot|security|logs|config][/yellow]")
-    
-    except Exception as e:
-        console.print(f"[red]处理 /company 命令失败: {markup.escape(str(e))}[/red]")
 
 
 def _extract_target_subfolder(description: str, working_dir: Path) -> str:

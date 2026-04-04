@@ -1,0 +1,96 @@
+# FoxCode 配置文件示例
+# 将此文件复制到项目目录并重命名为 .foxcode.toml 或 foxcode.toml
+
+# 模型配置
+[model]
+# 提供者: openai, anthropic, deepseek, local
+provider = "openai"
+
+# 模型名称
+# OpenAI: gpt-4o, gpt-4-turbo, gpt-3.5-turbo
+# Anthropic: claude-sonnet-4-20250514, claude-opus-4-20250514
+# DeepSeek: deepseek-chat, deepseek-coder
+model_name = "gpt-4o"
+
+# API Key (建议使用环境变量)
+# 不要在配置文件中硬编码 API Key！
+# 示例: api_key = "sk-your-api-key-here"
+api_key = "your-api-key-here"
+
+# API 基础 URL (可选)
+# base_url = "https://api.openai.com/v1"
+
+# 温度参数 (0.0 - 2.0)
+temperature = 0.7
+
+# 最大 token 数
+max_tokens = 4096
+
+# 请求超时时间 (秒)
+timeout = 120
+
+# 工具配置
+[tools]
+# 启用文件操作
+enable_file_ops = true
+
+# 启用 Shell 执行
+enable_shell = true
+
+# 启用网络搜索
+enable_web_search = false
+
+# 启用代码执行
+enable_code_execution = true
+
+# Shell 命令超时时间 (秒)
+shell_timeout = 300
+
+# 最大文件大小 (字节)
+max_file_size = 10485760  # 10MB
+
+# 允许的文件扩展名
+allowed_extensions = [
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs",
+    ".c", ".cpp", ".h", ".hpp", ".cs", ".rb", ".php", ".swift",
+    ".kt", ".scala", ".lua", ".r", ".sql", ".sh", ".bash",
+    ".json", ".yaml", ".yml", ".toml", ".xml", ".html", ".css",
+    ".md", ".txt", ".rst", ".ini", ".cfg", ".env", ".gitignore",
+]
+
+# UI 配置
+[ui]
+# 主题: dark, light
+theme = "dark"
+
+# 显示 token 使用统计
+show_token_usage = true
+
+# 显示响应时间
+show_timing = true
+
+# 紧凑模式
+compact_mode = false
+
+# 语法高亮
+syntax_highlight = true
+
+# 鼠标支持
+mouse_support = true
+
+# 会话配置
+[session]
+# 自动保存会话
+auto_save_session = true
+
+# 最大历史记录数
+max_history = 100
+
+# .foxcode.toml 配置示例
+[sandbox]
+enabled = true
+mode = "blacklist"  # 或 "whitelist" 或 "disabled"
+allow_path_traversal = false
+max_command_length = 10000
+allowed_commands = ["ls", "git", "npm", "python"]
+blocked_commands = ["format", "shutdown"]

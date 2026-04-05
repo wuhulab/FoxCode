@@ -662,4 +662,4 @@ foxcode/
 
 ### License
 
-MIT License - See [LICENSE](LICENSE) file for details
+AGPLv3 License - See [LICENSE](LICENSE) file for details

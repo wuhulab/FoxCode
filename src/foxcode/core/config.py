@@ -465,6 +465,33 @@ class SkillsConfig(BaseModel):
     enable_builtin: bool = Field(default=True, description="是否启用内置技能")
 
 
+class OpenSpaceConfig(BaseModel):
+    """
+    OpenSpace 配置
+    
+    AI 经验知识存储系统，用于记录 AI 踩过的坑和注意事项。
+    每次启动 foxcode 时自动加载到上下文中。
+    """
+    enabled: bool = Field(
+        default=True,
+        description="是否启用 OpenSpace 功能，默认启用"
+    )
+    skills_dir: str = Field(
+        default="",
+        description="经验文件存储目录，为空则使用 ~/.foxcode/skills/"
+    )
+    max_content_length: int = Field(
+        default=500,
+        ge=100,
+        le=2000,
+        description="单条经验最大字数限制"
+    )
+    auto_load: bool = Field(
+        default=True,
+        description="启动时是否自动加载经验"
+    )
+
+
 class Config(BaseSettings):
     """
     FoxCode 主配置类
@@ -498,6 +525,10 @@ class Config(BaseSettings):
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
     workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
     work_mode: WorkModeConfig = Field(default_factory=WorkModeConfig, description="Work模式配置（默认启用）")
+    open_space: OpenSpaceConfig = Field(
+        default_factory=OpenSpaceConfig,
+        description="OpenSpace 配置（AI 经验知识存储，默认启用）"
+    )
     
     # 工作目录
     working_dir: Path = Field(default_factory=lambda: Path.cwd())

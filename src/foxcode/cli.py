@@ -523,6 +523,17 @@ foxcode --plan             # 规划模式
 - `/git conflicts` - 分析冲突
 - `/diagram <type>` - 生成图表 (mermaid/plantuml)
 
+### OpenSpace 命令 (AI 经验知识库)
+
+- `/space` - 显示 OpenSpace 状态
+- `/space true` - 启用 OpenSpace（默认启用）
+- `/space false` - 禁用 OpenSpace
+- `/space list` - 列出所有经验
+- `/space add <标题> <内容>` - 添加新经验（不超过 500 字）
+- `/space show <id>` - 显示经验详情
+- `/space delete <id>` - 删除经验
+- `/space stats` - 显示统计信息
+
 ## 支持的模型
 
 - OpenAI: gpt-4o, gpt-4-turbo, gpt-3.5-turbo
@@ -1123,6 +1134,9 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
     
     elif cmd_name == "/diagram":
         _handle_diagram_command(agent, config, cmd_arg)
+    
+    elif cmd_name == "/space":
+        _handle_space_command(agent, config, cmd_arg)
     
     else:
         console.print(f"[yellow]未知命令: {cmd_name}[/yellow]")
@@ -2586,3 +2600,200 @@ def _handle_diagram_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
     
     except Exception as e:
         console.print(f"[red]图表生成失败: {markup.escape(str(e))}[/red]")
+
+
+def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
+    """
+    处理 /space 命令
+    
+    OpenSpace - AI 经验知识存储系统
+    
+    用法:
+        /space              - 显示 OpenSpace 状态
+        /space true         - 启用 OpenSpace
+        /space false        - 禁用 OpenSpace
+        /space list         - 列出所有经验
+        /space add          - 添加新经验（交互式）
+        /space add <title> <content>  - 快速添加经验
+        /space show <id>    - 显示经验详情
+        /space delete <id>  - 删除经验
+        /space stats        - 显示统计信息
+    """
+    try:
+        from foxcode.core.open_space import (
+            get_open_space_manager,
+            ExperienceCategory,
+            Experience,
+        )
+        
+        manager = get_open_space_manager()
+        
+        # 解析子命令
+        if cmd_arg:
+            parts = cmd_arg.split(maxsplit=2)
+            sub_cmd = parts[0].lower()
+            sub_arg1 = parts[1] if len(parts) > 1 else None
+            sub_arg2 = parts[2] if len(parts) > 2 else None
+        else:
+            sub_cmd = None
+            sub_arg1 = None
+            sub_arg2 = None
+        
+        # 启用 OpenSpace
+        if sub_cmd == "true" or sub_cmd == "on" or sub_cmd == "enable":
+            manager.enable()
+            config.open_space.enabled = True
+            console.print("[green]✅ OpenSpace 已启用[/green]")
+            console.print("[dim]AI 经验知识将在下次对话中加载到上下文[/dim]")
+            return
+        
+        # 禁用 OpenSpace
+        if sub_cmd == "false" or sub_cmd == "off" or sub_cmd == "disable":
+            manager.disable()
+            config.open_space.enabled = False
+            console.print("[yellow]OpenSpace 已禁用[/yellow]")
+            console.print("[dim]AI 经验知识将不会加载到上下文[/dim]")
+            return
+        
+        # 列出所有经验
+        if sub_cmd == "list":
+            experiences = manager.list_all(enabled_only=False)
+            
+            if not experiences:
+                console.print("[yellow]暂无经验记录[/yellow]")
+                console.print("[dim]使用 /space add <标题> <内容> 添加新经验[/dim]")
+                return
+            
+            from rich.table import Table
+            table = Table(title="📚 OpenSpace 经验列表")
+            table.add_column("ID", style="cyan", width=15)
+            table.add_column("标题", style="white")
+            table.add_column("分类", style="green")
+            table.add_column("状态", style="yellow")
+            table.add_column("创建时间", style="dim")
+            
+            for exp in experiences:
+                status = "✅" if exp.enabled else "❌"
+                table.add_row(
+                    exp.id,
+                    exp.title[:30] + "..." if len(exp.title) > 30 else exp.title,
+                    exp.category.value,
+                    status,
+                    exp.created_at[:10] if exp.created_at else "-",
+                )
+            
+            console.print(table)
+            console.print(f"\n[dim]共 {len(experiences)} 条经验[/dim]")
+            return
+        
+        # 添加新经验
+        if sub_cmd == "add":
+            if sub_arg1 and sub_arg2:
+                # 快速添加模式: /space add <title> <content>
+                title = sub_arg1
+                content = sub_arg2
+                
+                # 检查内容长度
+                if len(content) > 500:
+                    content = content[:500]
+                    console.print("[yellow]内容已截断至 500 字[/yellow]")
+                
+                exp = manager.create_experience(
+                    title=title,
+                    content=content,
+                    category=ExperienceCategory.GENERAL,
+                )
+                
+                if manager.save(exp):
+                    console.print(f"[green]✅ 已添加经验: {exp.id}[/green]")
+                    console.print(f"   标题: {title}")
+                    console.print(f"   内容: {content[:50]}...")
+                else:
+                    console.print("[red]添加经验失败[/red]")
+            else:
+                # 交互式添加
+                console.print("[cyan]添加新经验[/cyan]")
+                console.print("[dim]提示: 使用 /space add <标题> <内容> 快速添加[/dim]")
+                console.print("[dim]经验内容不超过 500 字[/dim]")
+                
+                # 这里可以扩展为更复杂的交互式输入
+                console.print("\n[yellow]请使用以下格式添加:[/yellow]")
+                console.print("  /space add <标题> <内容>")
+                console.print("\n[dim]示例:[/dim]")
+                console.print("  /space add \"Windows路径问题\" \"在Windows上使用反斜杠路径，但Python推荐使用正斜杠或Path对象\"")
+            return
+        
+        # 显示经验详情
+        if sub_cmd == "show" and sub_arg1:
+            exp = manager.get(sub_arg1)
+            
+            if not exp:
+                console.print(f"[red]经验不存在: {sub_arg1}[/red]")
+                return
+            
+            console.print(Panel(
+                f"[bold]标题:[/bold] {exp.title}\n"
+                f"[bold]分类:[/bold] {exp.category.value}\n"
+                f"[bold]标签:[/bold] {', '.join(exp.tags) if exp.tags else '无'}\n"
+                f"[bold]创建时间:[/bold] {exp.created_at}\n"
+                f"[bold]状态:[/bold] {'启用' if exp.enabled else '禁用'}\n\n"
+                f"[bold]内容:[/bold]\n{exp.content}",
+                title=f"📖 经验: {exp.id}",
+                style="cyan",
+            ))
+            return
+        
+        # 删除经验
+        if sub_cmd == "delete" and sub_arg1:
+            exp = manager.get(sub_arg1)
+            
+            if not exp:
+                console.print(f"[red]经验不存在: {sub_arg1}[/red]")
+                return
+            
+            if manager.delete(sub_arg1):
+                console.print(f"[green]✅ 已删除经验: {sub_arg1}[/green]")
+            else:
+                console.print(f"[red]删除失败: {sub_arg1}[/red]")
+            return
+        
+        # 显示统计信息
+        if sub_cmd == "stats":
+            stats = manager.get_statistics()
+            
+            console.print(Panel(
+                f"[bold]总经验数:[/bold] {stats['total']}\n"
+                f"[bold]启用:[/bold] {stats['enabled']}\n"
+                f"[bold]禁用:[/bold] {stats['disabled']}\n"
+                f"[bold]状态:[/bold] {'✅ 启用' if stats['is_enabled'] else '❌ 禁用'}\n\n"
+                f"[bold]分类统计:[/bold]\n" +
+                "\n".join(f"  - {k}: {v}" for k, v in stats['categories'].items()),
+                title="📊 OpenSpace 统计",
+                style="cyan",
+            ))
+            return
+        
+        # 默认显示状态
+        status = "✅ 启用" if manager.enabled else "❌ 禁用"
+        stats = manager.get_statistics()
+        
+        console.print(Panel(
+            f"[bold]状态:[/bold] {status}\n"
+            f"[bold]经验总数:[/bold] {stats['total']}\n"
+            f"[bold]启用的经验:[/bold] {stats['enabled']}\n\n"
+            f"[dim]用法:[/dim]\n"
+            f"  /space true    - 启用\n"
+            f"  /space false   - 禁用\n"
+            f"  /space list    - 列出所有经验\n"
+            f"  /space add <标题> <内容>  - 添加经验\n"
+            f"  /space show <id>  - 显示详情\n"
+            f"  /space delete <id>  - 删除经验\n"
+            f"  /space stats   - 统计信息",
+            title="🌌 OpenSpace - AI 经验知识库",
+            style="cyan",
+        ))
+        
+    except ImportError as e:
+        console.print(f"[red]OpenSpace 模块加载失败: {e}[/red]")
+    except Exception as e:
+        console.print(f"[red]OpenSpace 操作失败: {markup.escape(str(e))}[/red]")

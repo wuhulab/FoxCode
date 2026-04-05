@@ -681,6 +681,11 @@ class FoxCodeAgent:
         if skill_prompt:
             base_prompt += "\n\n" + skill_prompt
         
+        # 注入 OpenSpace 经验知识
+        open_space_prompt = self._get_open_space_prompt_injection()
+        if open_space_prompt:
+            base_prompt += "\n\n" + open_space_prompt
+        
         # 检查是否有恢复上下文
         handoff_context = self._get_handoff_context()
         if handoff_context:
@@ -708,6 +713,35 @@ class FoxCodeAgent:
             return self._skill_manager.get_prompt_injections()
         except Exception as e:
             logger.warning(f"Failed to get skill prompt injection: {e}")
+            return ""
+    
+    def _get_open_space_prompt_injection(self) -> str:
+        """
+        获取 OpenSpace 经验知识提示注入
+        
+        从全局 OpenSpace 管理器加载 AI 经验知识并注入到系统提示中。
+        这些经验知识帮助 AI 避免重复踩坑。
+        
+        Returns:
+            格式化的经验知识提示内容
+        """
+        # 检查是否启用 OpenSpace
+        if not self.config.open_space.enabled:
+            return ""
+        
+        try:
+            from foxcode.core.open_space import get_open_space_manager
+            
+            manager = get_open_space_manager()
+            
+            # 检查管理器是否启用
+            if not manager.enabled:
+                return ""
+            
+            return manager.get_prompt_injection()
+            
+        except Exception as e:
+            logger.warning(f"Failed to get OpenSpace prompt injection: {e}")
             return ""
     
     def _get_handoff_context(self) -> str:

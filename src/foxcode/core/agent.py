@@ -196,6 +196,13 @@ You have tools to read files, execute commands, and search code.
 
 Set up the initial environment for the project, create feature list and progress files.
 
+**IMPORTANT: All FoxCode internal files MUST be created in the `.foxcode/` directory:**
+- Feature list: `{working_dir}/.foxcode/features.md`
+- Progress file: `{working_dir}/.foxcode/progress.md`
+- Summary file: `{working_dir}/.foxcode/summary.md`
+
+First, create the `.foxcode/` directory if it does not exist, then create the files inside it.
+
 ================================================================================
 ## TOOLS
 ================================================================================

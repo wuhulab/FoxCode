@@ -86,3 +86,5 @@ foxcode.toml
 
 .pytest_cache/
 blog-system/
+.ruff_cache/
+abouttest/

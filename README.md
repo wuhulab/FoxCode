@@ -509,7 +509,7 @@ foxcode --debug
 
 ### License
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+AGPLv3 License - 详见 [LICENSE](LICENSE) 文件
 
 ---
 

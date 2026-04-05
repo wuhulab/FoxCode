@@ -732,7 +732,8 @@ class FoxCodeAgent:
         try:
             from foxcode.core.open_space import get_open_space_manager
             
-            manager = get_open_space_manager()
+            # 使用工作目录获取管理器（优先加载项目级经验）
+            manager = get_open_space_manager(working_dir=self.config.working_dir)
             
             # 检查管理器是否启用
             if not manager.enabled:

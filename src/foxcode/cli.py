@@ -528,6 +528,8 @@ foxcode --plan             # 规划模式
 - `/space` - 显示 OpenSpace 状态
 - `/space true` - 启用 OpenSpace（默认启用）
 - `/space false` - 禁用 OpenSpace
+- `/space ai true` - 启用 AI 自动总结经验（完成任务后自动记录踩过的坑）
+- `/space ai false` - 禁用 AI 自动总结经验
 - `/space list` - 列出所有经验
 - `/space add <标题> <内容>` - 添加新经验（不超过 500 字）
 - `/space show <id>` - 显示经验详情
@@ -2612,8 +2614,9 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         /space              - 显示 OpenSpace 状态
         /space true         - 启用 OpenSpace
         /space false        - 禁用 OpenSpace
+        /space ai true      - 启用 AI 自动总结经验
+        /space ai false     - 禁用 AI 自动总结经验
         /space list         - 列出所有经验
-        /space add          - 添加新经验（交互式）
         /space add <title> <content>  - 快速添加经验
         /space show <id>    - 显示经验详情
         /space delete <id>  - 删除经验
@@ -2622,11 +2625,13 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     try:
         from foxcode.core.open_space import (
             get_open_space_manager,
+            reset_open_space_manager,
             ExperienceCategory,
             Experience,
         )
         
-        manager = get_open_space_manager()
+        # 使用工作目录获取管理器
+        manager = get_open_space_manager(working_dir=config.working_dir)
         
         # 解析子命令
         if cmd_arg:
@@ -2654,6 +2659,23 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             console.print("[yellow]OpenSpace 已禁用[/yellow]")
             console.print("[dim]AI 经验知识将不会加载到上下文[/dim]")
             return
+        
+        # AI 自动总结功能
+        if sub_cmd == "ai":
+            if sub_arg1 == "true" or sub_arg1 == "on" or sub_arg1 == "enable":
+                manager.enable_ai_summarize()
+                console.print("[green]✅ AI 自动总结已启用[/green]")
+                console.print("[dim]每次 AI 完成任务后会自动总结踩过的坑并存入 OpenSpace[/dim]")
+                return
+            elif sub_arg1 == "false" or sub_arg1 == "off" or sub_arg1 == "disable":
+                manager.disable_ai_summarize()
+                console.print("[yellow]AI 自动总结已禁用[/yellow]")
+                return
+            else:
+                ai_status = "✅ 启用" if manager.ai_auto_summarize else "❌ 禁用"
+                console.print(f"[cyan]AI 自动总结状态: {ai_status}[/cyan]")
+                console.print("[dim]用法: /space ai [true|false][/dim]")
+                return
         
         # 列出所有经验
         if sub_cmd == "list":
@@ -2716,7 +2738,6 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 console.print("[dim]提示: 使用 /space add <标题> <内容> 快速添加[/dim]")
                 console.print("[dim]经验内容不超过 500 字[/dim]")
                 
-                # 这里可以扩展为更复杂的交互式输入
                 console.print("\n[yellow]请使用以下格式添加:[/yellow]")
                 console.print("  /space add <标题> <内容>")
                 console.print("\n[dim]示例:[/dim]")
@@ -2761,11 +2782,14 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         if sub_cmd == "stats":
             stats = manager.get_statistics()
             
+            ai_status = "✅ 启用" if stats.get('ai_auto_summarize', False) else "❌ 禁用"
+            
             console.print(Panel(
                 f"[bold]总经验数:[/bold] {stats['total']}\n"
                 f"[bold]启用:[/bold] {stats['enabled']}\n"
                 f"[bold]禁用:[/bold] {stats['disabled']}\n"
-                f"[bold]状态:[/bold] {'✅ 启用' if stats['is_enabled'] else '❌ 禁用'}\n\n"
+                f"[bold]状态:[/bold] {'✅ 启用' if stats['is_enabled'] else '❌ 禁用'}\n"
+                f"[bold]AI自动总结:[/bold] {ai_status}\n\n"
                 f"[bold]分类统计:[/bold]\n" +
                 "\n".join(f"  - {k}: {v}" for k, v in stats['categories'].items()),
                 title="📊 OpenSpace 统计",
@@ -2775,15 +2799,19 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         
         # 默认显示状态
         status = "✅ 启用" if manager.enabled else "❌ 禁用"
+        ai_status = "✅ 启用" if manager.ai_auto_summarize else "❌ 禁用"
         stats = manager.get_statistics()
         
         console.print(Panel(
             f"[bold]状态:[/bold] {status}\n"
+            f"[bold]AI自动总结:[/bold] {ai_status}\n"
             f"[bold]经验总数:[/bold] {stats['total']}\n"
             f"[bold]启用的经验:[/bold] {stats['enabled']}\n\n"
             f"[dim]用法:[/dim]\n"
             f"  /space true    - 启用\n"
             f"  /space false   - 禁用\n"
+            f"  /space ai true - 启用AI自动总结\n"
+            f"  /space ai false - 禁用AI自动总结\n"
             f"  /space list    - 列出所有经验\n"
             f"  /space add <标题> <内容>  - 添加经验\n"
             f"  /space show <id>  - 显示详情\n"

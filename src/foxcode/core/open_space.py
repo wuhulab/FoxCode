@@ -113,20 +113,21 @@ class OpenSpaceManager:
     管理 AI 经验知识的存储、加载和上下文注入
     """
     
-    def __init__(self, skills_dir: Path | None = None):
+    def __init__(self, space_dir: Path | None = None):
         """
         初始化管理器
         
         Args:
-            skills_dir: 经验文件存储目录，默认为 ~/.foxcode/skills/
+            space_dir: 经验文件存储目录，默认为 ~/.foxcode/space/
         """
-        if skills_dir is None:
-            skills_dir = Path.home() / ".foxcode" / "space"
+        if space_dir is None:
+            space_dir = Path.home() / ".foxcode" / "space"
         
-        self.skills_dir = skills_dir
+        self.space_dir = space_dir
         self._experiences: dict[str, Experience] = {}
         self._enabled: bool = True
-        self._state_file = skills_dir / "open_space_state.json"
+        self._ai_auto_summarize: bool = False
+        self._state_file = space_dir / "open_space_state.json"
         self._logger = logging.getLogger("foxcode.open_space")
         
         self._ensure_directory()
@@ -134,26 +135,31 @@ class OpenSpaceManager:
     
     def _ensure_directory(self) -> None:
         """确保目录存在"""
-        self.skills_dir.mkdir(parents=True, exist_ok=True)
-        self._logger.debug(f"OpenSpace 目录: {self.skills_dir}")
+        self.space_dir.mkdir(parents=True, exist_ok=True)
+        self._logger.debug(f"OpenSpace 目录: {self.space_dir}")
     
     def _load_state(self) -> None:
-        """加载状态（启用/禁用）"""
+        """加载状态（启用/禁用/AI自动总结）"""
         if self._state_file.exists():
             try:
                 with open(self._state_file, "r", encoding="utf-8") as f:
                     state = json.load(f)
                     self._enabled = state.get("enabled", True)
-                    self._logger.info(f"OpenSpace 状态: {'启用' if self._enabled else '禁用'}")
+                    self._ai_auto_summarize = state.get("ai_auto_summarize", False)
+                    self._logger.info(f"OpenSpace 状态: {'启用' if self._enabled else '禁用'}, AI自动总结: {'启用' if self._ai_auto_summarize else '禁用'}")
             except Exception as e:
                 self._logger.warning(f"加载状态文件失败: {e}")
                 self._enabled = True
+                self._ai_auto_summarize = False
     
     def _save_state(self) -> None:
         """保存状态"""
         try:
             with open(self._state_file, "w", encoding="utf-8") as f:
-                json.dump({"enabled": self._enabled}, f, ensure_ascii=False, indent=2)
+                json.dump({
+                    "enabled": self._enabled,
+                    "ai_auto_summarize": self._ai_auto_summarize,
+                }, f, ensure_ascii=False, indent=2)
         except Exception as e:
             self._logger.error(f"保存状态文件失败: {e}")
     
@@ -161,6 +167,11 @@ class OpenSpaceManager:
     def enabled(self) -> bool:
         """是否启用"""
         return self._enabled
+    
+    @property
+    def ai_auto_summarize(self) -> bool:
+        """是否启用 AI 自动总结"""
+        return self._ai_auto_summarize
     
     def enable(self) -> None:
         """启用 OpenSpace"""
@@ -173,6 +184,18 @@ class OpenSpaceManager:
         self._enabled = False
         self._save_state()
         self._logger.info("OpenSpace 已禁用")
+    
+    def enable_ai_summarize(self) -> None:
+        """启用 AI 自动总结"""
+        self._ai_auto_summarize = True
+        self._save_state()
+        self._logger.info("AI 自动总结已启用")
+    
+    def disable_ai_summarize(self) -> None:
+        """禁用 AI 自动总结"""
+        self._ai_auto_summarize = False
+        self._save_state()
+        self._logger.info("AI 自动总结已禁用")
     
     def toggle(self) -> bool:
         """
@@ -192,12 +215,12 @@ class OpenSpaceManager:
         Returns:
             成功加载的经验数量
         """
-        if not self.skills_dir.exists():
-            self._logger.warning(f"经验目录不存在: {self.skills_dir}")
+        if not self.space_dir.exists():
+            self._logger.warning(f"经验目录不存在: {self.space_dir}")
             return 0
         
         loaded = 0
-        for exp_file in self.skills_dir.glob("*.json"):
+        for exp_file in self.space_dir.glob("*.json"):
             if exp_file.name == "open_space_state.json":
                 continue
             
@@ -227,7 +250,7 @@ class OpenSpaceManager:
             self._logger.error("经验 ID 不能为空")
             return False
         
-        exp_file = self.skills_dir / f"{experience.id}.json"
+        exp_file = self.space_dir / f"{experience.id}.json"
         
         try:
             with open(exp_file, "w", encoding="utf-8") as f:
@@ -251,7 +274,7 @@ class OpenSpaceManager:
         Returns:
             是否删除成功
         """
-        exp_file = self.skills_dir / f"{exp_id}.json"
+        exp_file = self.space_dir / f"{exp_id}.json"
         
         try:
             if exp_file.exists():
@@ -338,6 +361,7 @@ class OpenSpaceManager:
             "disabled": len(all_exp) - len(enabled_exp),
             "categories": categories,
             "is_enabled": self._enabled,
+            "ai_auto_summarize": self._ai_auto_summarize,
         }
     
     def create_experience(
@@ -383,12 +407,18 @@ class OpenSpaceManager:
 open_space_manager: OpenSpaceManager | None = None
 
 
-def get_open_space_manager(skills_dir: Path | None = None) -> OpenSpaceManager:
+def get_open_space_manager(space_dir: Path | None = None, working_dir: Path | None = None) -> OpenSpaceManager:
     """
     获取全局 OpenSpace 管理器实例
     
+    优先级：
+    1. 显式指定的 space_dir
+    2. 工作目录下的 .foxcode/space/
+    3. 用户主目录下的 ~/.foxcode/space/
+    
     Args:
-        skills_dir: 经验目录
+        space_dir: 经验目录（显式指定）
+        working_dir: 工作目录（用于查找项目级经验目录）
         
     Returns:
         OpenSpaceManager 实例
@@ -396,7 +426,30 @@ def get_open_space_manager(skills_dir: Path | None = None) -> OpenSpaceManager:
     global open_space_manager
     
     if open_space_manager is None:
-        open_space_manager = OpenSpaceManager(skills_dir)
+        # 确定经验目录
+        if space_dir is None:
+            # 优先使用项目目录下的 .foxcode/space/
+            if working_dir is not None:
+                project_space_dir = working_dir / ".foxcode" / "space"
+                if project_space_dir.exists():
+                    space_dir = project_space_dir
+                    logger.info(f"使用项目经验目录: {space_dir}")
+            
+            # 如果项目目录不存在，使用用户主目录
+            if space_dir is None:
+                space_dir = Path.home() / ".foxcode" / "space"
+        
+        open_space_manager = OpenSpaceManager(space_dir)
         open_space_manager.load_all()
     
     return open_space_manager
+
+
+def reset_open_space_manager() -> None:
+    """
+    重置全局 OpenSpace 管理器
+    
+    用于切换工作目录后重新加载经验
+    """
+    global open_space_manager
+    open_space_manager = None

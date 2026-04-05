@@ -476,9 +476,9 @@ class OpenSpaceConfig(BaseModel):
         default=True,
         description="是否启用 OpenSpace 功能，默认启用"
     )
-    skills_dir: str = Field(
+    space_dir: str = Field(
         default="",
-        description="经验文件存储目录，为空则使用 ~/.foxcode/skills/"
+        description="经验文件存储目录，为空则使用 ~/.foxcode/space/"
     )
     max_content_length: int = Field(
         default=500,

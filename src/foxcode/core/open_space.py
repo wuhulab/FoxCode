@@ -121,7 +121,7 @@ class OpenSpaceManager:
             skills_dir: 经验文件存储目录，默认为 ~/.foxcode/skills/
         """
         if skills_dir is None:
-            skills_dir = Path.home() / ".foxcode" / "skills"
+            skills_dir = Path.home() / ".foxcode" / "space"
         
         self.skills_dir = skills_dir
         self._experiences: dict[str, Experience] = {}

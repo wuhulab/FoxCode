@@ -181,6 +181,10 @@ foxcode -r
 | `/profile report` | 查看分析报告 |
 | `/security` | 运行安全扫描 |
 | `/security deps` | 扫描依赖漏洞（bug） |
+| `/topic` | 显示当前输出主题模式 |
+| `/topic default` | 切换到默认模式（完整输出） |
+| `/topic debug` | 切换到调试模式（详细输出） |
+| `/topic minimalism` | 切换到极简模式（精简输出） |
 | `/format [files]` | 格式化代码 |
 | `/refactor` | 获取重构建议 |
 | `/test gen <file>` | 生成测试用例 |

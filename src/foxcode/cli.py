@@ -28,7 +28,7 @@ from rich.syntax import Syntax
 
 from foxcode import __version__
 from foxcode.core.agent import FoxCodeAgent
-from foxcode.core.config import Config, ModelProvider, RunMode
+from foxcode.core.config import Config, ModelProvider, RunMode, OutputTopic
 from foxcode.core.session import Session
 from foxcode.core.process_watchdog import (
     ProcessWatchdog,
@@ -411,8 +411,16 @@ def _global_exception_hook(exc_type, exc_value, exc_traceback) -> None:
 sys.excepthook = _global_exception_hook
 
 
-def print_banner() -> None:
+def print_banner(config: Config | None = None) -> None:
     """打印欢迎横幅"""
+    # 检查是否为极简模式
+    if config and config.output_topic == OutputTopic.MINIMALISM:
+        # 极简模式：简洁输出
+        print("[run:foxcode 启动]")
+        print("[foxcode: 初始化完毕]")
+        return
+    
+    # 默认模式：完整横幅
     banner = """
     ███████╗ ██████╗ ██████╗  ██████╗ 
     ██╔════╝██╔════╝██╔═══██╗██╔════╝ 
@@ -515,6 +523,10 @@ foxcode --plan             # 规划模式
 - `/profile report` - 查看分析报告
 - `/security` - 运行安全扫描
 - `/security deps` - 扫描依赖漏洞
+- `/topic` - 显示当前输出主题模式
+- `/topic default` - 切换到默认模式（完整输出）
+- `/topic debug` - 切换到调试模式（详细输出）
+- `/topic minimalism` - 切换到极简模式（精简输出）
 - `/format [files]` - 格式化代码
 - `/refactor` - 获取重构建议
 - `/test gen <file>` - 生成测试用例
@@ -756,7 +768,7 @@ def run(
     # 直接处理提示
     if prompt:
         try:
-            asyncio.run(_run_single_prompt(agent, prompt))
+            asyncio.run(_run_single_prompt(agent, prompt, config))
         except Exception as e:
             logger.error(f"单次提示执行失败: {e}")
             _handle_unexpected_error(e)
@@ -786,33 +798,59 @@ def run(
         logger.info("FoxCode 运行结束")
 
 
-async def _run_single_prompt(agent: FoxCodeAgent, prompt: str) -> None:
+async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | None = None) -> None:
     """
     运行单次提示
     
     增强异常处理和日志记录
     """
-    print_banner()
+    print_banner(config)
     
-    console.print(f"\n[bold cyan]用户:[/bold cyan] {prompt}\n")
-    console.print("[bold green]FoxCode:[/bold green]")
+    # 极简模式输出
+    if config and config.output_topic == OutputTopic.MINIMALISM:
+        print(f">>{prompt}")
+        print("[foxcode]", end="")
+    else:
+        console.print(f"\n[bold cyan]用户:[/bold cyan] {prompt}\n")
+        console.print("[bold green]FoxCode:[/bold green]")
     
     try:
         await agent.initialize()
         
         async for chunk in agent.chat(prompt):
-            console.print(chunk, end="")
+            # 极简模式：直接打印
+            if config and config.output_topic == OutputTopic.MINIMALISM:
+                print(chunk, end="")
+            else:
+                console.print(chunk, end="")
         
-        console.print("\n")
+        # 极简模式：输出结束标记
+        if config and config.output_topic == OutputTopic.MINIMALISM:
+            print("\n[FoxCode end]")
+            # 显示 token 使用情况
+            try:
+                token_usage = agent.get_token_usage()
+                total_tokens = token_usage.get('total_tokens', 0)
+                print(f"[FoxCode | 模型:{config.model.model_name}| Token:{total_tokens} | 模式: {config.run_mode.value}]")
+            except Exception:
+                pass
+        else:
+            console.print("\n")
         
     except KeyboardInterrupt:
         logger.warning("单次提示执行被用户中断")
-        console.print("\n[yellow]执行被中断[/yellow]")
+        if config and config.output_topic == OutputTopic.MINIMALISM:
+            print("\n[中断]")
+        else:
+            console.print("\n[yellow]执行被中断[/yellow]")
     except Exception as e:
         # 记录详细错误信息，但不直接退出（由调用方决定是否退出）
         logger.error(f"单次提示执行失败: {type(e).__name__}: {e}")
         logger.debug(f"完整堆栈:\n{traceback.format_exc()}")
-        console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
+        if config and config.output_topic == OutputTopic.MINIMALISM:
+            print(f"\n[错误] {str(e)}")
+        else:
+            console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
         
         # 重新抛出异常，让调用方处理
         raise
@@ -828,7 +866,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.styles import Style as PromptStyle
     
-    print_banner()
+    print_banner(config)
     
     # 初始化代理
     try:
@@ -836,7 +874,10 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
         logger.info("代理初始化成功")
     except Exception as e:
         logger.error(f"代理初始化失败: {e}")
-        console.print(f"[red]初始化失败: {markup.escape(str(e))}[/red]")
+        if config.output_topic == OutputTopic.MINIMALISM:
+            print(f"[错误] 初始化失败: {str(e)}")
+        else:
+            console.print(f"[red]初始化失败: {markup.escape(str(e))}[/red]")
         return
     
     # 创建 prompt session
@@ -854,6 +895,10 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             total_tokens = token_usage.get('total_tokens', 0)
         except Exception:
             total_tokens = 0
+        
+        # 极简模式：简洁提示符
+        if config.output_topic == OutputTopic.MINIMALISM:
+            return f"[FoxCode | 模型:{config.model.model_name}| Token:{total_tokens} | 模式: {config.run_mode.value}]\n>>"
         
         return (
             f"[bold cyan]FoxCode[/bold cyan] | "
@@ -900,8 +945,12 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                 continue
             
             # 发送到 AI（添加性能监控）
-            console.print()
-            console.print("[bold green]FoxCode:[/bold green]")
+            # 极简模式：简洁输出
+            if config.output_topic == OutputTopic.MINIMALISM:
+                print("[foxcode]", end="")
+            else:
+                console.print()
+                console.print("[bold green]FoxCode:[/bold green]")
             
             # 记录请求开始时间
             request_start_time = time.time()
@@ -913,9 +962,23 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             
             try:
                 async for chunk in agent.chat(user_input):
-                    console.print(chunk, end="")
+                    # 极简模式：直接打印
+                    if config.output_topic == OutputTopic.MINIMALISM:
+                        print(chunk, end="")
+                    else:
+                        console.print(chunk, end="")
                 
-                console.print("\n")
+                # 极简模式：输出结束标记
+                if config.output_topic == OutputTopic.MINIMALISM:
+                    print("\n[FoxCode end]")
+                    try:
+                        token_usage = agent.get_token_usage()
+                        total_tokens = token_usage.get('total_tokens', 0)
+                        print(f"[FoxCode | 模型:{config.model.model_name}| Token:{total_tokens} | 模式: {config.run_mode.value}]")
+                    except Exception:
+                        pass
+                else:
+                    console.print("\n")
                 
                 # 计算响应时间并记录成功
                 response_time_ms = (time.time() - request_start_time) * 1000
@@ -946,7 +1009,10 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             
         except KeyboardInterrupt:
             logger.info("用户按下 Ctrl+C")
-            console.print("\n[yellow]使用 /exit 退出[/yellow]")
+            if config.output_topic == OutputTopic.MINIMALISM:
+                print("\n[提示] 使用 /exit 退出")
+            else:
+                console.print("\n[yellow]使用 /exit 退出[/yellow]")
             continue
         except EOFError:
             logger.info("收到 EOF (通常是因为管道关闭或用户输入结束)")
@@ -956,13 +1022,20 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             logger.error(f"交互错误 (第 {consecutive_errors}/{max_consecutive_errors} 次): {type(e).__name__}: {e}")
             logger.debug(f"错误堆栈:\n{traceback.format_exc()}")
             
-            console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
+            if config.output_topic == OutputTopic.MINIMALISM:
+                print(f"\n[错误] {str(e)}")
+            else:
+                console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
             
             # 如果连续错误过多，提示用户并询问是否继续
             if consecutive_errors >= max_consecutive_errors:
                 logger.critical(f"连续错误次数达到上限 ({max_consecutive_errors})，可能存在系统性问题")
-                console.print(f"\n[red]连续出现 {max_consecutive_errors} 次错误[/red]")
-                console.print("[yellow]建议保存会话并重启 FoxCode[/yellow]")
+                if config.output_topic == OutputTopic.MINIMALISM:
+                    print(f"\n[警告] 连续出现 {max_consecutive_errors} 次错误")
+                    print("[提示] 建议保存会话并重启 FoxCode")
+                else:
+                    console.print(f"\n[red]连续出现 {max_consecutive_errors} 次错误[/red]")
+                    console.print("[yellow]建议保存会话并重启 FoxCode[/yellow]")
                 
                 try:
                     # 尝试保存会话
@@ -1139,6 +1212,9 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
     
     elif cmd_name == "/space":
         _handle_space_command(agent, config, cmd_arg)
+    
+    elif cmd_name == "/topic":
+        _handle_topic_command(agent, config, cmd_arg)
     
     else:
         console.print(f"[yellow]未知命令: {cmd_name}[/yellow]")
@@ -2825,3 +2901,65 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         console.print(f"[red]OpenSpace 模块加载失败: {e}[/red]")
     except Exception as e:
         console.print(f"[red]OpenSpace 操作失败: {markup.escape(str(e))}[/red]")
+
+
+def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
+    """
+    处理 /topic 命令
+    
+    切换输出主题模式
+    
+    用法:
+        /topic              - 显示当前输出主题模式
+        /topic default      - 切换到默认模式（完整输出）
+        /topic debug        - 切换到调试模式（详细输出）
+        /topic minimalism   - 切换到极简模式（精简输出）
+    """
+    try:
+        # 解析子命令
+        if cmd_arg:
+            sub_cmd = cmd_arg.lower().strip()
+        else:
+            sub_cmd = None
+        
+        # 切换到指定模式
+        if sub_cmd == "default":
+            config.output_topic = OutputTopic.DEFAULT
+            console.print("[green]✅ 已切换到默认模式（完整输出）[/green]")
+            return
+        
+        elif sub_cmd == "debug":
+            config.output_topic = OutputTopic.DEBUG
+            config.debug = True
+            config.log_level = "DEBUG"
+            logging.getLogger().setLevel(logging.DEBUG)
+            console.print("[green]✅ 已切换到调试模式（详细输出）[/green]")
+            return
+        
+        elif sub_cmd == "minimalism":
+            config.output_topic = OutputTopic.MINIMALISM
+            console.print("[green]✅ 已切换到极简模式（精简输出）[/green]")
+            console.print("[dim]命令行将只输出与用户交互的核心内容[/dim]")
+            return
+        
+        # 显示当前模式状态
+        current_topic = config.output_topic.value
+        topic_desc = {
+            OutputTopic.DEFAULT.value: "默认模式（完整输出）",
+            OutputTopic.DEBUG.value: "调试模式（详细输出）",
+            OutputTopic.MINIMALISM.value: "极简模式（精简输出）",
+        }
+        
+        console.print(Panel(
+            f"[bold]当前模式:[/bold] {topic_desc.get(current_topic, current_topic)}\n\n"
+            f"[bold]可用模式:[/bold]\n"
+            f"  [cyan]default[/cyan]    - 默认模式（完整输出）\n"
+            f"  [cyan]debug[/cyan]      - 调试模式（详细输出）\n"
+            f"  [cyan]minimalism[/cyan] - 极简模式（精简输出）\n\n"
+            f"[dim]用法: /topic [default|debug|minimalism][/dim]",
+            title="📋 输出主题模式",
+            style="cyan",
+        ))
+    
+    except Exception as e:
+        console.print(f"[red]切换输出模式失败: {markup.escape(str(e))}[/red]")

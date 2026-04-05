@@ -45,6 +45,20 @@ class RunMode(str, Enum):
     PLAN = "plan"                # 规划模式，只读
 
 
+class OutputTopic(str, Enum):
+    """
+    输出主题模式
+    
+    控制命令行输出的详细程度和格式：
+    - DEFAULT: 默认模式，显示完整信息
+    - DEBUG: 调试模式，显示详细调试信息
+    - MINIMALISM: 极简模式，只输出与用户交互的核心内容
+    """
+    DEFAULT = "default"      # 默认模式，完整输出
+    DEBUG = "debug"          # 调试模式，详细输出
+    MINIMALISM = "minimalism"  # 极简模式，精简输出
+
+
 class AgentRole(str, Enum):
     """
     代理角色枚举
@@ -513,6 +527,10 @@ class Config(BaseSettings):
     run_mode: RunMode = RunMode.DEFAULT
     debug: bool = False
     log_level: str = "INFO"
+    output_topic: OutputTopic = Field(
+        default=OutputTopic.DEFAULT,
+        description="输出主题模式: default, debug, minimalism"
+    )
     
     # 子配置
     model: ModelConfig = Field(default_factory=ModelConfig)

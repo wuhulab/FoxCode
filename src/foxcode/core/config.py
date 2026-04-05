@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -688,3 +689,88 @@ class Config(BaseSettings):
     def ensure_directories(self) -> None:
         """确保必要的目录存在"""
         self.session_dir.mkdir(parents=True, exist_ok=True)
+    
+    def get_config_file_path(self) -> Path:
+        """
+        获取配置文件路径
+        
+        优先级：
+        1. 项目级配置文件 (.foxcode.toml)
+        2. 用户级配置文件 (~/.foxcode/config.toml)
+        
+        Returns:
+            配置文件路径
+        """
+        # 先检查项目级配置文件
+        project_config = self.working_dir / ".foxcode.toml"
+        if project_config.exists():
+            return project_config
+        
+        # 再检查用户级配置文件
+        user_config = Path.home() / ".foxcode" / "config.toml"
+        if user_config.exists():
+            return user_config
+        
+        # 默认使用用户级配置文件
+        user_config.parent.mkdir(parents=True, exist_ok=True)
+        return user_config
+    
+    def save_output_topic(self, topic: "OutputTopic") -> bool:
+        """
+        保存 output_topic 设置到配置文件
+        
+        Args:
+            topic: 输出主题模式
+            
+        Returns:
+            是否保存成功
+        """
+        try:
+            config_path = self.get_config_file_path()
+            
+            # 读取现有配置
+            existing_config = {}
+            if config_path.exists():
+                with open(config_path, "rb") as f:
+                    existing_config = tomllib.load(f)
+            
+            # 更新 output_topic
+            if "output_topic" not in existing_config:
+                existing_config["output_topic"] = topic.value
+            else:
+                existing_config["output_topic"] = topic.value
+            
+            # 写入配置文件
+            try:
+                import tomli_w
+            except ImportError:
+                # 如果没有 tomli_w，使用简单的格式写入
+                with open(config_path, "w", encoding="utf-8") as f:
+                    f.write(f'# FoxCode 配置文件\n')
+                    f.write(f'# 自动生成于 {time.strftime("%Y-%m-%d %H:%M:%S")}\n\n')
+                    for key, value in existing_config.items():
+                        if isinstance(value, str):
+                            f.write(f'{key} = "{value}"\n')
+                        elif isinstance(value, (int, float, bool)):
+                            f.write(f'{key} = {value}\n')
+                        elif isinstance(value, list):
+                            f.write(f'{key} = {value}\n')
+                        elif isinstance(value, dict):
+                            f.write(f'\n[{key}]\n')
+                            for k, v in value.items():
+                                if isinstance(v, str):
+                                    f.write(f'{k} = "{v}"\n')
+                                elif isinstance(v, (int, float, bool)):
+                                    f.write(f'{k} = {v}\n')
+                                else:
+                                    f.write(f'{k} = {v}\n')
+                return True
+            
+            with open(config_path, "wb") as f:
+                tomli_w.dump(existing_config, f)
+            
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"保存配置失败: {e}")
+            return False

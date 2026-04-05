@@ -2907,7 +2907,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     """
     处理 /topic 命令
     
-    切换输出主题模式
+    切换输出主题模式，并保存到配置文件
     
     用法:
         /topic              - 显示当前输出主题模式
@@ -2925,7 +2925,12 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         # 切换到指定模式
         if sub_cmd == "default":
             config.output_topic = OutputTopic.DEFAULT
-            console.print("[green]✅ 已切换到默认模式（完整输出）[/green]")
+            # 保存配置到文件
+            if config.save_output_topic(OutputTopic.DEFAULT):
+                console.print("[green]✅ 已切换到默认模式（完整输出）并保存配置[/green]")
+            else:
+                console.print("[green]✅ 已切换到默认模式（完整输出）[/green]")
+                console.print("[yellow]⚠️ 配置保存失败，下次启动将恢复默认设置[/yellow]")
             return
         
         elif sub_cmd == "debug":
@@ -2933,13 +2938,22 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             config.debug = True
             config.log_level = "DEBUG"
             logging.getLogger().setLevel(logging.DEBUG)
-            console.print("[green]✅ 已切换到调试模式（详细输出）[/green]")
+            # 保存配置到文件
+            if config.save_output_topic(OutputTopic.DEBUG):
+                console.print("[green]✅ 已切换到调试模式（详细输出）并保存配置[/green]")
+            else:
+                console.print("[green]✅ 已切换到调试模式（详细输出）[/green]")
+                console.print("[yellow]⚠️ 配置保存失败，下次启动将恢复默认设置[/yellow]")
             return
         
         elif sub_cmd == "minimalism":
             config.output_topic = OutputTopic.MINIMALISM
-            console.print("[green]✅ 已切换到极简模式（精简输出）[/green]")
-            console.print("[dim]命令行将只输出与用户交互的核心内容[/dim]")
+            # 保存配置到文件
+            if config.save_output_topic(OutputTopic.MINIMALISM):
+                print("[OK] 已切换到极简模式（精简输出）并保存配置")
+            else:
+                print("[OK] 已切换到极简模式（精简输出）")
+                print("[WARN] 配置保存失败，下次启动将恢复默认设置")
             return
         
         # 显示当前模式状态
@@ -2950,16 +2964,27 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             OutputTopic.MINIMALISM.value: "极简模式（精简输出）",
         }
         
+        # 极简模式：简洁输出
+        if config.output_topic == OutputTopic.MINIMALISM:
+            print(f"[topic] 当前模式: {topic_desc.get(current_topic, current_topic)}")
+            print("[topic] 可用模式: default, debug, minimalism")
+            print("[topic] 用法: /topic [default|debug|minimalism]")
+            return
+        
         console.print(Panel(
             f"[bold]当前模式:[/bold] {topic_desc.get(current_topic, current_topic)}\n\n"
             f"[bold]可用模式:[/bold]\n"
             f"  [cyan]default[/cyan]    - 默认模式（完整输出）\n"
             f"  [cyan]debug[/cyan]      - 调试模式（详细输出）\n"
             f"  [cyan]minimalism[/cyan] - 极简模式（精简输出）\n\n"
-            f"[dim]用法: /topic [default|debug|minimalism][/dim]",
+            f"[dim]用法: /topic [default|debug|minimalism][/dim]\n"
+            f"[dim]设置会自动保存到配置文件[/dim]",
             title="📋 输出主题模式",
             style="cyan",
         ))
     
     except Exception as e:
-        console.print(f"[red]切换输出模式失败: {markup.escape(str(e))}[/red]")
+        if config.output_topic == OutputTopic.MINIMALISM:
+            print(f"[错误] 切换输出模式失败: {str(e)}")
+        else:
+            console.print(f"[red]切换输出模式失败: {markup.escape(str(e))}[/red]")

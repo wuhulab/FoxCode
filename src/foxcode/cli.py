@@ -703,6 +703,24 @@ foxcode --plan             # 规划模式
 - `/update info` - 显示当前版本信息
 - `/update prerelease` - 检查预发布版本
 
+### MCP 安装命令
+
+MCP (Model Context Protocol) 安装管理，支持从 GitHub URL 安装 Skills 和 MCP 服务器。
+
+- `/mcp <github_url>` - 从 GitHub URL 安装 MCP/Skills
+- `/mcp <url> --force` - 强制重新安装（覆盖已存在的）
+- `/mcp list` - 列出已安装的 MCP 和 Skills
+- `/mcp skills` - 列出已安装的 Skills
+- `/mcp servers` - 列出已安装的 MCP 服务器
+- `/mcp uninstall <name>` - 卸载指定的 MCP 或 Skill
+
+示例：
+```
+/mcp https://github.com/htdt/godogen
+```
+
+安装后，Skills 会自动加载到系统提示中，AI 可以根据需要调用。
+
 ### 工作流程命令
 
 - `/workflow` 或 `/wf` - 工作流程管理
@@ -1459,6 +1477,11 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
     
     elif cmd_name == "/topic":
         _handle_topic_command(agent, config, cmd_arg)
+    
+    # ==================== MCP 安装命令 ====================
+    
+    elif cmd_name == "/mcp":
+        _handle_mcp_command(agent, config, cmd_arg)
     
     # ==================== 版本更新命令 ====================
     
@@ -3245,6 +3268,207 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             print(f"[错误] 切换输出模式失败: {str(e)}")
         else:
             console.print(f"[red]切换输出模式失败: {markup.escape(str(e))}[/red]")
+
+
+def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
+    """
+    处理 /mcp 命令
+    
+    MCP 服务器和 Skills 安装管理
+    
+    用法:
+        /mcp <github_url>        - 从 GitHub URL 安装 MCP/Skills
+        /mcp <url> --force       - 强制重新安装（覆盖已存在的）
+        /mcp list                - 列出已安装的 MCP 和 Skills
+        /mcp skills              - 列出已安装的 Skills
+        /mcp servers             - 列出已安装的 MCP 服务器
+        /mcp uninstall <name>    - 卸载指定的 MCP 或 Skill
+    """
+    import asyncio
+    
+    try:
+        from foxcode.core.mcp_installer import get_installer, InstallStatus
+        
+        installer = get_installer(config.working_dir)
+        
+        # 极简模式检查
+        is_minimalism = config.output_topic == OutputTopic.MINIMALISM
+        
+        # 解析命令参数
+        if not cmd_arg:
+            # 显示帮助
+            if is_minimalism:
+                print("[mcp] MCP 安装管理")
+                print("用法:")
+                print("  /mcp <github_url>     - 从 GitHub 安装")
+                print("  /mcp list             - 列出已安装")
+                print("  /mcp uninstall <name> - 卸载")
+            else:
+                console.print(Panel(
+                    "[bold]/mcp[/bold] - MCP 服务器和 Skills 安装管理\n\n"
+                    "[bold]用法:[/bold]\n"
+                    "  [cyan]/mcp <github_url>[/cyan]        - 从 GitHub URL 安装 MCP/Skills\n"
+                    "  [cyan]/mcp <url> --force[/cyan]       - 强制重新安装（覆盖已存在的）\n"
+                    "  [cyan]/mcp list[/cyan]                - 列出已安装的 MCP 和 Skills\n"
+                    "  [cyan]/mcp skills[/cyan]              - 列出已安装的 Skills\n"
+                    "  [cyan]/mcp servers[/cyan]             - 列出已安装的 MCP 服务器\n"
+                    "  [cyan]/mcp uninstall <name>[/cyan]    - 卸载指定的 MCP 或 Skill\n\n"
+                    "[bold]示例:[/bold]\n"
+                    "  [dim]/mcp https://github.com/htdt/godogen[/dim]",
+                    title="MCP 安装管理",
+                    style="cyan",
+                ))
+            return
+        
+        # 解析子命令
+        parts = cmd_arg.split()
+        first_arg = parts[0]
+        force = "--force" in parts or "-f" in parts
+        
+        # 列出已安装
+        if first_arg == "list":
+            skills = installer.list_installed_skills()
+            servers = installer.list_installed_mcp_servers()
+            
+            if is_minimalism:
+                print(f"[mcp] 已安装: {len(skills)} skills, {len(servers)} servers")
+                for skill in skills:
+                    print(f"  skill: {skill.name}")
+                for server in servers:
+                    print(f"  server: {server.name}")
+            else:
+                from rich.table import Table
+                table = Table(title="已安装的 MCP 和 Skills")
+                table.add_column("类型", style="cyan")
+                table.add_column("名称", style="green")
+                table.add_column("描述", style="dim")
+                
+                for skill in skills:
+                    table.add_row("Skill", skill.name, skill.description[:50] if skill.description else "")
+                
+                for server in servers:
+                    table.add_row("MCP Server", server.name, str(server.path))
+                
+                console.print(table)
+            return
+        
+        # 列出 Skills
+        if first_arg == "skills":
+            skills = installer.list_installed_skills()
+            
+            if is_minimalism:
+                print(f"[mcp] 已安装 Skills: {len(skills)}")
+                for skill in skills:
+                    print(f"  {skill.name}: {skill.description[:50] if skill.description else ''}")
+            else:
+                from rich.table import Table
+                table = Table(title="已安装的 Skills")
+                table.add_column("名称", style="green")
+                table.add_column("描述", style="dim")
+                table.add_column("路径", style="cyan")
+                
+                for skill in skills:
+                    table.add_row(skill.name, skill.description[:50] if skill.description else "", str(skill.path))
+                
+                console.print(table)
+            return
+        
+        # 列出 MCP 服务器
+        if first_arg == "servers":
+            servers = installer.list_installed_mcp_servers()
+            
+            if is_minimalism:
+                print(f"[mcp] 已安装 MCP 服务器: {len(servers)}")
+                for server in servers:
+                    print(f"  {server.name}")
+            else:
+                from rich.table import Table
+                table = Table(title="已安装的 MCP 服务器")
+                table.add_column("名称", style="green")
+                table.add_column("路径", style="cyan")
+                
+                for server in servers:
+                    table.add_row(server.name, str(server.path))
+                
+                console.print(table)
+            return
+        
+        # 卸载
+        if first_arg == "uninstall":
+            if len(parts) < 2:
+                console.print("[red]请指定要卸载的名称[/red]")
+                return
+            
+            name = parts[1]
+            
+            # 尝试卸载 Skill
+            if installer.uninstall_skill(name):
+                console.print(f"[green]✅ 已卸载 Skill: {name}[/green]")
+                return
+            
+            # 尝试卸载 MCP 服务器
+            if installer.uninstall_mcp_server(name):
+                console.print(f"[green]✅ 已卸载 MCP 服务器: {name}[/green]")
+                return
+            
+            console.print(f"[red]未找到: {name}[/red]")
+            return
+        
+        # 检查是否是 GitHub URL
+        if first_arg.startswith("https://github.com/") or first_arg.startswith("http://github.com/"):
+            url = first_arg
+            
+            if is_minimalism:
+                print(f"[mcp] 正在安装: {url}")
+            else:
+                console.print(f"[cyan]正在从 GitHub 安装: {url}[/cyan]")
+            
+            # 执行安装
+            async def do_install():
+                return await installer.install_from_url(url, force=force)
+            
+            result = asyncio.run(do_install())
+            
+            # 显示结果
+            if result.status == InstallStatus.COMPLETED:
+                if is_minimalism:
+                    print(f"[mcp] 安装成功: {result.message}")
+                else:
+                    console.print(f"[green]✅ 安装成功![/green]")
+                    console.print(f"[dim]路径: {result.target_path}[/dim]")
+                    
+                    if result.skills:
+                        console.print(f"\n[bold]已安装的 Skills:[/bold]")
+                        for skill in result.skills:
+                            console.print(f"  - [cyan]{skill.name}[/cyan]: {skill.description[:50]}")
+                    
+                    if result.mcp_servers:
+                        console.print(f"\n[bold]已安装的 MCP 服务器:[/bold]")
+                        for server in result.mcp_servers:
+                            console.print(f"  - [cyan]{server.name}[/cyan]")
+            
+            elif result.status == InstallStatus.ALREADY_EXISTS:
+                if is_minimalism:
+                    print(f"[mcp] 已存在: {result.message}")
+                else:
+                    console.print(f"[yellow]⚠️ {result.message}[/yellow]")
+            
+            else:
+                if is_minimalism:
+                    print(f"[mcp] 安装失败: {result.error}")
+                else:
+                    console.print(f"[red]❌ 安装失败: {result.error}[/red]")
+            
+            return
+        
+        # 未知命令
+        console.print(f"[red]未知参数: {first_arg}[/red]")
+        console.print("[dim]使用 /mcp 查看帮助[/dim]")
+        
+    except ImportError as e:
+        console.print(f"[red]MCP 安装器模块加载失败: {e}[/red]")
+    except Exception as e:
+        console.print(f"[red]处理 /mcp 命令失败: {markup.escape(str(e))}[/red]")
 
 
 def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:

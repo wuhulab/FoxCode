@@ -455,19 +455,68 @@ class SkillManager:
         """
         获取所有技能的提示注入
         
+        在开头列出所有可用的 skills 文件名，让 AI 决定要调用什么
+        
         Returns:
             合并后的提示注入内容
         """
+        if not self._skills:
+            return ""
+        
+        lines = []
+        lines.append("## Available Skills")
+        lines.append("")
+        
+        # 在开头列出所有可用的 skills 文件名
+        lines.append("**可用的 Skills (使用 Skill 工具调用):**")
+        lines.append("")
+        
+        for skill in self._skills.values():
+            status = "✅" if skill.state != SkillState.DISABLED else "❌"
+            desc = skill.description[:60] if skill.description else "无描述"
+            lines.append(f"- {status} `{skill.name}`: {desc}")
+        
+        lines.append("")
+        lines.append("**调用方式:** 使用 Skill 工具，传入 skill 名称即可激活对应的技能。")
+        lines.append("**示例:** `Skill(name=\"error-solver\")` 将激活错误解决技能。")
+        lines.append("")
+        
+        # 添加每个 skill 的详细提示
         injections = []
         for skill in self._skills.values():
             injection = skill.get_prompt_injection()
             if injection:
                 injections.append(f"### {skill.name}\n{injection}")
         
-        if not injections:
-            return ""
+        if injections:
+            lines.append("---")
+            lines.append("")
+            lines.append("## Skills 详细说明")
+            lines.append("")
+            lines.append("\n\n".join(injections))
         
-        return "## Available Skills\n\n" + "\n\n".join(injections)
+        return "\n".join(lines)
+    
+    def get_skill_names(self) -> list[str]:
+        """
+        获取所有已注册的 skill 名称列表
+        
+        Returns:
+            skill 名称列表
+        """
+        return list(self._skills.keys())
+    
+    def get_enabled_skill_names(self) -> list[str]:
+        """
+        获取所有启用的 skill 名称列表
+        
+        Returns:
+            启用的 skill 名称列表
+        """
+        return [
+            name for name, skill in self._skills.items()
+            if skill.state != SkillState.DISABLED
+        ]
     
     def get_all_tool_definitions(self) -> list[dict[str, Any]]:
         """
@@ -485,6 +534,8 @@ class SkillManager:
         """
         从目录加载技能
         
+        支持 Python skill 文件 (.py) 和 Markdown skill 文件 (.md)
+        
         Args:
             directory: 技能目录
             
@@ -496,6 +547,8 @@ class SkillManager:
             return 0
         
         loaded = 0
+        
+        # 加载 Python skill 文件
         for skill_file in directory.glob("**/skill.py"):
             try:
                 skill = await self._load_skill_from_file(skill_file)
@@ -504,7 +557,81 @@ class SkillManager:
             except Exception as e:
                 self._logger.error(f"Failed to load skill from {skill_file}: {e}")
         
+        # 加载 Markdown skill 文件 (.foxcode/skills/**/*.md)
+        for skill_file in directory.glob("**/*.md"):
+            try:
+                skill = self._load_skill_from_markdown(skill_file)
+                if skill and self.register(skill):
+                    loaded += 1
+            except Exception as e:
+                self._logger.error(f"Failed to load skill from markdown {skill_file}: {e}")
+        
         return loaded
+    
+    def _load_skill_from_markdown(self, file_path: Path) -> BaseSkill | None:
+        """
+        从 Markdown 文件加载技能
+        
+        Markdown skill 文件格式:
+        - 文件名作为 skill 名称
+        - 第一行标题 (# xxx) 作为 skill 名称（可选）
+        - 内容作为 skill 提示注入
+        
+        Args:
+            file_path: Markdown 文件路径
+            
+        Returns:
+            技能实例
+        """
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            
+            # 提取名称
+            name = file_path.stem
+            
+            # 尝试从第一行标题提取名称
+            lines = content.split("\n")
+            for line in lines[:5]:
+                if line.startswith("# "):
+                    name = line[2:].strip()
+                    break
+            
+            # 提取描述（第一个非标题非空行）
+            description = ""
+            for line in lines[1:10]:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    description = line[:200]
+                    break
+            
+            # 创建动态 skill 类
+            class MarkdownSkill(BaseSkill):
+                pass
+            
+            MarkdownSkill.name = name.lower().replace(" ", "-").replace("_", "-")
+            MarkdownSkill.description = description or f"Skill from {file_path.name}"
+            MarkdownSkill.version = "1.0.0"
+            MarkdownSkill.priority = SkillPriority.NORMAL
+            MarkdownSkill.trigger = SkillTrigger.MANUAL
+            
+            # 存储原始内容
+            MarkdownSkill._markdown_content = content
+            MarkdownSkill._markdown_file = file_path
+            
+            def get_prompt_injection(self) -> str | None:
+                return self._markdown_content
+            
+            async def execute(self, context: SkillContext) -> SkillResult:
+                return SkillResult.ok(f"Skill '{self.name}' activated from {self._markdown_file}")
+            
+            MarkdownSkill.get_prompt_injection = get_prompt_injection
+            MarkdownSkill.execute = execute
+            
+            return MarkdownSkill()
+            
+        except Exception as e:
+            self._logger.error(f"Failed to parse markdown skill {file_path}: {e}")
+            return None
     
     async def _load_skill_from_file(self, file_path: Path) -> BaseSkill | None:
         """

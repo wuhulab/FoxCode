@@ -499,6 +499,14 @@ foxcode --plan             # 规划模式
 - `/stats` - 显示性能统计（响应时间、成功率、内存使用等）
 - `/health` - 显示完整健康状态报告（资源使用、运行时间、监控状态）
 
+### 版本更新命令
+
+- `/update` - 检查并更新到最新版本
+- `/update check` - 仅检查更新，不自动安装
+- `/update list` - 列出最近的版本发布
+- `/update info` - 显示当前版本信息
+- `/update prerelease` - 检查预发布版本
+
 ### 工作流程命令
 
 - `/workflow` 或 `/wf` - 工作流程管理
@@ -1226,6 +1234,11 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
     
     elif cmd_name == "/topic":
         _handle_topic_command(agent, config, cmd_arg)
+    
+    # ==================== 版本更新命令 ====================
+    
+    elif cmd_name == "/update":
+        _handle_update_command(agent, config, cmd_arg)
     
     else:
         console.print(f"[yellow]未知命令: {cmd_name}[/yellow]")
@@ -3000,3 +3013,262 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             print(f"[错误] 切换输出模式失败: {str(e)}")
         else:
             console.print(f"[red]切换输出模式失败: {markup.escape(str(e))}[/red]")
+
+
+def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
+    """
+    处理 /update 命令
+    
+    版本更新管理
+    
+    用法:
+        /update              - 检查并更新到最新版本
+        /update check        - 仅检查更新，不自动安装
+        /update list         - 列出最近的版本发布
+        /update info         - 显示当前版本信息
+        /update prerelease   - 检查预发布版本
+    """
+    try:
+        from foxcode.core.updater import (
+            FoxCodeUpdater,
+            UpdateStatus,
+            VersionComparator,
+        )
+        from foxcode import __version__
+        
+        # 解析子命令
+        if cmd_arg:
+            parts = cmd_arg.split(maxsplit=1)
+            sub_cmd = parts[0].lower()
+            sub_arg = parts[1] if len(parts) > 1 else None
+        else:
+            sub_cmd = None
+            sub_arg = None
+        
+        # 极简模式检查
+        is_minimalism = config.output_topic == OutputTopic.MINIMALISM
+        
+        # 显示当前版本信息
+        if sub_cmd == "info":
+            if is_minimalism:
+                print(f"[update] 当前版本: {__version__}")
+                print(f"[update] 仓库: https://github.com/wuhulab/FoxCode")
+            else:
+                console.print(Panel(
+                    f"[bold]当前版本:[/bold] {__version__}\n"
+                    f"[bold]仓库地址:[/bold] https://github.com/wuhulab/FoxCode\n"
+                    f"[bold]发布页面:[/bold] https://github.com/wuhulab/FoxCode/releases\n\n"
+                    f"[dim]使用 /update check 检查更新[/dim]",
+                    title="📦 FoxCode 版本信息",
+                    style="cyan",
+                ))
+            return
+        
+        # 列出最近的版本发布
+        if sub_cmd == "list":
+            if is_minimalism:
+                print("[update] 正在获取版本列表...")
+            else:
+                console.print("[cyan]正在获取版本列表...[/cyan]")
+            
+            updater = FoxCodeUpdater()
+            releases = updater.client.get_releases(limit=10)
+            
+            if not releases:
+                if is_minimalism:
+                    print("[update] 无法获取版本列表")
+                else:
+                    console.print("[yellow]无法获取版本列表[/yellow]")
+                return
+            
+            if is_minimalism:
+                print(f"[update] 找到 {len(releases)} 个版本:")
+                for release in releases[:5]:
+                    current = " (当前)" if release.version == __version__ else ""
+                    pre = " [预发布]" if release.prerelease else ""
+                    print(f"  - {release.version}{current}{pre}")
+            else:
+                from rich.table import Table
+                table = Table(title="📋 FoxCode 版本发布列表")
+                table.add_column("版本", style="cyan")
+                table.add_column("状态", style="green")
+                table.add_column("发布时间", style="yellow")
+                table.add_column("类型", style="magenta")
+                
+                for release in releases[:10]:
+                    status = "✅ 当前" if release.version == __version__ else ""
+                    release_type = "预发布" if release.prerelease else "正式版"
+                    pub_date = release.published_at[:10] if release.published_at else "-"
+                    
+                    table.add_row(
+                        release.version,
+                        status,
+                        pub_date,
+                        release_type,
+                    )
+                
+                console.print(table)
+            return
+        
+        # 检查更新（不自动安装）
+        if sub_cmd == "check":
+            if is_minimalism:
+                print(f"[update] 当前版本: {__version__}")
+                print("[update] 正在检查更新...")
+            else:
+                console.print(f"[cyan]当前版本: {__version__}[/cyan]")
+                console.print("[cyan]正在检查更新...[/cyan]")
+            
+            include_prerelease = sub_cmd == "prerelease"
+            updater = FoxCodeUpdater(include_prerelease=include_prerelease)
+            result = updater.check_for_updates()
+            
+            if result.status == UpdateStatus.UP_TO_DATE:
+                if is_minimalism:
+                    print(f"[update] 已是最新版本: {result.latest_version}")
+                else:
+                    console.print(f"[green]✅ 已是最新版本: {result.latest_version}[/green]")
+            
+            elif result.status == UpdateStatus.UPDATE_AVAILABLE:
+                release = result.release_info
+                if is_minimalism:
+                    print(f"[update] 发现新版本: {result.latest_version}")
+                    print(f"[update] 发布时间: {release.published_at[:10] if release else '-'}")
+                    print("[update] 使用 /update 进行更新")
+                else:
+                    file_size = release.get_file_size() if release else 0
+                    size_str = f"{file_size / 1024 / 1024:.1f} MB" if file_size > 0 else "未知"
+                    
+                    console.print(Panel(
+                        f"[bold]新版本:[/bold] {result.latest_version}\n"
+                        f"[bold]当前版本:[/bold] {__version__}\n"
+                        f"[bold]发布时间:[/bold] {release.published_at[:10] if release else '-'}\n"
+                        f"[bold]下载大小:[/bold] {size_str}\n\n"
+                        f"[bold]更新说明:[/bold]\n{release.body[:300] + '...' if release and release.body else '无'}\n\n"
+                        f"[dim]使用 /update 进行更新[/dim]",
+                        title="🔄 发现新版本",
+                        style="yellow",
+                    ))
+            
+            else:
+                if is_minimalism:
+                    print(f"[update] 检查失败: {result.error or result.message}")
+                else:
+                    console.print(f"[red]检查更新失败: {result.error or result.message}[/red]")
+            return
+        
+        # 检查预发布版本
+        if sub_cmd == "prerelease":
+            if is_minimalism:
+                print(f"[update] 当前版本: {__version__}")
+                print("[update] 正在检查预发布版本...")
+            else:
+                console.print(f"[cyan]当前版本: {__version__}[/cyan]")
+                console.print("[cyan]正在检查预发布版本...[/cyan]")
+            
+            updater = FoxCodeUpdater(include_prerelease=True)
+            result = updater.check_for_updates()
+            
+            if result.status == UpdateStatus.UP_TO_DATE:
+                if is_minimalism:
+                    print(f"[update] 已是最新版本: {result.latest_version}")
+                else:
+                    console.print(f"[green]✅ 已是最新版本: {result.latest_version}[/green]")
+            
+            elif result.status == UpdateStatus.UPDATE_AVAILABLE:
+                release = result.release_info
+                if is_minimalism:
+                    print(f"[update] 发现新版本: {result.latest_version} (预发布)")
+                    print("[update] 使用 /update 进行更新")
+                else:
+                    console.print(Panel(
+                        f"[bold]新版本:[/bold] {result.latest_version} (预发布)\n"
+                        f"[bold]当前版本:[/bold] {__version__}\n"
+                        f"[bold]发布时间:[/bold] {release.published_at[:10] if release else '-'}\n\n"
+                        f"[dim]使用 /update 进行更新[/dim]",
+                        title="🔄 发现预发布版本",
+                        style="yellow",
+                    ))
+            
+            else:
+                if is_minimalism:
+                    print(f"[update] 检查失败: {result.error or result.message}")
+                else:
+                    console.print(f"[red]检查更新失败: {result.error or result.message}[/red]")
+            return
+        
+        # 默认：检查并更新
+        if is_minimalism:
+            print(f"[update] 当前版本: {__version__}")
+            print("[update] 正在检查更新...")
+        else:
+            console.print(f"[cyan]当前版本: {__version__}[/cyan]")
+            console.print("[cyan]正在检查更新...[/cyan]")
+        
+        updater = FoxCodeUpdater()
+        
+        # 定义进度回调
+        def progress_callback(stage: str, progress: float):
+            if is_minimalism:
+                print(f"[update] {stage} ({progress*100:.0f}%)")
+            else:
+                console.print(f"[dim]{stage} ({progress*100:.0f}%)[/dim]")
+        
+        result = updater.update(progress_callback)
+        
+        if result.status == UpdateStatus.UP_TO_DATE:
+            if is_minimalism:
+                print(f"[update] 已是最新版本: {result.latest_version}")
+            else:
+                console.print(f"[green]✅ 已是最新版本: {result.latest_version}[/green]")
+        
+        elif result.status == UpdateStatus.UPDATE_SUCCESS:
+            if is_minimalism:
+                print(f"[update] 更新成功: {result.latest_version}")
+                print("[update] 请重启 FoxCode 以完成更新")
+            else:
+                console.print(Panel(
+                    f"[bold green]✅ 更新成功！[/bold green]\n\n"
+                    f"[bold]新版本:[/bold] {result.latest_version}\n"
+                    f"[bold]旧版本:[/bold] {__version__}\n\n"
+                    f"[yellow]请重启 FoxCode 以完成更新[/yellow]",
+                    title="🎉 更新完成",
+                    style="green",
+                ))
+        
+        elif result.status == UpdateStatus.UPDATE_AVAILABLE:
+            # 有更新但无法自动安装（可能没有对应的更新包）
+            release = result.release_info
+            if is_minimalism:
+                print(f"[update] 发现新版本: {result.latest_version}")
+                print("[update] 请手动下载更新:")
+                if release:
+                    print(f"[update] {release.html_url}")
+            else:
+                console.print(Panel(
+                    f"[bold]新版本:[/bold] {result.latest_version}\n"
+                    f"[bold]当前版本:[/bold] {__version__}\n\n"
+                    f"[yellow]自动更新不可用，请手动下载更新[/yellow]\n\n"
+                    f"[dim]下载地址: {release.html_url if release else 'https://github.com/wuhulab/FoxCode/releases'}[/dim]",
+                    title="🔄 发现新版本",
+                    style="yellow",
+                ))
+        
+        else:
+            if is_minimalism:
+                print(f"[update] 更新失败: {result.error or result.message}")
+            else:
+                console.print(f"[red]更新失败: {result.error or result.message}[/red]")
+                console.print("[dim]请检查网络连接或手动下载更新[/dim]")
+    
+    except ImportError as e:
+        if config.output_topic == OutputTopic.MINIMALISM:
+            print(f"[update] 更新模块加载失败: {e}")
+        else:
+            console.print(f"[red]更新模块加载失败: {markup.escape(str(e))}[/red]")
+    except Exception as e:
+        logger.error(f"更新命令执行失败: {e}")
+        if config.output_topic == OutputTopic.MINIMALISM:
+            print(f"[update] 更新失败: {str(e)}")
+        else:
+            console.print(f"[red]更新失败: {markup.escape(str(e))}[/red]")

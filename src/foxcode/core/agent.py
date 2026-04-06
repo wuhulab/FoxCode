@@ -1120,9 +1120,10 @@ class FoxCodeAgent:
                 self.session.add_user_message(error_msg)
         
         # 计算 token 并保存助手消息
-        input_tokens = self.model_provider.count_tokens(
-            self._get_system_prompt() + user_input
-        )
+        # 计算 input_tokens：包括整个对话历史 + system_prompt
+        input_tokens = self._calculate_conversation_tokens()
+        
+        # 计算 output_tokens：使用模型提供者的 token 计数方法
         output_tokens = self.model_provider.count_tokens(total_response)
         
         self.session.add_assistant_message(
@@ -1318,6 +1319,41 @@ class FoxCodeAgent:
     def clear_conversation(self) -> None:
         """清空对话"""
         self.session.clear()
+    
+    def _calculate_conversation_tokens(self) -> int:
+        """
+        计算当前对话历史的总 token 数量
+        
+        包括：
+        - 系统提示词
+        - 所有历史消息
+        - 消息格式开销（角色标记等）
+        
+        Returns:
+            总 token 数量
+        """
+        total_tokens = 0
+        
+        # 计算系统提示词的 token
+        system_prompt = self._get_system_prompt()
+        if system_prompt:
+            total_tokens += self.model_provider.count_tokens(system_prompt)
+        
+        # 计算所有历史消息的 token
+        for message in self.session.conversation.messages:
+            # 获取消息文本内容
+            content = message.get_text_content()
+            
+            # 计算消息内容的 token
+            content_tokens = self.model_provider.count_tokens(content)
+            
+            # 添加消息格式开销（角色标记、分隔符等）
+            # 每条消息大约有 4 个额外 token 的格式开销
+            format_overhead = 4
+            
+            total_tokens += content_tokens + format_overhead
+        
+        return total_tokens
     
     def get_token_usage(self) -> dict[str, int]:
         """获取 token 使用统计"""

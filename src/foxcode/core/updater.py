@@ -734,12 +734,218 @@ class UpdateInstaller:
             return False
 
 
+class SourceCodeInstaller:
+    """
+    源码安装器
+    
+    从 GitHub 下载源码并在本地安装
+    """
+    
+    def __init__(self, working_dir: Path | None = None):
+        """
+        初始化源码安装器
+        
+        Args:
+            working_dir: 工作目录，用于存放临时文件
+        """
+        self.working_dir = working_dir or Path(tempfile.gettempdir()) / "foxcode_source"
+        self.working_dir.mkdir(parents=True, exist_ok=True)
+    
+    def download_source(
+        self,
+        tag: str = "main",
+        repo_owner: str = GITHUB_REPO_OWNER,
+        repo_name: str = GITHUB_REPO_NAME,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> Path | None:
+        """
+        下载源码
+        
+        Args:
+            tag: Git 标签或分支名（如 "v0.2.0" 或 "main"）
+            repo_owner: 仓库所有者
+            repo_name: 仓库名称
+            progress_callback: 进度回调函数 (downloaded_bytes, total_bytes)
+            
+        Returns:
+            下载的源码压缩包路径，失败返回 None
+        """
+        # GitHub 源码下载链接
+        archive_url = f"https://github.com/{repo_owner}/{repo_name}/archive/refs/heads/{tag}.zip"
+        if tag.startswith("v"):
+            # 如果是版本标签，使用 tags 路径
+            archive_url = f"https://github.com/{repo_owner}/{repo_name}/archive/refs/tags/{tag}.zip"
+        
+        filename = f"{repo_name}-{tag}.zip"
+        filepath = self.working_dir / filename
+        
+        logger.info(f"正在下载源码: {archive_url}")
+        
+        try:
+            request = Request(
+                archive_url,
+                headers={"User-Agent": "FoxCode-Updater"},
+            )
+            
+            with urlopen(request, timeout=300) as response:
+                total_size = int(response.headers.get('Content-Length', 0))
+                downloaded = 0
+                
+                with open(filepath, 'wb') as f:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+                        
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        
+                        if progress_callback:
+                            progress_callback(downloaded, total_size)
+            
+            logger.info(f"源码下载完成: {filepath}")
+            return filepath
+            
+        except HTTPError as e:
+            logger.error(f"下载源码失败 (HTTP {e.code}): {e.reason}")
+            return None
+        except URLError as e:
+            logger.error(f"下载源码失败 (网络错误): {e.reason}")
+            return None
+        except Exception as e:
+            logger.error(f"下载源码失败: {e}")
+            if filepath.exists():
+                filepath.unlink()
+            return None
+    
+    def extract_source(self, archive_path: Path) -> Path | None:
+        """
+        解压源码
+        
+        Args:
+            archive_path: 源码压缩包路径
+            
+        Returns:
+            解压后的源码目录路径，失败返回 None
+        """
+        try:
+            # 解压到同一目录
+            extract_dir = archive_path.parent / f"extracted_{archive_path.stem}"
+            
+            # 如果目录已存在，先删除
+            if extract_dir.exists():
+                shutil.rmtree(extract_dir)
+            
+            with zipfile.ZipFile(archive_path, 'r') as zf:
+                # 安全检查：防止路径穿越攻击
+                for member in zf.namelist():
+                    member_path = Path(member)
+                    if member_path.is_absolute() or '..' in member:
+                        logger.error(f"检测到不安全的路径: {member}")
+                        return None
+                
+                # 解压文件
+                zf.extractall(extract_dir)
+            
+            # 找到解压后的实际源码目录（通常是一个子目录）
+            subdirs = list(extract_dir.iterdir())
+            if len(subdirs) == 1 and subdirs[0].is_dir():
+                source_dir = subdirs[0]
+            else:
+                source_dir = extract_dir
+            
+            logger.info(f"源码解压完成: {source_dir}")
+            return source_dir
+            
+        except zipfile.BadZipFile as e:
+            logger.error(f"无效的 ZIP 文件: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"解压源码失败: {e}")
+            return None
+    
+    def install_from_source(
+        self,
+        source_dir: Path,
+        upgrade: bool = True,
+        editable: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        从源码安装
+        
+        Args:
+            source_dir: 源码目录路径
+            upgrade: 是否升级安装
+            editable: 是否以可编辑模式安装
+            
+        Returns:
+            (是否成功, 输出信息)
+        """
+        import subprocess
+        
+        # 检查源码目录是否存在
+        if not source_dir.exists():
+            return False, f"源码目录不存在: {source_dir}"
+        
+        # 检查是否有 setup.py 或 pyproject.toml
+        has_setup = (source_dir / "setup.py").exists()
+        has_pyproject = (source_dir / "pyproject.toml").exists()
+        
+        if not has_setup and not has_pyproject:
+            return False, "源码目录中没有找到 setup.py 或 pyproject.toml"
+        
+        # 构建 pip install 命令
+        cmd = [sys.executable, "-m", "pip", "install"]
+        
+        if upgrade:
+            cmd.append("--upgrade")
+        
+        if editable:
+            cmd.extend(["-e", str(source_dir)])
+        else:
+            cmd.append(str(source_dir))
+        
+        logger.info(f"正在执行安装命令: {' '.join(cmd)}")
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5分钟超时
+            )
+            
+            if result.returncode == 0:
+                logger.info("源码安装成功")
+                return True, result.stdout
+            else:
+                logger.error(f"源码安装失败: {result.stderr}")
+                return False, result.stderr
+                
+        except subprocess.TimeoutExpired:
+            logger.error("安装超时")
+            return False, "安装超时，请检查网络连接或手动安装"
+        except Exception as e:
+            logger.error(f"安装失败: {e}")
+            return False, str(e)
+    
+    def cleanup(self) -> None:
+        """清理临时文件"""
+        try:
+            if self.working_dir.exists():
+                shutil.rmtree(self.working_dir)
+                logger.info("临时文件已清理")
+        except Exception as e:
+            logger.warning(f"清理临时文件失败: {e}")
+
+
 class FoxCodeUpdater:
     """
     FoxCode 更新管理器
     
     整合版本检查、下载、安装等功能。
     支持从本地配置文件读取和保存版本配置。
+    支持源码下载和本地安装。
     """
     
     def __init__(
@@ -749,6 +955,7 @@ class FoxCodeUpdater:
         auto_backup: bool = True,
         config_path: Path | None = None,
         working_dir: Path | None = None,
+        use_source_install: bool = True,
     ):
         """
         初始化更新管理器
@@ -759,11 +966,13 @@ class FoxCodeUpdater:
             auto_backup: 是否自动备份
             config_path: 配置文件路径，为 None 则自动查找
             working_dir: 工作目录，用于查找配置文件
+            use_source_install: 是否使用源码安装方式
         """
         self.current_version = current_version or self._get_current_version()
         self.include_prerelease = include_prerelease
         self.auto_backup = auto_backup
         self.working_dir = working_dir or Path.cwd()
+        self.use_source_install = use_source_install
         
         # 配置文件路径
         self.config_path = config_path or self._find_config_file()
@@ -785,6 +994,7 @@ class FoxCodeUpdater:
         self.client = GitHubReleasesClient(repo_owner=repo_owner, repo_name=repo_name)
         self.downloader = UpdateDownloader()
         self.installer = UpdateInstaller()
+        self.source_installer = SourceCodeInstaller()
         
         # 状态
         self._latest_release: ReleaseInfo | None = None
@@ -1353,6 +1563,116 @@ class FoxCodeUpdater:
             progress_callback("完成", 1.0)
         
         return install_result
+    
+    def update_from_source(
+        self,
+        progress_callback: Callable[[str, float], None] | None = None,
+        branch: str = "main",
+    ) -> UpdateResult:
+        """
+        从源码执行更新
+        
+        下载源码并在本地安装
+        
+        Args:
+            progress_callback: 进度回调函数 (stage, progress)
+            branch: 要下载的分支或标签名，默认为 main
+            
+        Returns:
+            UpdateResult 对象
+        """
+        # 1. 检查更新
+        if progress_callback:
+            progress_callback("检查更新...", 0.0)
+        
+        check_result = self.check_for_updates()
+        
+        if check_result.status == UpdateStatus.UP_TO_DATE:
+            return check_result
+        
+        if check_result.status != UpdateStatus.UPDATE_AVAILABLE:
+            return check_result
+        
+        # 获取版本标签
+        if self._latest_release:
+            tag = self._latest_release.tag_name
+        else:
+            tag = branch
+        
+        # 2. 下载源码
+        if progress_callback:
+            progress_callback("下载源码...", 0.2)
+        
+        def download_progress(downloaded: int, total: int):
+            if progress_callback and total > 0:
+                progress = 0.2 + (downloaded / total) * 0.4
+                progress_callback("下载源码...", progress)
+        
+        archive_path = self.source_installer.download_source(
+            tag=tag,
+            progress_callback=download_progress,
+        )
+        
+        if not archive_path:
+            return UpdateResult(
+                status=UpdateStatus.NETWORK_ERROR,
+                current_version=self.current_version,
+                latest_version=self._latest_release.version if self._latest_release else None,
+                message="下载源码失败",
+                error="网络错误或下载中断",
+            )
+        
+        # 3. 解压源码
+        if progress_callback:
+            progress_callback("解压源码...", 0.65)
+        
+        source_dir = self.source_installer.extract_source(archive_path)
+        
+        if not source_dir:
+            return UpdateResult(
+                status=UpdateStatus.UPDATE_FAILED,
+                current_version=self.current_version,
+                latest_version=self._latest_release.version if self._latest_release else None,
+                message="解压源码失败",
+                error="无法解压下载的源码包",
+            )
+        
+        # 4. 安装源码
+        if progress_callback:
+            progress_callback("安装源码...", 0.75)
+        
+        success, output = self.source_installer.install_from_source(
+            source_dir,
+            upgrade=True,
+            editable=False,
+        )
+        
+        if not success:
+            return UpdateResult(
+                status=UpdateStatus.UPDATE_FAILED,
+                current_version=self.current_version,
+                latest_version=self._latest_release.version if self._latest_release else None,
+                message="安装源码失败",
+                error=output,
+            )
+        
+        # 5. 清理临时文件
+        if progress_callback:
+            progress_callback("清理临时文件...", 0.95)
+        
+        self.source_installer.cleanup()
+        
+        if progress_callback:
+            progress_callback("完成", 1.0)
+        
+        return UpdateResult(
+            status=UpdateStatus.UPDATE_SUCCESS,
+            current_version=self.current_version,
+            latest_version=self._latest_release.version if self._latest_release else None,
+            release_info=self._latest_release,
+            message="源码安装成功，请重启 FoxCode",
+            installed=True,
+        )
     
     def get_update_info(self) -> dict[str, Any]:
         """

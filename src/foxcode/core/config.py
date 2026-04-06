@@ -507,6 +507,56 @@ class OpenSpaceConfig(BaseModel):
     )
 
 
+class UpdateConfig(BaseModel):
+    """
+    版本更新配置
+    
+    管理 FoxCode 的版本更新相关配置，包括：
+    - 是否启用自动检查更新
+    - 是否包含预发布版本
+    - 更新源配置
+    - 版本锁定
+    """
+    enabled: bool = Field(
+        default=True,
+        description="是否启用版本更新功能"
+    )
+    auto_check: bool = Field(
+        default=True,
+        description="启动时是否自动检查更新"
+    )
+    include_prerelease: bool = Field(
+        default=False,
+        description="是否包含预发布版本"
+    )
+    check_interval_hours: int = Field(
+        default=24,
+        ge=1,
+        le=168,
+        description="检查更新的间隔时间（小时）"
+    )
+    github_repo: str = Field(
+        default="wuhulab/FoxCode",
+        description="GitHub 仓库地址（owner/repo 格式）"
+    )
+    locked_version: str = Field(
+        default="",
+        description="锁定的版本号，为空则使用最新版本"
+    )
+    last_check_time: str = Field(
+        default="",
+        description="上次检查更新的时间（ISO 格式）"
+    )
+    last_known_version: str = Field(
+        default="",
+        description="上次检查到的最新版本"
+    )
+    skip_version: str = Field(
+        default="",
+        description="跳过的版本号（用户选择跳过更新）"
+    )
+
+
 class Config(BaseSettings):
     """
     FoxCode 主配置类
@@ -547,6 +597,10 @@ class Config(BaseSettings):
     open_space: OpenSpaceConfig = Field(
         default_factory=OpenSpaceConfig,
         description="OpenSpace 配置（AI 经验知识存储，默认启用）"
+    )
+    update: UpdateConfig = Field(
+        default_factory=UpdateConfig,
+        description="版本更新配置"
     )
     
     # 工作目录

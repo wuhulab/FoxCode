@@ -738,7 +738,8 @@ class FoxCodeUpdater:
     """
     FoxCode 更新管理器
     
-    整合版本检查、下载、安装等功能
+    整合版本检查、下载、安装等功能。
+    支持从本地配置文件读取和保存版本配置。
     """
     
     def __init__(
@@ -746,6 +747,8 @@ class FoxCodeUpdater:
         current_version: str | None = None,
         include_prerelease: bool = False,
         auto_backup: bool = True,
+        config_path: Path | None = None,
+        working_dir: Path | None = None,
     ):
         """
         初始化更新管理器
@@ -754,12 +757,32 @@ class FoxCodeUpdater:
             current_version: 当前版本，为 None 则自动获取
             include_prerelease: 是否包含预发布版本
             auto_backup: 是否自动备份
+            config_path: 配置文件路径，为 None 则自动查找
+            working_dir: 工作目录，用于查找配置文件
         """
         self.current_version = current_version or self._get_current_version()
         self.include_prerelease = include_prerelease
         self.auto_backup = auto_backup
+        self.working_dir = working_dir or Path.cwd()
         
-        self.client = GitHubReleasesClient()
+        # 配置文件路径
+        self.config_path = config_path or self._find_config_file()
+        
+        # 加载本地配置
+        self._update_config = self._load_update_config()
+        
+        # 如果配置中指定了预发布版本，使用配置中的设置
+        if self._update_config.get("include_prerelease", False):
+            self.include_prerelease = True
+        
+        # 从配置获取 GitHub 仓库
+        github_repo = self._update_config.get("github_repo", "wuhulab/FoxCode")
+        if "/" in github_repo:
+            repo_owner, repo_name = github_repo.split("/", 1)
+        else:
+            repo_owner, repo_name = "wuhulab", "FoxCode"
+        
+        self.client = GitHubReleasesClient(repo_owner=repo_owner, repo_name=repo_name)
         self.downloader = UpdateDownloader()
         self.installer = UpdateInstaller()
         
@@ -785,6 +808,261 @@ class FoxCodeUpdater:
         else:
             return "linux"
     
+    def _find_config_file(self) -> Path:
+        """
+        查找配置文件
+        
+        按优先级查找：
+        1. 工作目录下的 .foxcode.toml
+        2. 工作目录下的 foxcode.toml
+        3. 用户目录下的 ~/.foxcode/config.toml
+        
+        Returns:
+            配置文件路径
+        """
+        search_paths = [
+            self.working_dir / ".foxcode.toml",
+            self.working_dir / "foxcode.toml",
+            Path.home() / ".foxcode" / "config.toml",
+        ]
+        
+        for path in search_paths:
+            if path.exists():
+                return path
+        
+        # 默认使用工作目录下的 .foxcode.toml
+        return self.working_dir / ".foxcode.toml"
+    
+    def _load_update_config(self) -> dict[str, Any]:
+        """
+        从配置文件加载更新配置
+        
+        Returns:
+            更新配置字典
+        """
+        if not self.config_path.exists():
+            return {}
+        
+        try:
+            if sys.version_info >= (3, 11):
+                import tomllib
+            else:
+                import tomli as tomllib
+            
+            with open(self.config_path, "rb") as f:
+                config = tomllib.load(f)
+            
+            return config.get("update", {})
+        except Exception as e:
+            logger.warning(f"加载更新配置失败: {e}")
+            return {}
+    
+    def _save_update_config(self, updates: dict[str, Any]) -> bool:
+        """
+        保存更新配置到配置文件
+        
+        Args:
+            updates: 要更新的配置项
+            
+        Returns:
+            是否保存成功
+        """
+        try:
+            # 读取现有配置
+            existing_config = {}
+            if self.config_path.exists():
+                try:
+                    if sys.version_info >= (3, 11):
+                        import tomllib
+                    else:
+                        import tomli as tomllib
+                    
+                    with open(self.config_path, "rb") as f:
+                        existing_config = tomllib.load(f)
+                except Exception:
+                    existing_config = {}
+            
+            # 更新 update 配置
+            if "update" not in existing_config:
+                existing_config["update"] = {}
+            
+            existing_config["update"].update(updates)
+            
+            # 写入配置文件
+            try:
+                import tomli_w
+                with open(self.config_path, "wb") as f:
+                    tomli_w.dump(existing_config, f)
+                return True
+            except ImportError:
+                # 如果没有 tomli_w，使用简单格式写入
+                return self._write_simple_config(existing_config)
+            
+        except Exception as e:
+            logger.error(f"保存更新配置失败: {e}")
+            return False
+    
+    def _write_simple_config(self, config: dict) -> bool:
+        """
+        简单的 TOML 配置写入（不依赖 tomli_w）
+        
+        Args:
+            config: 配置字典
+            
+        Returns:
+            是否写入成功
+        """
+        try:
+            # 确保目录存在
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                f.write('# FoxCode 配置文件\n')
+                f.write(f'# 自动更新于 {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n')
+                
+                # 先写入顶级字段
+                for key, value in config.items():
+                    if not isinstance(value, dict):
+                        self._write_toml_value(f, key, value)
+                
+                # 再写入节
+                for key, value in config.items():
+                    if isinstance(value, dict):
+                        f.write(f'\n[{key}]\n')
+                        for k, v in value.items():
+                            self._write_toml_value(f, k, v, indent="    ")
+            
+            return True
+        except Exception as e:
+            logger.error(f"写入配置失败: {e}")
+            return False
+    
+    def _write_toml_value(self, f, key: str, value, indent: str = "") -> None:
+        """
+        写入单个 TOML 值
+        
+        Args:
+            f: 文件对象
+            key: 键名
+            value: 值
+            indent: 缩进
+        """
+        if isinstance(value, str):
+            f.write(f'{indent}{key} = "{value}"\n')
+        elif isinstance(value, bool):
+            f.write(f'{indent}{key} = {"true" if value else "false"}\n')
+        elif isinstance(value, (int, float)):
+            f.write(f'{indent}{key} = {value}\n')
+        elif isinstance(value, list):
+            if not value:
+                f.write(f'{indent}{key} = []\n')
+            elif all(isinstance(v, str) for v in value):
+                formatted = ', '.join(f'"{v}"' for v in value)
+                f.write(f'{indent}{key} = [{formatted}]\n')
+            else:
+                f.write(f'{indent}{key} = {value}\n')
+        elif value is None:
+            pass
+        else:
+            f.write(f'{indent}{key} = "{str(value)}"\n')
+    
+    def should_check_update(self) -> bool:
+        """
+        检查是否应该执行更新检查
+        
+        根据配置的检查间隔判断是否需要检查更新
+        
+        Returns:
+            是否应该检查更新
+        """
+        # 检查是否启用自动检查
+        if not self._update_config.get("auto_check", True):
+            return False
+        
+        # 检查是否锁定版本
+        locked_version = self._update_config.get("locked_version", "")
+        if locked_version:
+            return False
+        
+        # 检查上次检查时间
+        last_check = self._update_config.get("last_check_time", "")
+        if last_check:
+            try:
+                last_check_time = datetime.fromisoformat(last_check)
+                interval_hours = self._update_config.get("check_interval_hours", 24)
+                elapsed = datetime.now() - last_check_time
+                if elapsed.total_seconds() < interval_hours * 3600:
+                    return False
+            except Exception:
+                pass
+        
+        return True
+    
+    def is_version_skipped(self, version: str) -> bool:
+        """
+        检查版本是否被跳过
+        
+        Args:
+            version: 版本号
+            
+        Returns:
+            是否被跳过
+        """
+        skip_version = self._update_config.get("skip_version", "")
+        return skip_version == version
+    
+    def is_version_locked(self) -> bool:
+        """
+        检查是否锁定版本
+        
+        Returns:
+            是否锁定版本
+        """
+        return bool(self._update_config.get("locked_version", ""))
+    
+    def get_locked_version(self) -> str | None:
+        """
+        获取锁定的版本
+        
+        Returns:
+            锁定的版本号，未锁定返回 None
+        """
+        locked = self._update_config.get("locked_version", "")
+        return locked if locked else None
+    
+    def skip_version(self, version: str) -> bool:
+        """
+        跳过指定版本
+        
+        Args:
+            version: 要跳过的版本号
+            
+        Returns:
+            是否成功
+        """
+        return self._save_update_config({"skip_version": version})
+    
+    def lock_version(self, version: str) -> bool:
+        """
+        锁定到指定版本
+        
+        Args:
+            version: 要锁定的版本号
+            
+        Returns:
+            是否成功
+        """
+        return self._save_update_config({"locked_version": version})
+    
+    def unlock_version(self) -> bool:
+        """
+        解除版本锁定
+        
+        Returns:
+            是否成功
+        """
+        return self._save_update_config({"locked_version": ""})
+    
     def check_for_updates(self) -> UpdateResult:
         """
         检查更新
@@ -794,6 +1072,17 @@ class FoxCodeUpdater:
         """
         try:
             logger.info("正在检查更新...")
+            
+            # 检查是否锁定版本
+            locked_version = self.get_locked_version()
+            if locked_version:
+                logger.info(f"版本已锁定: {locked_version}")
+                return UpdateResult(
+                    status=UpdateStatus.UP_TO_DATE,
+                    current_version=self.current_version,
+                    latest_version=locked_version,
+                    message=f"版本已锁定: {locked_version}",
+                )
             
             # 获取最新版本
             latest_release = self.client.get_latest_release(
@@ -809,6 +1098,22 @@ class FoxCodeUpdater:
                 )
             
             self._latest_release = latest_release
+            
+            # 保存检查结果到配置文件
+            self._save_update_config({
+                "last_check_time": datetime.now().isoformat(),
+                "last_known_version": latest_release.version,
+            })
+            
+            # 检查是否跳过该版本
+            if self.is_version_skipped(latest_release.version):
+                return UpdateResult(
+                    status=UpdateStatus.UP_TO_DATE,
+                    current_version=self.current_version,
+                    latest_version=latest_release.version,
+                    release_info=latest_release,
+                    message=f"已跳过版本: {latest_release.version}",
+                )
             
             # 比较版本
             if VersionComparator.is_newer(latest_release.version, self.current_version):

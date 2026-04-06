@@ -1255,7 +1255,7 @@ def _handle_init_command(agent: FoxCodeAgent, config: Config) -> None:
     """
     from foxcode.core.init_script import InitScriptGenerator
     
-    console.print("[cyan]🚀 启动初始化代理模式...[/cyan]")
+    console.print("[cyan]启动初始化代理模式...[/cyan]")
     
     # 启用长时间运行模式
     config.long_running.enable_long_running_mode = True
@@ -1265,7 +1265,7 @@ def _handle_init_command(agent: FoxCodeAgent, config: Config) -> None:
         generator = InitScriptGenerator(working_dir=config.working_dir)
         scripts = generator.generate_init_script()
         
-        console.print("[green]✅ 已生成初始化脚本:[/green]")
+        console.print("[green]已生成初始化脚本:[/green]")
         for platform_name, path in scripts.items():
             console.print(f"  - {platform_name}: {path}")
         

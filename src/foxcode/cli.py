@@ -150,6 +150,202 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 
+class MinimalismOutputBuffer:
+    """
+    极简模式输出缓冲器
+    
+    用于收集和汇总输出，避免快速刷屏问题：
+    - 编辑文件时显示摘要（最多50字）
+    - 读取文件时显示摘要（最多50字）
+    - 运行命令时完整输出
+    - 其他输出进行缓冲后汇总显示
+    """
+    
+    def __init__(self, max_summary_length: int = 50):
+        self.max_summary_length = max_summary_length
+        self.buffer: list[str] = []
+        self.current_tool: str | None = None
+        self.tool_output: list[str] = []
+        self.in_tool_execution = False
+        self.last_output_time = 0.0
+        self.text_buffer = ""  # 用于缓冲普通文本输出
+        self.text_buffer_size = 100  # 缓冲区大小
+        
+    def add_chunk(self, chunk: str) -> str | None:
+        """
+        添加输出片段，返回需要立即显示的内容
+        
+        Args:
+            chunk: 输出片段
+            
+        Returns:
+            需要立即显示的内容，如果应该缓冲则返回 None
+        """
+        import re
+        
+        # 检测工具调用开始
+        if "🔧 Executing tool:" in chunk:
+            self.in_tool_execution = True
+            # 提取工具名
+            match = re.search(r"Executing tool:\s*(\w+)", chunk)
+            if match:
+                self.current_tool = match.group(1)
+            self.tool_output = [chunk]
+            return None
+        
+        # 检测工具调用结束
+        if self.in_tool_execution:
+            self.tool_output.append(chunk)
+            
+            # 检测工具执行结果
+            if "✅ Tool executed successfully" in chunk or "❌" in chunk:
+                self.in_tool_execution = False
+                summary = self._summarize_tool_output()
+                self.current_tool = None
+                self.tool_output = []
+                return summary
+            
+            return None
+        
+        # 普通文本输出：缓冲处理
+        self.text_buffer += chunk
+        
+        # 当缓冲区达到一定大小时，返回内容
+        if len(self.text_buffer) >= self.text_buffer_size:
+            result = self.text_buffer
+            self.text_buffer = ""
+            return result
+        
+        return None
+    
+    def flush(self) -> str:
+        """刷新缓冲区，返回所有剩余内容"""
+        result = ""
+        
+        # 刷新文本缓冲区
+        if self.text_buffer:
+            result += self.text_buffer
+            self.text_buffer = ""
+        
+        # 刷新工具输出缓冲区
+        if self.in_tool_execution and self.tool_output:
+            summary = self._summarize_tool_output()
+            result += summary
+            self.in_tool_execution = False
+            self.current_tool = None
+            self.tool_output = []
+        
+        return result
+    
+    def _summarize_tool_output(self) -> str:
+        """
+        汇总工具输出
+        
+        根据工具类型生成简洁的摘要
+        """
+        full_output = "".join(self.tool_output)
+        
+        # 编辑类工具：显示摘要
+        edit_tools = ["write_file", "edit_file", "search_replace", "create_file"]
+        # 读取类工具：显示摘要
+        read_tools = ["read_file", "search_codebase", "grep", "glob", "ls"]
+        # 运行类工具：完整输出
+        run_tools = ["run_command", "execute_command", "shell"]
+        
+        if self.current_tool:
+            tool_lower = self.current_tool.lower()
+            
+            # 编辑工具：显示简洁摘要
+            if any(t in tool_lower for t in edit_tools):
+                return self._summarize_edit_operation(full_output)
+            
+            # 读取工具：显示简洁摘要
+            if any(t in tool_lower for t in read_tools):
+                return self._summarize_read_operation(full_output)
+            
+            # 运行命令：完整输出
+            if any(t in tool_lower for t in run_tools):
+                return self._format_run_output(full_output)
+        
+        # 其他工具：显示简洁摘要
+        return self._summarize_generic(full_output)
+    
+    def _summarize_edit_operation(self, output: str) -> str:
+        """汇总编辑操作"""
+        import re
+        
+        # 提取文件路径
+        path_match = re.search(r"file_path[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
+        if not path_match:
+            path_match = re.search(r"([a-zA-Z]:[\\\\/][\\w\\\\/\\-\\.]+)", output)
+        
+        file_path = path_match.group(1) if path_match else "未知文件"
+        
+        # 提取操作类型
+        if "✅" in output:
+            status = "✅"
+        elif "❌" in output:
+            status = "❌"
+        else:
+            status = "📝"
+        
+        # 简化路径显示
+        if len(file_path) > 40:
+            file_path = "..." + file_path[-37:]
+        
+        return f"\n[编辑] {status} {file_path}\n"
+    
+    def _summarize_read_operation(self, output: str) -> str:
+        """汇总读取操作"""
+        import re
+        
+        # 提取文件路径或搜索关键词
+        path_match = re.search(r"file_path[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
+        if not path_match:
+            path_match = re.search(r"([a-zA-Z]:[\\\\/][\\w\\\\/\\-\\.]+)", output)
+        
+        # 提取行数信息
+        lines_match = re.search(r"(\d+)\s*lines?", output)
+        
+        file_path = path_match.group(1) if path_match else ""
+        
+        # 简化路径显示
+        if file_path and len(file_path) > 40:
+            file_path = "..." + file_path[-37:]
+        
+        if "✅" in output:
+            status = "✅"
+            if lines_match:
+                return f"\n[读取] {status} {file_path} ({lines_match.group(1)}行)\n"
+            return f"\n[读取] {status} {file_path}\n"
+        elif "❌" in output:
+            return f"\n[读取] ❌ {file_path} - 失败\n"
+        
+        return f"\n[读取] 📄 {file_path}\n"
+    
+    def _format_run_output(self, output: str) -> str:
+        """格式化运行命令输出（保持完整）"""
+        # 提取命令
+        import re
+        cmd_match = re.search(r"command[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
+        
+        if cmd_match:
+            cmd = cmd_match.group(1)
+            if len(cmd) > 30:
+                cmd = cmd[:27] + "..."
+            return f"\n[运行] $ {cmd}\n{output}"
+        
+        return f"\n[运行]\n{output}"
+    
+    def _summarize_generic(self, output: str) -> str:
+        """通用摘要"""
+        # 截取前50个字符作为摘要
+        clean_output = output.replace("\n", " ").strip()
+        if len(clean_output) > self.max_summary_length:
+            return f"\n[工具] {clean_output[:self.max_summary_length]}...\n"
+        return f"\n[工具] {clean_output}\n"
+
+
 def _adjust_log_level_for_minimalism() -> None:
     """
     根据极简模式调整控制台日志级别
@@ -847,17 +1043,26 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
     try:
         await agent.initialize()
         
+        # 极简模式：使用缓冲器处理输出
+        output_buffer = None
+        if config and config.output_topic == OutputTopic.MINIMALISM:
+            output_buffer = MinimalismOutputBuffer()
+        
         async for chunk in agent.chat(prompt):
-            # 极简模式：直接打印
+            # 极简模式：使用缓冲器处理
             if config and config.output_topic == OutputTopic.MINIMALISM:
-                print(chunk, end="")
+                result = output_buffer.add_chunk(chunk)
+                if result:
+                    print(result, end="")
             else:
                 console.print(chunk, end="")
         
-        # 极简模式：输出结束标记
+        # 极简模式：刷新缓冲区并输出结束标记
         if config and config.output_topic == OutputTopic.MINIMALISM:
-            print("\n[FoxCode end]")
-            # 显示 token 使用情况
+            remaining = output_buffer.flush()
+            if remaining:
+                print(remaining, end="")
+            print("\n[end]")
         else:
             console.print("\n")
         
@@ -985,17 +1190,26 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                 request_id = _watchdog.record_request_start()
             
             try:
+                # 极简模式：使用缓冲器处理输出
+                output_buffer = None
+                if config.output_topic == OutputTopic.MINIMALISM:
+                    output_buffer = MinimalismOutputBuffer()
+                
                 async for chunk in agent.chat(user_input):
-                    # 极简模式：直接打印
+                    # 极简模式：使用缓冲器处理
                     if config.output_topic == OutputTopic.MINIMALISM:
-                        print(chunk, end="")
+                        result = output_buffer.add_chunk(chunk)
+                        if result:
+                            print(result, end="")
                     else:
                         console.print(chunk, end="")
                 
-                # 极简模式：输出结束标记
+                # 极简模式：刷新缓冲区并输出结束标记
                 if config.output_topic == OutputTopic.MINIMALISM:
-                    print("\n[FoxCode end]")
-
+                    remaining = output_buffer.flush()
+                    if remaining:
+                        print(remaining, end="")
+                    print("\n[end]")
                 else:
                     console.print("\n")
                 

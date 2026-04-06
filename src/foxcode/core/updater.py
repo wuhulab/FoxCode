@@ -869,7 +869,7 @@ class SourceCodeInstaller:
         source_dir: Path,
         upgrade: bool = True,
         editable: bool = False,
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str, bool]:
         """
         从源码安装
         
@@ -879,20 +879,20 @@ class SourceCodeInstaller:
             editable: 是否以可编辑模式安装
             
         Returns:
-            (是否成功, 输出信息)
+            (是否成功, 输出信息, 是否需要退出后更新)
         """
         import subprocess
         
         # 检查源码目录是否存在
         if not source_dir.exists():
-            return False, f"源码目录不存在: {source_dir}"
+            return False, f"源码目录不存在: {source_dir}", False
         
         # 检查是否有 setup.py 或 pyproject.toml
         has_setup = (source_dir / "setup.py").exists()
         has_pyproject = (source_dir / "pyproject.toml").exists()
         
         if not has_setup and not has_pyproject:
-            return False, "源码目录中没有找到 setup.py 或 pyproject.toml"
+            return False, "源码目录中没有找到 setup.py 或 pyproject.toml", False
         
         # 构建 pip install 命令
         cmd = [sys.executable, "-m", "pip", "install"]
@@ -917,17 +917,131 @@ class SourceCodeInstaller:
             
             if result.returncode == 0:
                 logger.info("源码安装成功")
-                return True, result.stdout
+                return True, result.stdout, False
             else:
-                logger.error(f"源码安装失败: {result.stderr}")
-                return False, result.stderr
+                error_msg = result.stderr
+                
+                # 检测是否是自更新问题（文件被占用）
+                is_self_update_error = (
+                    "WinError 32" in error_msg or
+                    "另一个程序正在使用此文件" in error_msg or
+                    "being used by another process" in error_msg.lower() or
+                    "foxcode.exe" in error_msg
+                )
+                
+                if is_self_update_error:
+                    logger.warning("检测到自更新问题，需要退出后更新")
+                    # 生成更新脚本
+                    script_path = self._generate_update_script(source_dir, upgrade)
+                    return False, f"SELF_UPDATE_REQUIRED:{script_path}", True
+                else:
+                    logger.error(f"源码安装失败: {error_msg}")
+                    return False, error_msg, False
                 
         except subprocess.TimeoutExpired:
             logger.error("安装超时")
-            return False, "安装超时，请检查网络连接或手动安装"
+            return False, "安装超时，请检查网络连接或手动安装", False
         except Exception as e:
             logger.error(f"安装失败: {e}")
-            return False, str(e)
+            return False, str(e), False
+    
+    def _generate_update_script(self, source_dir: Path, upgrade: bool = True) -> Path:
+        """
+        生成更新脚本，供用户退出后执行
+        
+        Args:
+            source_dir: 源码目录路径
+            upgrade: 是否升级安装
+            
+        Returns:
+            脚本文件路径
+        """
+        # 构建安装命令
+        cmd_parts = [sys.executable, "-m", "pip", "install"]
+        if upgrade:
+            cmd_parts.append("--upgrade")
+        cmd_parts.append(str(source_dir))
+        cmd_str = " ".join(cmd_parts)
+        
+        # 生成 Windows 批处理脚本
+        bat_script = f'''@echo off
+chcp 65001 >nul
+echo ========================================
+echo FoxCode 更新脚本
+echo ========================================
+echo.
+echo 正在更新 FoxCode...
+echo.
+{cmd_str}
+if %errorlevel% equ 0 (
+    echo.
+    echo ========================================
+    echo 更新成功！
+    echo ========================================
+    echo.
+    echo 请运行 foxcode 启动新版本
+    echo.
+) else (
+    echo.
+    echo ========================================
+    echo 更新失败，请检查错误信息
+    echo ========================================
+)
+echo.
+pause
+'''
+        
+        # 生成 Unix/Linux/Mac shell 脚本
+        sh_script = f'''#!/bin/bash
+echo "========================================"
+echo "FoxCode 更新脚本"
+echo "========================================"
+echo
+echo "正在更新 FoxCode..."
+echo
+{cmd_str}
+if [ $? -eq 0 ]; then
+    echo
+    echo "========================================"
+    echo "更新成功！"
+    echo "========================================"
+    echo
+    echo "请运行 foxcode 启动新版本"
+    echo
+else
+    echo
+    echo "========================================"
+    echo "更新失败，请检查错误信息"
+    echo "========================================"
+fi
+echo
+read -p "按回车键退出..."
+'''
+        
+        # 保存脚本
+        script_dir = self.working_dir / "update_scripts"
+        script_dir.mkdir(parents=True, exist_ok=True)
+        
+        bat_path = script_dir / "update_foxcode.bat"
+        sh_path = script_dir / "update_foxcode.sh"
+        
+        # 写入 Windows 脚本
+        with open(bat_path, "w", encoding="utf-8") as f:
+            f.write(bat_script)
+        
+        # 写入 Unix 脚本
+        with open(sh_path, "w", encoding="utf-8") as f:
+            f.write(sh_script)
+        
+        # 设置 Unix 脚本可执行权限
+        try:
+            os.chmod(sh_path, 0o755)
+        except Exception:
+            pass
+        
+        logger.info(f"已生成更新脚本: {bat_path}")
+        
+        return bat_path
     
     def cleanup(self) -> None:
         """清理临时文件"""
@@ -1641,11 +1755,23 @@ class FoxCodeUpdater:
         if progress_callback:
             progress_callback("安装源码...", 0.75)
         
-        success, output = self.source_installer.install_from_source(
+        success, output, needs_exit_update = self.source_installer.install_from_source(
             source_dir,
             upgrade=True,
             editable=False,
         )
+        
+        # 处理自更新情况
+        if needs_exit_update and output.startswith("SELF_UPDATE_REQUIRED:"):
+            script_path = output.split(":", 1)[1]
+            return UpdateResult(
+                status=UpdateStatus.UPDATE_AVAILABLE,  # 保持为可用状态，因为还没安装
+                current_version=self.current_version,
+                latest_version=self._latest_release.version if self._latest_release else None,
+                release_info=self._latest_release,
+                message=f"需要退出后更新。已生成更新脚本: {script_path}",
+                error=f"FoxCode 正在运行，无法覆盖可执行文件。\n请退出 FoxCode 后运行更新脚本:\n  {script_path}",
+            )
         
         if not success:
             return UpdateResult(

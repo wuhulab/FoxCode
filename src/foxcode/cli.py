@@ -3240,20 +3240,47 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
         elif result.status == UpdateStatus.UPDATE_AVAILABLE:
             # 有更新但无法自动安装
             release = result.release_info
-            if is_minimalism:
-                print(f"[update] 发现新版本: {result.latest_version}")
-                print("[update] 请手动下载源码并安装:")
-                if release:
-                    print(f"[update] {release.html_url}")
+            
+            # 检查是否是自更新情况（已生成更新脚本）
+            if result.message and "需要退出后更新" in result.message:
+                # 从 message 中提取脚本路径
+                script_path = result.message.split("更新脚本: ")[-1] if "更新脚本: " in result.message else ""
+                
+                if is_minimalism:
+                    print(f"[update] 发现新版本: {result.latest_version}")
+                    print(f"[update] FoxCode 正在运行，无法覆盖可执行文件")
+                    print(f"[update] 请退出后运行更新脚本:")
+                    print(f"[update] {script_path}")
+                else:
+                    console.print(Panel(
+                        f"[bold yellow]⚠️ 需要退出后更新[/bold yellow]\n\n"
+                        f"[bold]新版本:[/bold] {result.latest_version}\n"
+                        f"[bold]当前版本:[/bold] {__version__}\n\n"
+                        f"[cyan]FoxCode 正在运行，无法覆盖可执行文件[/cyan]\n\n"
+                        f"[bold green]请按以下步骤完成更新:[/bold green]\n"
+                        f"  1. 退出 FoxCode（输入 /exit 或 Ctrl+C）\n"
+                        f"  2. 运行更新脚本:\n"
+                        f"     [yellow]{script_path}[/yellow]\n"
+                        f"  3. 重新启动 FoxCode",
+                        title="🔄 发现新版本",
+                        style="yellow",
+                    ))
             else:
-                console.print(Panel(
-                    f"[bold]新版本:[/bold] {result.latest_version}\n"
-                    f"[bold]当前版本:[/bold] {__version__}\n\n"
-                    f"[yellow]自动更新不可用，请手动下载源码安装[/yellow]\n\n"
-                    f"[dim]下载地址: {release.html_url if release else 'https://github.com/wuhulab/FoxCode'}[/dim]",
-                    title="🔄 发现新版本",
-                    style="yellow",
-                ))
+                # 其他情况：无法自动安装
+                if is_minimalism:
+                    print(f"[update] 发现新版本: {result.latest_version}")
+                    print("[update] 请手动下载源码并安装:")
+                    if release:
+                        print(f"[update] {release.html_url}")
+                else:
+                    console.print(Panel(
+                        f"[bold]新版本:[/bold] {result.latest_version}\n"
+                        f"[bold]当前版本:[/bold] {__version__}\n\n"
+                        f"[yellow]自动更新不可用，请手动下载源码安装[/yellow]\n\n"
+                        f"[dim]下载地址: {release.html_url if release else 'https://github.com/wuhulab/FoxCode'}[/dim]",
+                        title="🔄 发现新版本",
+                        style="yellow",
+                    ))
         
         else:
             if is_minimalism:

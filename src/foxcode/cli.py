@@ -760,16 +760,27 @@ foxcode --plan             # 规划模式
 
 ### OpenSpace 命令 (AI 经验知识库)
 
+OpenSpace 是 AI 经验知识存储系统，帮助 AI 记住踩过的坑和优化的路径，避免重复犯错，节省 token，加速工作。
+
 - `/space` - 显示 OpenSpace 状态
 - `/space true` - 启用 OpenSpace（默认启用）
 - `/space false` - 禁用 OpenSpace
-- `/space ai true` - 启用 AI 自动总结经验（完成任务后自动记录踩过的坑）
+- `/space ai true` - 启用 AI 自动总结经验（强烈推荐！）
+  - 自动跟踪工具调用失败、重复尝试
+  - 会话结束时自动审查踩过的坑和远路
+  - 自动去重，避免记录重复经验
 - `/space ai false` - 禁用 AI 自动总结经验
 - `/space list` - 列出所有经验
 - `/space add <标题> <内容>` - 添加新经验（不超过 500 字）
 - `/space show <id>` - 显示经验详情
 - `/space delete <id>` - 删除经验
 - `/space stats` - 显示统计信息
+
+经验分类：
+- pitfall: 踩过的坑
+- shortcut: 可以跳过的远路
+- best_practice: 最佳实践
+- general: 通用经验
 
 ## 支持的模型
 
@@ -2924,11 +2935,18 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     
     OpenSpace - AI 经验知识存储系统
     
+    帮助 AI 记住踩过的坑和优化的路径，避免重复犯错，节省 token，加速工作。
+    
+    功能特点：
+    - 自动跟踪工具调用失败、重复尝试
+    - 会话结束时自动审查踩过的坑和远路
+    - 自动去重，避免记录重复经验
+    
     用法:
         /space              - 显示 OpenSpace 状态
         /space true         - 启用 OpenSpace
         /space false        - 禁用 OpenSpace
-        /space ai true      - 启用 AI 自动总结经验
+        /space ai true      - 启用 AI 自动总结经验（强烈推荐！）
         /space ai false     - 禁用 AI 自动总结经验
         /space list         - 列出所有经验
         /space add <title> <content>  - 快速添加经验

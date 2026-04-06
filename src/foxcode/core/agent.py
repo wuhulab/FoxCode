@@ -1082,6 +1082,9 @@ class FoxCodeAgent:
             try:
                 result = await self.execute_tool(tool_name, **(tool_params or {}))
                 
+                # 跟踪工具调用结果
+                self._track_tool_result(tool_name, result)
+                
                 if result.success:
                     yield f"✅ Tool executed successfully:\n```\n{result.output}\n```\n\n"
                 else:
@@ -1436,6 +1439,158 @@ class FoxCodeAgent:
             
         except Exception as e:
             logger.error(f"Failed to save session summary: {e}")
+    
+    def _track_tool_result(self, tool_name: str, result: "ToolResult") -> None:
+        """
+        跟踪工具调用结果到 OpenSpace 会话跟踪器
+        
+        Args:
+            tool_name: 工具名称
+            result: 工具执行结果
+        """
+        try:
+            from foxcode.core.open_space import get_open_space_manager
+            
+            manager = get_open_space_manager(working_dir=self.config.working_dir)
+            
+            # 只有在启用 AI 自动总结时才跟踪
+            if manager.ai_auto_summarize:
+                manager.session_tracker.track_tool_call(
+                    tool_name=tool_name,
+                    success=result.success,
+                    error=result.error or "",
+                )
+                
+        except Exception as e:
+            logger.debug(f"Failed to track tool result: {e}")
+    
+    def get_session_review_prompt(self) -> str:
+        """
+        获取会话审查提示
+        
+        在会话结束时，生成提示让 AI 审查自己踩过的坑和可以跳过的远路
+        
+        Returns:
+            审查提示文本，如果没有需要审查的内容则返回空字符串
+        """
+        try:
+            from foxcode.core.open_space import get_open_space_manager
+            
+            manager = get_open_space_manager(working_dir=self.config.working_dir)
+            
+            # 只有在启用 AI 自动总结时才生成审查提示
+            if not manager.ai_auto_summarize:
+                return ""
+            
+            return manager.generate_review_prompt()
+            
+        except Exception as e:
+            logger.debug(f"Failed to get session review prompt: {e}")
+            return ""
+    
+    def save_openspace_from_response(self, response: str) -> int:
+        """
+        从 AI 响应中保存 OpenSpace 经验
+        
+        Args:
+            response: AI 响应文本
+            
+        Returns:
+            成功保存的经验数量
+        """
+        try:
+            from foxcode.core.open_space import get_open_space_manager
+            
+            manager = get_open_space_manager(working_dir=self.config.working_dir)
+            return manager.save_from_ai_response(response)
+            
+        except Exception as e:
+            logger.error(f"Failed to save OpenSpace from response: {e}")
+            return 0
+    
+    def auto_save_session_experiences(self) -> int:
+        """
+        自动保存会话中的经验到 OpenSpace
+        
+        Returns:
+            成功保存的经验数量
+        """
+        try:
+            from foxcode.core.open_space import get_open_space_manager
+            
+            manager = get_open_space_manager(working_dir=self.config.working_dir)
+            
+            if not manager.ai_auto_summarize:
+                return 0
+            
+            saved = manager.auto_save_session_experiences()
+            
+            if saved > 0:
+                logger.info(f"自动保存了 {saved} 条经验到 OpenSpace")
+            
+            return saved
+            
+        except Exception as e:
+            logger.error(f"Failed to auto save session experiences: {e}")
+            return 0
+    
+    def track_pitfall(
+        self,
+        description: str,
+        context: str = "",
+        resolution: str = "",
+    ) -> None:
+        """
+        跟踪踩坑事件
+        
+        Args:
+            description: 坑的描述
+            context: 相关上下文
+            resolution: 解决方案
+        """
+        try:
+            from foxcode.core.open_space import get_open_space_manager
+            
+            manager = get_open_space_manager(working_dir=self.config.working_dir)
+            
+            if manager.ai_auto_summarize:
+                manager.session_tracker.track_pitfall(
+                    description=description,
+                    context=context,
+                    resolution=resolution,
+                )
+                
+        except Exception as e:
+            logger.debug(f"Failed to track pitfall: {e}")
+    
+    def track_shortcut(
+        self,
+        description: str,
+        original_approach: str = "",
+        better_approach: str = "",
+    ) -> None:
+        """
+        跟踪可优化的路径（远路）
+        
+        Args:
+            description: 描述
+            original_approach: 原来的方法
+            better_approach: 更好的方法
+        """
+        try:
+            from foxcode.core.open_space import get_open_space_manager
+            
+            manager = get_open_space_manager(working_dir=self.config.working_dir)
+            
+            if manager.ai_auto_summarize:
+                manager.session_tracker.track_shortcut(
+                    description=description,
+                    original_approach=original_approach,
+                    better_approach=better_approach,
+                )
+                
+        except Exception as e:
+            logger.debug(f"Failed to track shortcut: {e}")
     
     def get_progress_summary(self) -> str:
         """

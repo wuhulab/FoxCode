@@ -7,6 +7,8 @@
 ### 请注意，foxcode遵循AGPLv3，但不更改本软件代码不触发AGPLv3
 
 ---
+## 研究文章（产生文献）
+[10.5281/zenodo.19433874](https://zenodo.org/records/19433875)
 
 ## 简体中文
 

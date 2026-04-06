@@ -7,7 +7,7 @@ FoxCode 是一个类似 Claude Code 的终端 AI 编码助手，支持多种 AI 
 支持 MCP (Model Context Protocol) 和 Skill 技能系统。
 """
 
-__version__ = "0.0.9"
+__version__ = "0.1.2"
 __author__ = "FoxCode"
 
 from foxcode.core.agent import FoxCodeAgent

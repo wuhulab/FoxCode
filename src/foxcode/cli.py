@@ -85,7 +85,6 @@ class SafeStreamHandler(logging.StreamHandler):
         将文本转换为安全格式
         
         移除可能导致GBK编码失败的字符：
-        - Emoji表情符号 (✅🔄⚠️❌🎉等)
         - 特殊Unicode符号
         - 保留：中文、英文、数字、常用标点
         """
@@ -415,10 +414,7 @@ def print_banner(config: Config | None = None) -> None:
     """打印欢迎横幅"""
     # 检查是否为极简模式
     if config and config.output_topic == OutputTopic.MINIMALISM:
-        # 极简模式：简洁输出
-        print("[run:foxcode 启动]")
         print("[foxcode: 初始化完毕]")
-        return
     
     # 默认模式：完整横幅
     banner = """
@@ -828,12 +824,6 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
         if config and config.output_topic == OutputTopic.MINIMALISM:
             print("\n[FoxCode end]")
             # 显示 token 使用情况
-            try:
-                token_usage = agent.get_token_usage()
-                total_tokens = token_usage.get('total_tokens', 0)
-                print(f"[FoxCode | 模型:{config.model.model_name}| Token:{total_tokens} | 模式: {config.run_mode.value}]")
-            except Exception:
-                pass
         else:
             console.print("\n")
         
@@ -971,12 +961,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                 # 极简模式：输出结束标记
                 if config.output_topic == OutputTopic.MINIMALISM:
                     print("\n[FoxCode end]")
-                    try:
-                        token_usage = agent.get_token_usage()
-                        total_tokens = token_usage.get('total_tokens', 0)
-                        print(f"[FoxCode | 模型:{config.model.model_name}| Token:{total_tokens} | 模式: {config.run_mode.value}]")
-                    except Exception:
-                        pass
+
                 else:
                     console.print("\n")
                 
@@ -2893,7 +2878,7 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             f"  /space show <id>  - 显示详情\n"
             f"  /space delete <id>  - 删除经验\n"
             f"  /space stats   - 统计信息",
-            title="🌌 OpenSpace - AI 经验知识库",
+            title="OpenSpace - AI 经验知识库",
             style="cyan",
         ))
         
@@ -2954,6 +2939,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             else:
                 print("[OK] 已切换到极简模式（精简输出）")
                 print("[WARN] 配置保存失败，下次启动将恢复默认设置")
+
             return
         
         # 显示当前模式状态

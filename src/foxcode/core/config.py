@@ -728,49 +728,126 @@ class Config(BaseSettings):
         try:
             config_path = self.get_config_file_path()
             
-            # 读取现有配置
+            # 读取现有配置文件
             existing_config = {}
             if config_path.exists():
-                with open(config_path, "rb") as f:
-                    existing_config = tomllib.load(f)
+                try:
+                    with open(config_path, "rb") as f:
+                        existing_config = tomllib.load(f)
+                except Exception:
+                    existing_config = {}
             
-            # 更新 output_topic
-            if "output_topic" not in existing_config:
-                existing_config["output_topic"] = topic.value
-            else:
-                existing_config["output_topic"] = topic.value
+            # 如果配置文件中没有模型配置，从当前 Config 对象获取
+            if "model" not in existing_config:
+                base_config = self._get_base_config_dict()
+                # 保留现有配置中的 output_topic 等字段
+                for key, value in base_config.items():
+                    if key not in existing_config:
+                        existing_config[key] = value
+            
+            # 更新 output_topic（作为顶级字段）
+            existing_config["output_topic"] = topic.value
             
             # 写入配置文件
             try:
                 import tomli_w
+                with open(config_path, "wb") as f:
+                    tomli_w.dump(existing_config, f)
+                return True
             except ImportError:
                 # 如果没有 tomli_w，使用简单的格式写入
-                with open(config_path, "w", encoding="utf-8") as f:
-                    f.write(f'# FoxCode 配置文件\n')
-                    f.write(f'# 自动生成于 {time.strftime("%Y-%m-%d %H:%M:%S")}\n\n')
-                    for key, value in existing_config.items():
-                        if isinstance(value, str):
-                            f.write(f'{key} = "{value}"\n')
-                        elif isinstance(value, (int, float, bool)):
-                            f.write(f'{key} = {value}\n')
-                        elif isinstance(value, list):
-                            f.write(f'{key} = {value}\n')
-                        elif isinstance(value, dict):
-                            f.write(f'\n[{key}]\n')
-                            for k, v in value.items():
-                                if isinstance(v, str):
-                                    f.write(f'{k} = "{v}"\n')
-                                elif isinstance(v, (int, float, bool)):
-                                    f.write(f'{k} = {v}\n')
-                                else:
-                                    f.write(f'{k} = {v}\n')
-                return True
+                return self._write_simple_config(config_path, existing_config)
             
-            with open(config_path, "wb") as f:
-                tomli_w.dump(existing_config, f)
-            
-            return True
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"保存配置失败: {e}")
             return False
+    
+    def _get_base_config_dict(self) -> dict[str, Any]:
+        """
+        获取基础配置字典（用于保存配置时保留现有设置）
+        
+        Returns:
+            配置字典
+        """
+        return {
+            "output_topic": self.output_topic.value,
+            "run_mode": self.run_mode.value,
+            "debug": self.debug,
+            "log_level": self.log_level,
+            "model": {
+                "provider": self.model.provider.value,
+                "model_name": self.model.model_name,
+                "temperature": self.model.temperature,
+                "max_tokens": self.model.max_tokens,
+                "timeout": self.model.timeout,
+            },
+        }
+    
+    def _write_simple_config(self, config_path: Path, config_dict: dict) -> bool:
+        """
+        简单的 TOML 配置写入（不依赖 tomli_w）
+        
+        Args:
+            config_path: 配置文件路径
+            config_dict: 配置字典
+            
+        Returns:
+            是否写入成功
+        """
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write('# FoxCode 配置文件\n')
+                f.write(f'# 自动生成于 {time.strftime("%Y-%m-%d %H:%M:%S")}\n\n')
+                
+                # 先写入顶级字段
+                for key, value in config_dict.items():
+                    if not isinstance(value, dict):
+                        self._write_toml_value(f, key, value)
+                
+                # 再写入节
+                for key, value in config_dict.items():
+                    if isinstance(value, dict):
+                        f.write(f'\n[{key}]\n')
+                        for k, v in value.items():
+                            self._write_toml_value(f, k, v, indent="    ")
+            
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"写入配置失败: {e}")
+            return False
+    
+    def _write_toml_value(self, f, key: str, value, indent: str = "") -> None:
+        """
+        写入单个 TOML 值
+        
+        Args:
+            f: 文件对象
+            key: 键名
+            value: 值
+            indent: 缩进
+        """
+        if isinstance(value, str):
+            f.write(f'{indent}{key} = "{value}"\n')
+        elif isinstance(value, bool):
+            # TOML 布尔值必须是小写的 true 或 false
+            f.write(f'{indent}{key} = {"true" if value else "false"}\n')
+        elif isinstance(value, (int, float)):
+            f.write(f'{indent}{key} = {value}\n')
+        elif isinstance(value, list):
+            # TOML 数组格式
+            if not value:
+                f.write(f'{indent}{key} = []\n')
+            elif all(isinstance(v, str) for v in value):
+                # 字符串数组
+                formatted = ', '.join(f'"{v}"' for v in value)
+                f.write(f'{indent}{key} = [{formatted}]\n')
+            else:
+                # 其他类型数组
+                f.write(f'{indent}{key} = {value}\n')
+        elif value is None:
+            pass  # 跳过 None 值
+        else:
+            # 其他类型，尝试转为字符串
+            f.write(f'{indent}{key} = "{str(value)}"\n')

@@ -150,6 +150,29 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 
+def _adjust_log_level_for_minimalism() -> None:
+    """
+    根据极简模式调整控制台日志级别
+    
+    在极简模式下，将控制台日志级别设置为 WARNING，
+    避免显示 INFO 级别的初始化日志，保持输出简洁
+    """
+    try:
+        from foxcode.core.config import Config, OutputTopic
+        
+        # 加载配置（不创建完整实例，只读取 output_topic）
+        file_config = Config.load_from_file()
+        output_topic = file_config.get("output_topic", OutputTopic.DEFAULT)
+        
+        if output_topic == OutputTopic.MINIMALISM:
+            # 极简模式：只将控制台 handler 的级别设置为 WARNING
+            # 文件日志保持 INFO 级别，用于调试
+            _stream_handler.setLevel(logging.WARNING)
+    except Exception:
+        # 如果调整失败，不影响程序运行
+        pass
+
+
 def run_async(coro):
     """
     安全地运行异步协程
@@ -609,6 +632,9 @@ def main(
     
     包含完整的异常处理和优雅退出机制
     """
+    # 首先根据极简模式调整日志级别（在信号处理器之前）
+    _adjust_log_level_for_minimalism()
+    
     # 初始化信号处理器（必须在主函数开始时调用）
     _setup_signal_handlers()
     

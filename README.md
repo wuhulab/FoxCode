@@ -8,7 +8,8 @@
 
 ---
 ## 研究文章（产生文献）
-[10.5281/zenodo.19433874](https://zenodo.org/records/19433875)
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19433875.svg)](https://zenodo.org/records/19433875)
 
 ## 简体中文
 

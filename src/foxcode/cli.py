@@ -35,15 +35,87 @@ from foxcode.core.process_watchdog import (
     init_watchdog,
     get_watchdog,
 )
+from foxcode.core.updater import (
+    start_background_update_check,
+    UpdateResult,
+    UpdateStatus,
+)
 
 # ==================== 全局状态管理 ====================
 _shutdown_requested = False
 _current_agent: FoxCodeAgent | None = None
 _watchdog: ProcessWatchdog | None = None
+_update_checker_started = False  # 标记更新检查器是否已启动
 
 # 确保日志目录存在
 log_dir = Path.home() / ".foxcode"
 log_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _on_update_check_complete(result: UpdateResult) -> None:
+    """
+    更新检查完成回调函数
+    
+    当后台更新检查完成时调用，显示更新提示信息。
+    
+    Args:
+        result: 更新检查结果
+    """
+    global _update_checker_started
+    
+    try:
+        if result.status == UpdateStatus.UPDATE_AVAILABLE:
+            # 有新版本可用，显示提示
+            release_info = result.release_info
+            release_notes = ""
+            if release_info and release_info.body:
+                # 截取前200字符的发布说明
+                release_notes = release_info.body[:200]
+                if len(release_info.body) > 200:
+                    release_notes += "..."
+            
+            console.print("\n")
+            console.print(Panel(
+                f"[bold yellow]发现新版本: {result.latest_version}[/bold yellow]\n"
+                f"当前版本: {result.current_version}\n\n"
+                f"[dim]{release_notes}[/dim]\n\n"
+                f"[cyan]运行 'foxcode update' 进行更新[/cyan]",
+                title="[bold]FoxCode 更新提示[/bold]",
+                border_style="yellow",
+            ))
+            console.print("\n")
+        elif result.status == UpdateStatus.UP_TO_DATE:
+            # 已是最新版本，仅在调试模式下显示
+            logger.debug(f"FoxCode 已是最新版本: {result.current_version}")
+        else:
+            # 检查失败，仅在调试模式下显示
+            logger.debug(f"更新检查失败: {result.message}")
+    except Exception as e:
+        logger.debug(f"处理更新检查结果时出错: {e}")
+    finally:
+        _update_checker_started = False
+
+
+def _start_background_update_checker() -> None:
+    """
+    启动后台更新检查器
+    
+    在后台线程中执行更新检查，不阻塞主程序启动。
+    检查完成后通过回调函数显示更新提示。
+    """
+    global _update_checker_started
+    
+    # 避免重复启动
+    if _update_checker_started:
+        return
+    
+    try:
+        _update_checker_started = True
+        start_background_update_check(callback=_on_update_check_complete)
+        logger.debug("后台更新检查已启动")
+    except Exception as e:
+        logger.debug(f"启动后台更新检查失败: {e}")
+        _update_checker_started = False
 
 
 class SafeStreamHandler(logging.StreamHandler):
@@ -873,6 +945,9 @@ def main(
     
     # 初始化进程看门狗（性能监控和自动恢复）
     _init_watchdog()
+    
+    # 启动后台更新检查（不阻塞主程序启动）
+    _start_background_update_checker()
     
     try:
         # 显示版本
@@ -2721,27 +2796,89 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
         scanner = SecurityScanner(scanner_config)
         
         if cmd_arg == "deps":
-            results = run_async(scanner.scan_dependencies(Path(config.working_dir)))
-            console.print(Panel(
-                f"[bold]扫描的依赖:[/bold] {results.get('scanned', 0)}\n"
-                f"[bold]漏洞数:[/bold] {results.get('vulnerabilities', 0)}\n"
-                f"[bold]建议:[/bold]\n" + "\n".join(f"  - {s}" for s in results.get('recommendations', [])[:5]),
-                title="🔒 依赖安全扫描",
-                style="yellow",
-            ))
+            # 扫描依赖漏洞
+            dependency_issues = run_async(scanner.check_dependencies(Path(config.working_dir)))
+            
+            if not dependency_issues:
+                console.print(Panel(
+                    "[green]✅ 未发现依赖漏洞[/green]",
+                    title="🔒 依赖安全扫描",
+                    style="green",
+                ))
+            else:
+                # 构建依赖问题列表
+                issues_text = []
+                for issue in dependency_issues:
+                    severity_color = {
+                        "critical": "red",
+                        "high": "red",
+                        "medium": "yellow",
+                        "low": "blue",
+                    }.get(issue.severity.value, "white")
+                    
+                    issues_text.append(
+                        f"  [{severity_color}]• {issue.package} {issue.version}[/{severity_color}]\n"
+                        f"    漏洞: {issue.vulnerability_id}\n"
+                        f"    严重性: {issue.severity.value}\n"
+                        f"    修复版本: {issue.fixed_version}\n"
+                        f"    描述: {issue.description}"
+                    )
+                
+                console.print(Panel(
+                    f"[bold]发现依赖漏洞:[/bold] {len(dependency_issues)}\n\n" + "\n\n".join(issues_text),
+                    title="🔒 依赖安全扫描",
+                    style="red",
+                ))
         
         else:
+            # 运行完整安全扫描
             results = run_async(scanner.scan_directory(Path(config.working_dir)))
-            console.print(Panel(
+            
+            # 从 summary 中获取严重程度分布
+            severity_dist = results.summary.get("by_severity", {})
+            severity_text = "\n".join(
+                f"  - {k}: {v}" for k, v in severity_dist.items()
+            ) if severity_dist else "  无问题"
+            
+            # 构建结果面板
+            result_text = (
                 f"[bold]扫描文件数:[/bold] {results.files_scanned}\n"
                 f"[bold]发现问题:[/bold] {len(results.issues)}\n"
-                f"[bold]严重程度分布:[/bold]\n" + 
-                "\n".join(f"  - {k}: {v}" for k, v in results.severity_distribution.items()),
+                f"[bold]敏感信息:[/bold] {len(results.secrets)}\n"
+                f"[bold]依赖问题:[/bold] {len(results.dependency_issues)}\n"
+                f"[bold]严重程度分布:[/bold]\n{severity_text}\n"
+                f"[bold]风险等级:[/bold] {results.summary.get('risk_level', 'unknown')}"
+            )
+            
+            # 显示详细问题（如果有）
+            if results.issues:
+                result_text += "\n\n[bold yellow]发现的安全问题:[/bold yellow]"
+                for issue in results.issues[:10]:  # 只显示前10个问题
+                    severity_color = {
+                        "critical": "red",
+                        "high": "red",
+                        "medium": "yellow",
+                        "low": "blue",
+                    }.get(issue.severity.value, "white")
+                    
+                    result_text += (
+                        f"\n  [{severity_color}]• [{issue.id}] {issue.title}[/{severity_color}]\n"
+                        f"    文件: {issue.file_path}:{issue.line_number}\n"
+                        f"    类型: {issue.vulnerability_type.value}\n"
+                        f"    建议: {issue.recommendation}"
+                    )
+                
+                if len(results.issues) > 10:
+                    result_text += f"\n  ... 还有 {len(results.issues) - 10} 个问题"
+            
+            console.print(Panel(
+                result_text,
                 title="🔒 安全扫描结果",
                 style="red" if len(results.issues) > 0 else "green",
             ))
     
     except Exception as e:
+        logger.error(f"安全扫描失败: {e}", exc_info=True)
         console.print(f"[red]安全扫描失败: {markup.escape(str(e))}[/red]")
 
 

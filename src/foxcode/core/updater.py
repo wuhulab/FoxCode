@@ -22,6 +22,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1862,3 +1863,229 @@ def is_update_available() -> bool:
     updater = FoxCodeUpdater()
     result = updater.check_for_updates()
     return result.status == UpdateStatus.UPDATE_AVAILABLE
+
+
+class BackgroundUpdateChecker:
+    """
+    后台更新检查器
+    
+    在后台线程中执行更新检查，不阻塞主程序启动。
+    使用线程安全的方式存储检查结果，供主程序后续获取。
+    """
+    
+    _instance: BackgroundUpdateChecker | None = None
+    _lock = threading.Lock()
+    
+    def __init__(self):
+        """初始化后台更新检查器"""
+        self._result: UpdateResult | None = None
+        self._check_thread: threading.Thread | None = None
+        self._is_checking = False
+        self._result_callbacks: list[Callable[[UpdateResult], None]] = []
+        self._check_complete = threading.Event()
+    
+    @classmethod
+    def get_instance(cls) -> BackgroundUpdateChecker:
+        """
+        获取单例实例
+        
+        Returns:
+            BackgroundUpdateChecker 单例实例
+        """
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+    
+    def start_background_check(
+        self,
+        callback: Callable[[UpdateResult], None] | None = None,
+        force: bool = False,
+    ) -> bool:
+        """
+        启动后台更新检查
+        
+        在后台线程中执行更新检查，不阻塞主程序。
+        检查完成后会调用注册的回调函数。
+        
+        Args:
+            callback: 检查完成后的回调函数，接收 UpdateResult 参数
+            force: 是否强制检查（忽略检查间隔限制）
+            
+        Returns:
+            是否成功启动检查（如果已有检查在进行中则返回 False）
+        """
+        # 如果已经有检查在进行中，不重复启动
+        if self._is_checking and not force:
+            logger.debug("更新检查已在进行中，跳过")
+            return False
+        
+        # 注册回调
+        if callback:
+            self._result_callbacks.append(callback)
+        
+        # 重置状态
+        self._check_complete.clear()
+        
+        # 创建并启动后台线程
+        self._check_thread = threading.Thread(
+            target=self._check_in_thread,
+            kwargs={"force": force},
+            daemon=True,  # 设置为守护线程，主程序退出时自动结束
+            name="FoxCode-UpdateChecker",
+        )
+        self._check_thread.start()
+        
+        logger.debug("后台更新检查已启动")
+        return True
+    
+    def _check_in_thread(self, force: bool = False) -> None:
+        """
+        在后台线程中执行更新检查
+        
+        Args:
+            force: 是否强制检查
+        """
+        self._is_checking = True
+        
+        try:
+            # 创建更新器实例
+            updater = FoxCodeUpdater()
+            
+            # 检查是否应该执行更新检查（根据配置的检查间隔）
+            if not force and not updater.should_check_update():
+                logger.debug("根据检查间隔配置，跳过本次更新检查")
+                self._result = UpdateResult(
+                    status=UpdateStatus.UP_TO_DATE,
+                    current_version=updater.current_version,
+                    message="检查间隔未到，跳过检查",
+                )
+            else:
+                # 执行更新检查
+                logger.info("正在后台检查更新...")
+                self._result = updater.check_for_updates()
+                
+                # 记录检查结果
+                if self._result.status == UpdateStatus.UPDATE_AVAILABLE:
+                    logger.info(
+                        f"发现新版本: {self._result.latest_version} "
+                        f"(当前: {self._result.current_version})"
+                    )
+                elif self._result.status == UpdateStatus.UP_TO_DATE:
+                    logger.debug("当前已是最新版本")
+                else:
+                    logger.warning(f"更新检查失败: {self._result.message}")
+            
+            # 调用注册的回调函数
+            for callback in self._result_callbacks:
+                try:
+                    callback(self._result)
+                except Exception as e:
+                    logger.error(f"更新检查回调执行失败: {e}")
+            
+        except Exception as e:
+            logger.error(f"后台更新检查异常: {e}")
+            self._result = UpdateResult(
+                status=UpdateStatus.CHECK_FAILED,
+                current_version="unknown",
+                message="后台更新检查异常",
+                error=str(e),
+            )
+        finally:
+            self._is_checking = False
+            self._check_complete.set()
+    
+    def get_result(self, timeout: float | None = None) -> UpdateResult | None:
+        """
+        获取更新检查结果
+        
+        Args:
+            timeout: 等待超时时间（秒），None 表示不等待
+            
+        Returns:
+            UpdateResult 对象，如果检查未完成且不等待则返回 None
+        """
+        if timeout is not None:
+            # 等待检查完成
+            self._check_complete.wait(timeout)
+        
+        return self._result
+    
+    def is_checking(self) -> bool:
+        """
+        检查是否正在进行更新检查
+        
+        Returns:
+            是否正在检查
+        """
+        return self._is_checking
+    
+    def add_callback(self, callback: Callable[[UpdateResult], None]) -> None:
+        """
+        添加检查完成回调函数
+        
+        Args:
+            callback: 回调函数，接收 UpdateResult 参数
+        """
+        self._result_callbacks.append(callback)
+    
+    def wait_for_completion(self, timeout: float | None = None) -> bool:
+        """
+        等待更新检查完成
+        
+        Args:
+            timeout: 超时时间（秒），None 表示无限等待
+            
+        Returns:
+            是否在超时前完成
+        """
+        return self._check_complete.wait(timeout)
+
+
+def start_background_update_check(
+    callback: Callable[[UpdateResult], None] | None = None,
+    force: bool = False,
+) -> BackgroundUpdateChecker:
+    """
+    启动后台更新检查（便捷函数）
+    
+    在后台线程中执行更新检查，不阻塞主程序启动。
+    
+    Args:
+        callback: 检查完成后的回调函数，接收 UpdateResult 参数
+        force: 是否强制检查（忽略检查间隔限制）
+        
+    Returns:
+        BackgroundUpdateChecker 实例，可用于获取检查结果
+        
+    Example:
+        ```python
+        # 启动后台更新检查
+        checker = start_background_update_check()
+        
+        # 主程序继续执行...
+        
+        # 稍后获取结果
+        result = checker.get_result(timeout=5.0)
+        if result and result.status == UpdateStatus.UPDATE_AVAILABLE:
+            print(f"发现新版本: {result.latest_version}")
+        ```
+    """
+    checker = BackgroundUpdateChecker.get_instance()
+    checker.start_background_check(callback=callback, force=force)
+    return checker
+
+
+def get_background_update_result(timeout: float | None = None) -> UpdateResult | None:
+    """
+    获取后台更新检查结果（便捷函数）
+    
+    Args:
+        timeout: 等待超时时间（秒），None 表示不等待
+        
+    Returns:
+        UpdateResult 对象，如果检查未完成且不等待则返回 None
+    """
+    checker = BackgroundUpdateChecker.get_instance()
+    return checker.get_result(timeout=timeout)

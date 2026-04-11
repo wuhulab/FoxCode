@@ -13,6 +13,7 @@ FoxCode 高级调试器集成
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import bdb
 import json
@@ -30,6 +31,116 @@ from typing import Any, Callable
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+# 安全表达式求值相关常量
+MAX_EXPRESSION_LENGTH = 1000  # 表达式最大长度
+FORBIDDEN_NODES = {
+    ast.Import, ast.ImportFrom,  # 禁止导入
+    ast.Global,  # 禁止全局声明
+    ast.AsyncFunctionDef, ast.FunctionDef,  # 禁止定义函数
+    ast.ClassDef,  # 禁止定义类
+}
+# Python 3.12+ 移除了 ast.Exec，兼容处理
+if hasattr(ast, 'Exec'):
+    FORBIDDEN_NODES.add(ast.Exec)
+FORBIDDEN_NAMES = {
+    '__import__', 'eval', 'exec', 'compile', 'open', 
+    'input', 'breakpoint', 'globals', 'locals',
+    'vars', 'dir', 'getattr', 'setattr', 'delattr',
+    'hasattr', '__builtins__', '__class__', '__base__',
+    '__subclasses__', '__mro__', '__globals__',
+    'os', 'sys', 'subprocess', 'socket', 'pickle',
+    'marshal', 'shelve', 'importlib', 'ctypes',
+}
+
+
+def _validate_expression(expression: str) -> bool:
+    """
+    验证表达式是否安全
+    
+    Args:
+        expression: 要验证的表达式字符串
+        
+    Returns:
+        表达式是否安全
+    """
+    # 检查长度
+    if len(expression) > MAX_EXPRESSION_LENGTH:
+        return False
+    
+    try:
+        # 解析表达式为 AST
+        tree = ast.parse(expression, mode='eval')
+        
+        # 遍历 AST 检查危险节点
+        for node in ast.walk(tree):
+            # 检查禁止的节点类型
+            if type(node) in FORBIDDEN_NODES:
+                return False
+            
+            # 检查属性访问
+            if isinstance(node, ast.Attribute):
+                if node.attr.startswith('_'):
+                    return False
+            
+            # 检查名称
+            if isinstance(node, ast.Name):
+                if node.id in FORBIDDEN_NAMES:
+                    return False
+        
+        return True
+    except SyntaxError:
+        return False
+
+
+def safe_eval(expression: str, globals_dict: dict[str, Any], locals_dict: dict[str, Any]) -> tuple[Any, str | None]:
+    """
+    安全地求值表达式
+    
+    Args:
+        expression: 表达式字符串
+        globals_dict: 全局变量字典
+        locals_dict: 局部变量字典
+        
+    Returns:
+        (求值结果, 错误信息) 元组，成功时错误信息为 None
+    """
+    # 验证表达式安全性
+    if not _validate_expression(expression):
+        return None, "表达式包含不安全的操作"
+    
+    try:
+        # 创建受限的全局命名空间
+        safe_globals = {
+            '__builtins__': {
+                'abs': abs, 'all': all, 'any': any, 'bin': bin,
+                'bool': bool, 'chr': chr, 'complex': complex,
+                'dict': dict, 'divmod': divmod, 'enumerate': enumerate,
+                'filter': filter, 'float': float, 'format': format,
+                'frozenset': frozenset, 'hex': hex, 'int': int,
+                'isinstance': isinstance, 'issubclass': issubclass,
+                'iter': iter, 'len': len, 'list': list, 'map': map,
+                'max': max, 'min': min, 'next': next, 'oct': oct,
+                'ord': ord, 'pow': pow, 'print': print, 'range': range,
+                'repr': repr, 'reversed': reversed, 'round': round,
+                'set': set, 'slice': slice, 'sorted': sorted,
+                'str': str, 'sum': sum, 'tuple': tuple, 'type': type,
+                'zip': zip, 'True': True, 'False': False, 'None': None,
+            }
+        }
+        
+        # 合并用户提供的全局变量（过滤危险名称）
+        for key, value in globals_dict.items():
+            if key not in FORBIDDEN_NAMES and not key.startswith('_'):
+                safe_globals[key] = value
+        
+        # 执行求值
+        result = eval(expression, safe_globals, locals_dict)
+        return result, None
+        
+    except Exception as e:
+        return None, f"{type(e).__name__}: {str(e)}"
 
 
 class BreakpointType(str, Enum):
@@ -326,9 +437,15 @@ class AdvancedDebugger:
                     # 检查条件
                     if bp.condition:
                         try:
-                            if not eval(bp.condition, frame.f_globals, frame.f_locals):
+                            # 使用安全求值函数替代直接 eval
+                            result, error = safe_eval(bp.condition, frame.f_globals, frame.f_locals)
+                            if error:
+                                logger.warning(f"断点条件求值失败: {error}")
                                 return self._trace_func
-                        except Exception:
+                            if not result:
+                                return self._trace_func
+                        except Exception as e:
+                            logger.warning(f"断点条件求值异常: {e}")
                             return self._trace_func
                     
                     # 命中断点
@@ -643,7 +760,13 @@ class AdvancedDebugger:
             globals_dict = {}
             locals_dict = dict(frame.locals)
             
-            result = eval(expression, globals_dict, locals_dict)
+            # 使用安全求值函数
+            result, error = safe_eval(expression, globals_dict, locals_dict)
+            if error:
+                return EvaluationResult(
+                    expression=expression,
+                    error=error,
+                )
             return EvaluationResult(
                 expression=expression,
                 result=result,
@@ -683,7 +806,11 @@ class AdvancedDebugger:
             return False
         
         try:
-            evaluated = eval(value, {}, dict(frame.locals))
+            # 使用安全求值函数
+            evaluated, error = safe_eval(value, {}, dict(frame.locals))
+            if error:
+                logger.error(f"设置变量失败: {error}")
+                return False
             frame.locals[name] = evaluated
             return True
         except Exception as e:

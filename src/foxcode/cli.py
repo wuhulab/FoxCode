@@ -2791,17 +2791,23 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
     """
     try:
         from foxcode.core.security_scanner import SecurityScanner, SecurityConfig
+        from pathlib import Path as PathlibPath
+        
+        # 日志文件路径
+        log_file_path = PathlibPath.home() / ".foxcode" / "security_scan.log"
         
         scanner_config = SecurityConfig()
         scanner = SecurityScanner(scanner_config)
         
         if cmd_arg == "deps":
             # 扫描依赖漏洞
+            console.print("[cyan]正在扫描依赖漏洞...[/cyan]")
             dependency_issues = run_async(scanner.check_dependencies(Path(config.working_dir)))
             
             if not dependency_issues:
                 console.print(Panel(
-                    "[green]✅ 未发现依赖漏洞[/green]",
+                    f"[green]✅ 未发现依赖漏洞[/green]\n\n"
+                    f"[dim]详细日志: {log_file_path}[/dim]",
                     title="🔒 依赖安全扫描",
                     style="green",
                 ))
@@ -2825,13 +2831,15 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                     )
                 
                 console.print(Panel(
-                    f"[bold]发现依赖漏洞:[/bold] {len(dependency_issues)}\n\n" + "\n\n".join(issues_text),
+                    f"[bold]发现依赖漏洞:[/bold] {len(dependency_issues)}\n\n" + "\n\n".join(issues_text) +
+                    f"\n\n[dim]详细日志: {log_file_path}[/dim]",
                     title="🔒 依赖安全扫描",
                     style="red",
                 ))
         
         else:
             # 运行完整安全扫描
+            console.print("[cyan]正在进行安全扫描，请稍候...[/cyan]")
             results = run_async(scanner.scan_directory(Path(config.working_dir)))
             
             # 从 summary 中获取严重程度分布
@@ -2847,7 +2855,8 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                 f"[bold]敏感信息:[/bold] {len(results.secrets)}\n"
                 f"[bold]依赖问题:[/bold] {len(results.dependency_issues)}\n"
                 f"[bold]严重程度分布:[/bold]\n{severity_text}\n"
-                f"[bold]风险等级:[/bold] {results.summary.get('risk_level', 'unknown')}"
+                f"[bold]风险等级:[/bold] {results.summary.get('risk_level', 'unknown')}\n"
+                f"[bold]扫描耗时:[/bold] {results.duration_seconds:.2f} 秒"
             )
             
             # 显示详细问题（如果有）
@@ -2870,6 +2879,9 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                 
                 if len(results.issues) > 10:
                     result_text += f"\n  ... 还有 {len(results.issues) - 10} 个问题"
+            
+            # 添加日志文件路径
+            result_text += f"\n\n[dim]详细日志已保存至: {log_file_path}[/dim]"
             
             console.print(Panel(
                 result_text,

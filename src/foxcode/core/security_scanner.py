@@ -24,7 +24,45 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+# 创建专门的日志记录器
 logger = logging.getLogger(__name__)
+
+
+def setup_security_logger(log_dir: Path | None = None) -> logging.Logger:
+    """
+    设置安全扫描专用日志记录器
+    
+    Args:
+        log_dir: 日志目录路径，默认为 ~/.foxcode
+        
+    Returns:
+        配置好的日志记录器
+    """
+    if log_dir is None:
+        log_dir = Path.home() / ".foxcode"
+    
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 创建专门的日志记录器
+    security_logger = logging.getLogger("foxcode.security")
+    security_logger.setLevel(logging.DEBUG)
+    
+    # 避免重复添加处理器
+    if not security_logger.handlers:
+        # 文件处理器 - 详细日志
+        file_handler = logging.FileHandler(
+            log_dir / "security_scan.log",
+            encoding='utf-8',
+            mode='a'  # 追加模式
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+        )
+        file_handler.setFormatter(file_formatter)
+        security_logger.addHandler(file_handler)
+    
+    return security_logger
 
 
 class VulnerabilitySeverity(str, Enum):
@@ -383,7 +421,16 @@ class SecurityScanner:
         """
         self.config = config or SecurityConfig()
         self._issue_counter = 0
-        logger.info("安全漏洞扫描器初始化完成")
+        
+        # 设置专用日志记录器
+        self.logger = setup_security_logger()
+        self.logger.info("=" * 80)
+        self.logger.info("安全漏洞扫描器初始化完成")
+        self.logger.info(f"配置: 启用检查项={self.config.enabled_checks}")
+        self.logger.info(f"配置: 严重程度阈值={self.config.severity_threshold.value}")
+        self.logger.info(f"配置: 检查依赖={self.config.check_dependencies}")
+        self.logger.info(f"配置: 检查敏感信息={self.config.check_secrets}")
+        self.logger.info("=" * 80)
     
     def _generate_issue_id(self) -> str:
         """生成问题 ID"""
@@ -422,13 +469,17 @@ class SecurityScanner:
         issues = []
         
         if not self._should_scan_file(file_path):
+            self.logger.debug(f"跳过文件: {file_path}")
             return issues
+        
+        self.logger.debug(f"开始扫描文件: {file_path}")
         
         try:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             
             lines = content.split("\n")
+            file_issues_count = 0
             
             # 检查漏洞模式
             for vuln_type, rules in self.VULNERABILITY_RULES.items():
@@ -436,7 +487,7 @@ class SecurityScanner:
                     pattern = rule["pattern"]
                     for i, line in enumerate(lines):
                         if re.search(pattern, line, re.IGNORECASE):
-                            issues.append(SecurityIssue(
+                            issue = SecurityIssue(
                                 id=self._generate_issue_id(),
                                 title=rule["message"],
                                 description=f"在 {file_path.name}:{i+1} 检测到潜在的安全问题",
@@ -448,7 +499,18 @@ class SecurityScanner:
                                 recommendation=rule["recommendation"],
                                 cwe_id=rule.get("cwe", ""),
                                 confidence=0.7,
-                            ))
+                            )
+                            issues.append(issue)
+                            file_issues_count += 1
+                            
+                            # 记录发现的问题
+                            self.logger.warning(
+                                f"发现安全问题 [{issue.id}]: {issue.title}\n"
+                                f"  文件: {file_path}:{i+1}\n"
+                                f"  类型: {vuln_type.value}\n"
+                                f"  严重性: {issue.severity.value}\n"
+                                f"  代码: {line.strip()[:100]}"
+                            )
             
             # 检查敏感信息
             if self.config.check_secrets:
@@ -462,7 +524,7 @@ class SecurityScanner:
                             secret.context = line.strip()[:100]
                             break
                     
-                    issues.append(SecurityIssue(
+                    issue = SecurityIssue(
                         id=self._generate_issue_id(),
                         title=f"检测到敏感信息: {secret.type}",
                         description=f"在 {file_path.name} 中发现可能的 {secret.type}",
@@ -473,10 +535,24 @@ class SecurityScanner:
                         code_snippet=secret.context,
                         recommendation="将敏感信息移至环境变量或安全的密钥管理系统",
                         confidence=0.9,
-                    ))
+                    )
+                    issues.append(issue)
+                    file_issues_count += 1
+                    
+                    # 记录发现的敏感信息
+                    self.logger.warning(
+                        f"发现敏感信息 [{issue.id}]: {secret.type}\n"
+                        f"  文件: {file_path}:{secret.line_number}\n"
+                        f"  类型: {secret.type}"
+                    )
+            
+            if file_issues_count > 0:
+                self.logger.info(f"文件 {file_path.name} 发现 {file_issues_count} 个问题")
+            else:
+                self.logger.debug(f"文件 {file_path.name} 未发现问题")
             
         except Exception as e:
-            logger.debug(f"扫描文件失败 {file_path}: {e}")
+            self.logger.error(f"扫描文件失败 {file_path}: {e}", exc_info=True)
         
         return issues
     
@@ -509,6 +585,11 @@ class SecurityScanner:
         all_secrets: list[SecretMatch] = []
         files_scanned = 0
         
+        self.logger.info("=" * 80)
+        self.logger.info(f"开始扫描目录: {directory}")
+        self.logger.info(f"扫描开始时间: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info("=" * 80)
+        
         # 遍历目录
         for file_path in directory.rglob("*"):
             if not file_path.is_file():
@@ -518,17 +599,51 @@ class SecurityScanner:
                 issues = await self.scan_file(file_path)
                 all_issues.extend(issues)
                 files_scanned += 1
+                
+                # 每10个文件记录一次进度
+                if files_scanned % 10 == 0:
+                    self.logger.info(f"扫描进度: 已扫描 {files_scanned} 个文件，发现 {len(all_issues)} 个问题")
+        
+        self.logger.info(f"文件扫描完成: 共扫描 {files_scanned} 个文件")
         
         # 检查依赖
         dependency_issues = []
         if self.config.check_dependencies:
+            self.logger.info("开始检查依赖安全...")
             dependency_issues = await self.check_dependencies(directory)
+            self.logger.info(f"依赖检查完成: 发现 {len(dependency_issues)} 个问题")
         
         # 计算耗时
         duration = (datetime.now() - start_time).total_seconds()
         
         # 生成摘要
         summary = self._generate_summary(all_issues, all_secrets, dependency_issues)
+        
+        # 记录扫描结果摘要
+        self.logger.info("=" * 80)
+        self.logger.info("扫描结果摘要:")
+        self.logger.info(f"  扫描文件数: {files_scanned}")
+        self.logger.info(f"  发现问题数: {len(all_issues)}")
+        self.logger.info(f"  敏感信息数: {len(all_secrets)}")
+        self.logger.info(f"  依赖问题数: {len(dependency_issues)}")
+        self.logger.info(f"  风险等级: {summary.get('risk_level', 'unknown')}")
+        self.logger.info(f"  扫描耗时: {duration:.2f} 秒")
+        
+        # 记录严重程度分布
+        severity_dist = summary.get("by_severity", {})
+        if severity_dist:
+            self.logger.info("  严重程度分布:")
+            for severity, count in severity_dist.items():
+                self.logger.info(f"    {severity}: {count}")
+        
+        # 记录问题类型分布
+        type_dist = summary.get("by_type", {})
+        if type_dist:
+            self.logger.info("  问题类型分布:")
+            for issue_type, count in type_dist.items():
+                self.logger.info(f"    {issue_type}: {count}")
+        
+        self.logger.info("=" * 80)
         
         return ScanReport(
             project_path=str(directory),
@@ -616,21 +731,38 @@ class SecurityScanner:
         """
         issues = []
         
+        self.logger.info(f"检查项目依赖: {project_path}")
+        
         # 检查 requirements.txt
         req_file = project_path / "requirements.txt"
         if req_file.exists():
-            issues.extend(await self._check_python_dependencies(req_file))
+            self.logger.info(f"发现 Python 依赖文件: {req_file}")
+            py_issues = await self._check_python_dependencies(req_file)
+            issues.extend(py_issues)
+            self.logger.info(f"Python 依赖检查完成: 发现 {len(py_issues)} 个问题")
+        else:
+            self.logger.debug("未找到 requirements.txt 文件")
         
         # 检查 package.json
         pkg_file = project_path / "package.json"
         if pkg_file.exists():
-            issues.extend(await self._check_npm_dependencies(pkg_file))
+            self.logger.info(f"发现 NPM 依赖文件: {pkg_file}")
+            npm_issues = await self._check_npm_dependencies(pkg_file)
+            issues.extend(npm_issues)
+            self.logger.info(f"NPM 依赖检查完成: 发现 {len(npm_issues)} 个问题")
+        else:
+            self.logger.debug("未找到 package.json 文件")
+        
+        if not req_file.exists() and not pkg_file.exists():
+            self.logger.info("未发现依赖文件，跳过依赖检查")
         
         return issues
     
     async def _check_python_dependencies(self, req_file: Path) -> list[DependencyIssue]:
         """检查 Python 依赖"""
         issues = []
+        
+        self.logger.debug(f"开始检查 Python 依赖: {req_file}")
         
         # 已知漏洞的包版本（示例）
         known_vulnerabilities = {
@@ -651,37 +783,53 @@ class SecurityScanner:
         
         try:
             with open(req_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
+                lines = f.readlines()
+            
+            self.logger.debug(f"读取到 {len(lines)} 行依赖配置")
+            
+            for line_num, line in enumerate(lines, 1):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                
+                # 解析包名和版本
+                match = re.match(r"([a-zA-Z0-9_-]+)\s*([<>=!]+)\s*([0-9.]+)", line)
+                if match:
+                    package = match.group(1).lower()
+                    version = match.group(3)
                     
-                    # 解析包名和版本
-                    match = re.match(r"([a-zA-Z0-9_-]+)\s*([<>=!]+)\s*([0-9.]+)", line)
-                    if match:
-                        package = match.group(1).lower()
-                        version = match.group(3)
-                        
-                        if package in known_vulnerabilities:
-                            for vuln_version, (cve, severity, fixed) in known_vulnerabilities[package].items():
-                                if version == vuln_version:
-                                    issues.append(DependencyIssue(
-                                        package=package,
-                                        version=version,
-                                        vulnerability_id=cve,
-                                        severity=VulnerabilitySeverity(severity.lower()),
-                                        description=f"{package} {version} 存在已知漏洞",
-                                        fixed_version=fixed,
-                                        references=[f"https://nvd.nist.gov/vuln/detail/{cve}"],
-                                    ))
+                    self.logger.debug(f"检查包: {package} {version}")
+                    
+                    if package in known_vulnerabilities:
+                        for vuln_version, (cve, severity, fixed) in known_vulnerabilities[package].items():
+                            if version == vuln_version:
+                                issue = DependencyIssue(
+                                    package=package,
+                                    version=version,
+                                    vulnerability_id=cve,
+                                    severity=VulnerabilitySeverity(severity.lower()),
+                                    description=f"{package} {version} 存在已知漏洞",
+                                    fixed_version=fixed,
+                                    references=[f"https://nvd.nist.gov/vuln/detail/{cve}"],
+                                )
+                                issues.append(issue)
+                                
+                                self.logger.warning(
+                                    f"发现依赖漏洞: {package} {version}\n"
+                                    f"  CVE: {cve}\n"
+                                    f"  严重性: {severity}\n"
+                                    f"  修复版本: {fixed}"
+                                )
         except Exception as e:
-            logger.debug(f"检查 Python 依赖失败: {e}")
+            self.logger.error(f"检查 Python 依赖失败: {e}", exc_info=True)
         
         return issues
     
     async def _check_npm_dependencies(self, pkg_file: Path) -> list[DependencyIssue]:
         """检查 NPM 依赖"""
         issues = []
+        
+        self.logger.debug(f"开始检查 NPM 依赖: {pkg_file}")
         
         # 已知漏洞的包版本（示例）
         known_vulnerabilities = {
@@ -701,16 +849,19 @@ class SecurityScanner:
                 data = json.load(f)
             
             dependencies = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+            self.logger.debug(f"读取到 {len(dependencies)} 个依赖包")
             
             for package, version in dependencies.items():
                 package_lower = package.lower()
                 # 清理版本号
                 clean_version = re.sub(r"[^0-9.]", "", version)
                 
+                self.logger.debug(f"检查包: {package} {version}")
+                
                 if package_lower in known_vulnerabilities:
                     for vuln_version, (cve, severity, fixed) in known_vulnerabilities[package_lower].items():
                         if clean_version == vuln_version:
-                            issues.append(DependencyIssue(
+                            issue = DependencyIssue(
                                 package=package,
                                 version=version,
                                 vulnerability_id=cve,
@@ -718,9 +869,17 @@ class SecurityScanner:
                                 description=f"{package} {version} 存在已知漏洞",
                                 fixed_version=fixed,
                                 references=[f"https://nvd.nist.gov/vuln/detail/{cve}"],
-                            ))
+                            )
+                            issues.append(issue)
+                            
+                            self.logger.warning(
+                                f"发现依赖漏洞: {package} {version}\n"
+                                f"  CVE: {cve}\n"
+                                f"  严重性: {severity}\n"
+                                f"  修复版本: {fixed}"
+                            )
         except Exception as e:
-            logger.debug(f"检查 NPM 依赖失败: {e}")
+            self.logger.error(f"检查 NPM 依赖失败: {e}", exc_info=True)
         
         return issues
     

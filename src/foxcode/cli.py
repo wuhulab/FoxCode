@@ -2808,7 +2808,7 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                 console.print(Panel(
                     f"[green]✅ 未发现依赖漏洞[/green]\n\n"
                     f"[dim]详细日志: {log_file_path}[/dim]",
-                    title="🔒 依赖安全扫描",
+                    title="依赖安全扫描",
                     style="green",
                 ))
             else:
@@ -2833,7 +2833,7 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                 console.print(Panel(
                     f"[bold]发现依赖漏洞:[/bold] {len(dependency_issues)}\n\n" + "\n\n".join(issues_text) +
                     f"\n\n[dim]详细日志: {log_file_path}[/dim]",
-                    title="🔒 依赖安全扫描",
+                    title="依赖安全扫描",
                     style="red",
                 ))
         
@@ -2885,7 +2885,7 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
             
             console.print(Panel(
                 result_text,
-                title="🔒 安全扫描结果",
+                title="安全扫描结果",
                 style="red" if len(results.issues) > 0 else "green",
             ))
     

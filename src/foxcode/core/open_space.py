@@ -688,7 +688,7 @@ class OpenSpaceManager:
         """
         # 标准化内容：去除空白、转小写
         normalized = "".join(content.lower().split())
-        return hashlib.md5(normalized.encode()).hexdigest()[:16]
+        return hashlib.sha256(normalized.encode()).hexdigest()[:16]
     
     def find_similar_experience(
         self, 

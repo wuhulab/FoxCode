@@ -19,7 +19,7 @@ COMMAND_ALIASES = ['t']
 
 def register_command(cli):
     """注册工具管理命令"""
-    @cli.command('tool', aliases=COMMAND_ALIASES)
+    @cli.command('tool')
     @click.option('--list', '-l', is_flag=True, help='列出所有可用工具')
     @click.option('--category', '-c', type=click.Choice([c.value for c in ToolCategory]), help='按工具类别过滤')
     @click.option('--find', '-f', help='查找匹配模式的工具')

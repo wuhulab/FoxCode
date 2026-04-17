@@ -18,7 +18,7 @@ COMMAND_ALIASES = ['cmd']
 
 def register_command(cli):
     """注册命令管理命令"""
-    @cli.command('command', aliases=COMMAND_ALIASES)
+    @cli.command('command')
     @click.option('--list', '-l', is_flag=True, help='列出所有可用命令')
     @click.option('--type', '-t', type=click.Choice(['local', 'prompt', 'jsx']), help='按命令类型过滤')
     @click.option('--find', '-f', help='查找匹配模式的命令')

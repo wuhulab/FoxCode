@@ -18,7 +18,7 @@ COMMAND_ALIASES = ['p']
 
 def register_command(cli):
     """注册提示命令"""
-    @cli.command('prompt', aliases=COMMAND_ALIASES)
+    @cli.command('prompt')
     @click.argument('template', required=False)
     @click.option('--list', '-l', is_flag=True, help='列出可用的提示模板')
     def prompt_command(template=None, list=False):

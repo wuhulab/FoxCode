@@ -7,10 +7,10 @@ FoxCode 钩子系统基础组件
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, List
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional, TypeVar, Generic
+from typing import Any, Optional, TypeVar, Generic, List
 
 logger = logging.getLogger(__name__)
 

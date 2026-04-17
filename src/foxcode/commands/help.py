@@ -18,7 +18,7 @@ COMMAND_ALIASES = ['h', '?']
 
 def register_command(cli):
     """注册帮助命令"""
-    @cli.command('help', aliases=COMMAND_ALIASES)
+    @cli.command('help')
     @click.argument('command', required=False)
     def help_command(command=None):
         """显示帮助信息

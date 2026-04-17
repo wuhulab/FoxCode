@@ -2518,7 +2518,12 @@ def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         from foxcode.core.semantic_index import SemanticCodeIndex, SemanticIndexConfig
 
         index_dir = Path(config.working_dir) / ".foxcode" / "semantic_index"
-        index_config = SemanticIndexConfig(index_dir=str(index_dir))
+        # 从配置中获取嵌入模型相关设置
+        index_config = SemanticIndexConfig(
+            index_dir=str(index_dir),
+            openai_api_key=config.model.api_key,
+            openai_base_url=config.model.base_url
+        )
         index = SemanticCodeIndex(index_config)
 
         if cmd_arg == "status":
@@ -2534,13 +2539,13 @@ def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
 
         elif cmd_arg == "update":
             console.print("[cyan]正在增量更新索引...[/cyan]")
-            result = run_async(index.index_directory(Path(config.working_dir), incremental=True))
-            console.print(f"[green]✅ 更新完成: {result.get('files_updated', 0)} 个文件[/green]")
+            files_updated = run_async(index.index_directory(Path(config.working_dir), incremental=True))
+            console.print(f"[green]✅ 更新完成: {files_updated} 个文件[/green]")
 
         else:
             console.print("[cyan]正在构建语义索引...[/cyan]")
-            result = run_async(index.index_directory(Path(config.working_dir)))
-            console.print(f"[green]✅ 索引构建完成: {result.get('files_indexed', 0)} 个文件[/green]")
+            files_indexed = run_async(index.index_directory(Path(config.working_dir)))
+            console.print(f"[green]✅ 索引构建完成: {files_indexed} 个文件[/green]")
 
     except ImportError:
         console.print("[yellow]语义索引模块未安装，请安装: pip install sentence-transformers[/yellow]")
@@ -2565,7 +2570,12 @@ def _handle_search_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
         from foxcode.core.semantic_index import SemanticCodeIndex, SemanticIndexConfig
 
         index_dir = Path(config.working_dir) / ".foxcode" / "semantic_index"
-        index_config = SemanticIndexConfig(index_dir=str(index_dir))
+        # 从配置中获取嵌入模型相关设置
+        index_config = SemanticIndexConfig(
+            index_dir=str(index_dir),
+            openai_api_key=config.model.api_key,
+            openai_base_url=config.model.base_url
+        )
         index = SemanticCodeIndex(index_config)
 
         results = run_async(index.search(cmd_arg, top_k=10))

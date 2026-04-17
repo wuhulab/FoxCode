@@ -92,7 +92,7 @@ class SemanticIndexConfig(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     embedding_model_type: EmbeddingModelType = EmbeddingModelType.OPENAI
-    embedding_model_name: str = "text-embedding-3-small"
+    embedding_model_name: str = "text-embedding-ada-002"
     embedding_dimension: int = Field(default=1536, ge=64, le=4096)
     openai_api_key: str | None = None
     openai_base_url: str | None = None

@@ -523,9 +523,14 @@ def _cleanup_on_exit() -> None:
     if _watchdog:
         import asyncio
         try:
-            if asyncio.get_event_loop().is_running():
-                asyncio.create_task(_watchdog.stop())
-            else:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(_watchdog.stop())
+                else:
+                    asyncio.run(_watchdog.stop())
+            except RuntimeError:
+                # 没有事件循环，创建一个新的
                 asyncio.run(_watchdog.stop())
         except Exception as e:
             logger.warning(f"停止看门狗失败: {e}")

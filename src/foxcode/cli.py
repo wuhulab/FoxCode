@@ -2671,7 +2671,7 @@ def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
         elif cmd_arg == "quality":
             report = run_async(analyzer.analyze(Path(config.working_dir)))
             console.print(Panel(
-                f"[bold]代码质量评分:[/bold] {report.quality_score:.1f}/100\n"
+                f"[bold]代码质量评分:[/bold] {report.quality_score.overall:.1f}/100\n"
                 f"[bold]问题数:[/bold] {len(report.errors)}\n"
                 f"[bold]建议:[/bold]\n" + "\n".join(f"  - {s}" for s in report.recommendations[:5]),
                 title="📊 代码质量分析",
@@ -2684,7 +2684,7 @@ def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
                 f"[bold]项目类型:[/bold] {report.tech_stack.project_type.value}\n"
                 f"[bold]主要语言:[/bold] {report.tech_stack.primary_language.value}\n"
                 f"[bold]框架:[/bold] {', '.join(report.tech_stack.frameworks)}\n"
-                f"[bold]质量评分:[/bold] {report.quality_score:.1f}/100",
+                f"[bold]质量评分:[/bold] {report.quality_score.overall:.1f}/100",
                 title="📁 项目分析",
                 style="cyan",
             ))

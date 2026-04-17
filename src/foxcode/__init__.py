@@ -35,11 +35,41 @@ from foxcode.core.skill import (
     skill_manager,
 )
 
+from foxcode.core.hooks import (
+    HookType,
+    HookContext,
+    HookManager,
+    hook_manager,
+    register_hook,
+    AppHooks,
+    CommandHooks,
+    ToolHooks,
+    SessionHooks,
+    SkillHooks,
+    WorkModeHooks,
+    ConfigHooks,
+    ServiceHooks,
+)
+
 __all__ = [
     # Core
     "FoxCodeAgent",
     "Config",
     "Session",
+    # Hooks
+    "HookType",
+    "HookContext",
+    "HookManager",
+    "hook_manager",
+    "register_hook",
+    "AppHooks",
+    "CommandHooks",
+    "ToolHooks",
+    "SessionHooks",
+    "SkillHooks",
+    "WorkModeHooks",
+    "ConfigHooks",
+    "ServiceHooks",
     # MCP
     "MCPConfig",
     "MCPManager",

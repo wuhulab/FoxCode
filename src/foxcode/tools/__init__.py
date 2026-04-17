@@ -13,6 +13,7 @@ from foxcode.tools.base import (
     registry,
     tool,
 )
+from foxcode.tools.ai_tools import AIChatTool, AICodeTool, AISummarizeTool
 from foxcode.tools.code_tools import GrepTool, SearchCodebaseTool
 from foxcode.tools.file_tools import (
     DeleteFileTool,
@@ -75,6 +76,10 @@ __all__ = [
     "ToolRegistry",
     "registry",
     "tool",
+    # AI 工具
+    "AIChatTool",
+    "AICodeTool",
+    "AISummarizeTool",
     # 文件工具
     "ReadFileTool",
     "WriteFileTool",

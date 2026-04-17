@@ -869,20 +869,180 @@ class TestingSkill(BaseSkill):
 
     def get_prompt_injection(self) -> str | None:
         return """
-当用户需要测试时，请：
-1. 分析代码功能和边界条件
-2. 生成单元测试用例
-3. 考虑边缘情况和异常处理
-4. 提供测试覆盖率建议
+        当用户需要测试时，请：
+        1. 分析代码功能和边界条件
+        2. 生成单元测试用例
+        3. 考虑边缘情况和异常处理
+        4. 提供测试覆盖率建议
 
-测试框架：
-- Python: pytest, unittest
-- JavaScript: Jest, Mocha
-- Java: JUnit
-"""
+        测试框架：
+        - Python: pytest, unittest
+        - JavaScript: Jest, Mocha
+        - Java: JUnit
+        """
 
     async def execute(self, context: SkillContext) -> SkillResult:
         return SkillResult.ok("Testing skill activated")
+
+
+class RuleBasedSkillGenerator(BaseSkill):
+    """
+    规则基于技能生成器
+    
+    根据规则文件生成技能，触发方式为查看规则文件生成 skills
+    
+    功能：
+    - 读取规则文件 S:/shunxcode/.trae/rules/rule.md
+    - 分析规则内容，提取各个章节
+    - 为每个章节生成一个独立的技能
+    - 生成一个综合的 UOP 代码规范技能
+    - 自动注册生成的技能到技能管理器
+    
+    使用方法：
+    1. 确保规则文件 S:/shunxcode/.trae/rules/rule.md 存在且包含有效的规则内容
+    2. 在聊天中输入关键词："generate skill"、"生成技能"、"rule based skill" 或 "基于规则的技能"
+    3. 或者使用 Skill 工具调用：Skill(name="rule-based-skill-generator")
+    4. 技能生成器会自动生成并注册技能
+    5. 生成的技能可以通过 Skill 工具调用，例如：Skill(name="rule-核心原则")
+    
+    生成的技能：
+    - rule-核心原则：基于核心原则章节的技能
+    - rule-命名规则：基于命名规则章节的技能
+    - rule-函数规则：基于函数规则章节的技能
+    - rule-注释规则：基于注释规则章节的技能
+    - rule-文件规则：基于文件规则章节的技能
+    - rule-视觉规则：基于视觉规则章节的技能
+    - rule-复用规则：基于复用规则章节的技能
+    - uop-coding-standard：综合所有规则的技能
+    """
+
+    name = "rule-based-skill-generator"
+    description = "根据规则文件生成技能，符合 doge-code 规定格式"
+    version = "1.0.0"
+    priority = SkillPriority.HIGH
+    trigger = SkillTrigger.KEYWORD
+    keywords = ["generate skill", "生成技能", "rule based skill", "基于规则的技能"]
+
+    def get_prompt_injection(self) -> str | None:
+        return """
+        当用户需要根据规则文件生成技能时，请：
+        1. 读取规则文件 S:/shunxcode/.trae/rules/rule.md
+        2. 分析规则内容，提取关键信息
+        3. 根据 doge-code 的技能格式生成技能
+        4. 注册生成的技能到技能管理器
+        5. 提供生成技能的摘要和使用方法
+        """
+
+    async def execute(self, context: SkillContext) -> SkillResult:
+        try:
+            # 读取规则文件
+            rule_file = Path("S:/shunxcode/.trae/rules/rule.md")
+            if not rule_file.exists():
+                return SkillResult.fail("规则文件不存在: S:/shunxcode/.trae/rules/rule.md")
+
+            content = rule_file.read_text(encoding="utf-8")
+            
+            # 解析规则内容
+            rules = self._parse_rules(content)
+            
+            # 生成技能
+            generated_skills = await self._generate_skills(rules, content)
+            
+            # 注册技能
+            for skill in generated_skills:
+                skill_manager.register(skill)
+            
+            return SkillResult.ok(f"成功生成并注册了 {len(generated_skills)} 个技能")
+        except Exception as e:
+            return SkillResult.fail(f"生成技能失败: {str(e)}")
+
+    def _parse_rules(self, content: str) -> dict[str, str]:
+        """
+        解析规则文件内容
+        
+        Args:
+            content: 规则文件内容
+            
+        Returns:
+            解析后的规则字典
+        """
+        rules = {}
+        lines = content.split("\n")
+        current_section = ""
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith("## "):
+                current_section = line[3:].strip()
+                rules[current_section] = ""
+            elif current_section and line:
+                rules[current_section] += line + "\n"
+        
+        return rules
+
+    async def _generate_skills(self, rules: dict[str, str], content: str) -> list[BaseSkill]:
+        """
+        根据规则生成技能
+        
+        Args:
+            rules: 解析后的规则字典
+            content: 规则文件完整内容
+            
+        Returns:
+            生成的技能列表
+        """
+        skills = []
+        
+        # 为每个规则部分生成一个技能
+        for section, section_content in rules.items():
+            skill_name = section.lower().replace(" ", "-")
+            skill_description = f"基于规则 '{section}' 的技能"
+            
+            # 创建动态技能类
+            class RuleBasedSkill(BaseSkill):
+                _rule_section = section
+                _rule_content = section_content
+                
+                def get_prompt_injection(self) -> str | None:
+                    return f"""
+                    # {self._rule_section}
+                    
+                    {self._rule_content}
+                    """
+                
+                async def execute(self, context: SkillContext) -> SkillResult:
+                    return SkillResult.ok(f"规则 '{self._rule_section}' 技能激活")
+            
+            RuleBasedSkill.name = f"rule-{skill_name}"
+            RuleBasedSkill.description = skill_description
+            RuleBasedSkill.version = "1.0.0"
+            RuleBasedSkill.priority = SkillPriority.NORMAL
+            RuleBasedSkill.trigger = SkillTrigger.MANUAL
+            
+            skills.append(RuleBasedSkill())
+        
+        # 生成一个综合规则技能
+        class UOPSkill(BaseSkill):
+            name = "uop-coding-standard"
+            description = "面向理解编程（UOP）代码生成规范技能"
+            version = "1.0.0"
+            priority = SkillPriority.HIGH
+            trigger = SkillTrigger.KEYWORD
+            keywords = ["uop", "面向理解编程", "coding standard", "代码规范"]
+            
+            def get_prompt_injection(self) -> str | None:
+                return f"""
+                # 面向理解编程（UOP）代码生成规范
+                
+                {content}
+                """
+            
+            async def execute(self, context: SkillContext) -> SkillResult:
+                return SkillResult.ok("UOP 代码规范技能激活")
+        
+        skills.append(UOPSkill())
+        
+        return skills
 
 
 # 全局技能管理器实例
@@ -898,6 +1058,7 @@ def register_builtin_skills() -> None:
         DocumentationSkill(),
         RefactoringSkill(),
         TestingSkill(),
+        RuleBasedSkillGenerator(),
     ]
 
     for skill in builtin_skills:

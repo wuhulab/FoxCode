@@ -27,6 +27,11 @@ class ToolCategory(str, Enum):
     CODE = "code"
     WEB = "web"
     SYSTEM = "system"
+    AI = "ai"
+    DATABASE = "database"
+    NETWORK = "network"
+    SECURITY = "security"
+    TESTING = "testing"
 
 
 class ToolParameter(BaseModel):
@@ -477,6 +482,7 @@ class ToolRegistry:
         self._tools: dict[str, type[BaseTool]] = {}
         self._instances: dict[str, BaseTool] = {}
         self._config: Any = None
+        self._loaded_modules: set[str] = set()
 
     def register(self, tool_class: type[BaseTool]) -> type[BaseTool]:
         """
@@ -495,6 +501,42 @@ class ToolRegistry:
     def set_config(self, config: Any) -> None:
         """设置配置"""
         self._config = config
+        
+    def load_tools_from_module(self, module_name: str) -> None:
+        """
+        从模块中加载工具
+        
+        Args:
+            module_name: 模块名称
+        """
+        if module_name in self._loaded_modules:
+            return
+        
+        try:
+            module = __import__(module_name, fromlist=['*'])
+            self._loaded_modules.add(module_name)
+            logger.debug(f"从模块 {module_name} 加载工具")
+        except ImportError as e:
+            logger.warning(f"加载模块 {module_name} 失败: {e}")
+        
+    def load_tools_from_config(self) -> None:
+        """
+        从配置中加载工具
+        """
+        if not self._config:
+            return
+        
+        # 从配置中获取要加载的工具模块
+        if hasattr(self._config, 'tools') and hasattr(self._config.tools, 'modules'):
+            modules = self._config.tools.modules
+            for module_name in modules:
+                self.load_tools_from_module(module_name)
+        
+        # 从配置中获取要启用的工具
+        if hasattr(self._config, 'tools') and hasattr(self._config.tools, 'enabled'):
+            enabled_tools = self._config.tools.enabled
+            # 这里可以根据配置启用或禁用工具
+            logger.debug(f"从配置中加载工具: {enabled_tools}")
 
     def get_tool(self, name: str) -> BaseTool:
         """
@@ -506,6 +548,18 @@ class ToolRegistry:
         Returns:
             工具实例
         """
+        # 尝试从配置中加载工具
+        self.load_tools_from_config()
+        
+        if name not in self._tools:
+            # 尝试动态加载工具模块
+            try:
+                # 假设工具模块名称为 foxcode.tools.{name}_tools
+                module_name = f"foxcode.tools.{name}_tools"
+                self.load_tools_from_module(module_name)
+            except Exception as e:
+                logger.debug(f"动态加载工具模块失败: {e}")
+        
         if name not in self._tools:
             raise KeyError(f"工具不存在: {name}")
 
@@ -514,22 +568,87 @@ class ToolRegistry:
 
         return self._instances[name]
 
-    def list_tools(self) -> list[dict[str, Any]]:
+    def list_tools(self, category: ToolCategory | None = None) -> list[dict[str, Any]]:
         """
         列出所有工具
         
+        Args:
+            category: 工具类别过滤
+            
         Returns:
             工具信息列表
         """
-        return [
-            {
+        # 尝试从配置中加载工具
+        self.load_tools_from_config()
+        
+        tools = []
+        for name, cls in self._tools.items():
+            if category and cls.category != category:
+                continue
+            tools.append({
                 "name": name,
                 "description": cls.description,
                 "category": cls.category.value,
                 "dangerous": cls.dangerous,
-            }
-            for name, cls in self._tools.items()
-        ]
+            })
+        # 按工具名称排序
+        tools.sort(key=lambda x: x["name"])
+        return tools
+    
+    def find_tools(self, pattern: str) -> list[dict[str, Any]]:
+        """
+        查找匹配模式的工具
+        
+        Args:
+            pattern: 搜索模式
+            
+        Returns:
+            匹配的工具信息列表
+        """
+        # 尝试从配置中加载工具
+        self.load_tools_from_config()
+        
+        matches = []
+        for name, cls in self._tools.items():
+            if pattern.lower() in name.lower() or pattern.lower() in cls.description.lower():
+                matches.append({
+                    "name": name,
+                    "description": cls.description,
+                    "category": cls.category.value,
+                    "dangerous": cls.dangerous,
+                })
+        # 按工具名称排序
+        matches.sort(key=lambda x: x["name"])
+        return matches
+    
+    def get_tools_by_category(self, category: ToolCategory) -> list[dict[str, Any]]:
+        """
+        按类别获取工具
+        
+        Args:
+            category: 工具类别
+            
+        Returns:
+            该类别下的工具信息列表
+        """
+        # 尝试从配置中加载工具
+        self.load_tools_from_config()
+        return self.list_tools(category)
+    
+    def get_tool_categories(self) -> list[str]:
+        """
+        获取所有工具类别
+        
+        Returns:
+            工具类别列表
+        """
+        # 尝试从配置中加载工具
+        self.load_tools_from_config()
+        
+        categories = set()
+        for cls in self._tools.values():
+            categories.add(cls.category.value)
+        return sorted(list(categories))
 
     def get_schemas(self) -> list[dict[str, Any]]:
         """
@@ -538,6 +657,9 @@ class ToolRegistry:
         Returns:
             工具 Schema 列表
         """
+        # 尝试从配置中加载工具
+        self.load_tools_from_config()
+        
         return [
             self.get_tool(name).get_schema()
             for name in self._tools
@@ -554,6 +676,9 @@ class ToolRegistry:
         Returns:
             执行结果
         """
+        # 尝试从配置中加载工具
+        self.load_tools_from_config()
+        
         tool = self.get_tool(name)
         start_time = time.time()
         error_msg = None

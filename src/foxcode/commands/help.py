@@ -7,11 +7,18 @@
 import click
 
 from foxcode.core.config import Config
+from foxcode.commands import CommandType
+
+# 命令类型
+COMMAND_TYPE = CommandType.LOCAL
+
+# 命令别名
+COMMAND_ALIASES = ['h', '?']
 
 
 def register_command(cli):
     """注册帮助命令"""
-    @cli.command('help')
+    @cli.command('help', aliases=COMMAND_ALIASES)
     @click.argument('command', required=False)
     def help_command(command=None):
         """显示帮助信息
@@ -21,7 +28,11 @@ def register_command(cli):
         """
         if command:
             # 显示指定命令的帮助
-            cli.get_command(None, command).get_help(None)
+            cmd = cli.get_command(None, command)
+            if cmd:
+                cmd.get_help(None)
+            else:
+                print(f"命令 '{command}' 不存在")
         else:
             # 显示所有命令的帮助
             cli.get_help(None)
@@ -29,6 +40,11 @@ def register_command(cli):
 
 class HelpCommand:
     """帮助命令类"""
+    name = 'help'
+    description = '显示帮助信息'
+    type = CommandType.LOCAL
+    aliases = COMMAND_ALIASES
+    enabled = True
 
     def __init__(self, config: Config):
         self.config = config
@@ -52,3 +68,8 @@ class HelpCommand:
                 return f"命令 '{command}' 不存在"
         else:
             return cli.get_help(None)
+    
+    @classmethod
+    def is_enabled(cls, config):
+        """检查命令是否启用"""
+        return cls.enabled

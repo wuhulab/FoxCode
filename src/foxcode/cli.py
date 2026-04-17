@@ -24,21 +24,20 @@ from rich import markup
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.syntax import Syntax
 
 from foxcode import __version__
+from foxcode.commands import get_command_manager
 from foxcode.core.agent import FoxCodeAgent
-from foxcode.core.config import Config, ModelProvider, RunMode, OutputTopic
-from foxcode.core.session import Session
+from foxcode.core.config import Config, OutputTopic, RunMode
 from foxcode.core.process_watchdog import (
     ProcessWatchdog,
     init_watchdog,
-    get_watchdog,
 )
+from foxcode.core.session import Session
 from foxcode.core.updater import (
-    start_background_update_check,
     UpdateResult,
     UpdateStatus,
+    start_background_update_check,
 )
 
 # ==================== 全局状态管理 ====================
@@ -62,7 +61,7 @@ def _on_update_check_complete(result: UpdateResult) -> None:
         result: 更新检查结果
     """
     global _update_checker_started
-    
+
     try:
         if result.status == UpdateStatus.UPDATE_AVAILABLE:
             # 有新版本可用，显示提示
@@ -73,7 +72,7 @@ def _on_update_check_complete(result: UpdateResult) -> None:
                 release_notes = release_info.body[:200]
                 if len(release_info.body) > 200:
                     release_notes += "..."
-            
+
             console.print("\n")
             console.print(Panel(
                 f"[bold yellow]发现新版本: {result.latest_version}[/bold yellow]\n"
@@ -104,11 +103,11 @@ def _start_background_update_checker() -> None:
     检查完成后通过回调函数显示更新提示。
     """
     global _update_checker_started
-    
+
     # 避免重复启动
     if _update_checker_started:
         return
-    
+
     try:
         _update_checker_started = True
         start_background_update_check(callback=_on_update_check_complete)
@@ -125,7 +124,7 @@ class SafeStreamHandler(logging.StreamHandler):
     在Windows GBK编码环境下，自动处理无法编码的Unicode字符，
     避免UnicodeEncodeError导致程序崩溃
     """
-    
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
             # 尝试正常输出
@@ -150,7 +149,7 @@ class SafeStreamHandler(logging.StreamHandler):
                     self.flush()
                 except Exception:
                     pass  # 彻底失败时静默忽略
-    
+
     @staticmethod
     def _make_safe(text: str) -> str:
         """
@@ -160,12 +159,11 @@ class SafeStreamHandler(logging.StreamHandler):
         - 特殊Unicode符号
         - 保留：中文、英文、数字、常用标点
         """
-        import re
-        
+
         # 常见emoji和特殊符号的Unicode范围
         # 移除这些范围的字符
         result = text
-        
+
         # 定义要替换的常见emoji映射
         emoji_replacements = {
             '✅': '[OK]',
@@ -189,10 +187,10 @@ class SafeStreamHandler(logging.StreamHandler):
             '👀': '[VIEW]',
             '⭘': '',
         }
-        
+
         for emoji, replacement in emoji_replacements.items():
             result = result.replace(emoji, replacement)
-        
+
         return result
 
 
@@ -216,6 +214,7 @@ logging.basicConfig(
 
 # 初始化全局敏感信息日志过滤器（安全最佳实践）
 from foxcode.core.sensitive_masker import setup_global_log_filter
+
 setup_global_log_filter()
 
 logger = logging.getLogger(__name__)
@@ -232,7 +231,7 @@ class MinimalismOutputBuffer:
     - 运行命令时完整输出
     - 其他输出进行缓冲后汇总显示
     """
-    
+
     def __init__(self, max_summary_length: int = 50):
         self.max_summary_length = max_summary_length
         self.buffer: list[str] = []
@@ -242,7 +241,7 @@ class MinimalismOutputBuffer:
         self.last_output_time = 0.0
         self.text_buffer = ""  # 用于缓冲普通文本输出
         self.text_buffer_size = 100  # 缓冲区大小
-        
+
     def add_chunk(self, chunk: str) -> str | None:
         """
         添加输出片段，返回需要立即显示的内容
@@ -254,7 +253,7 @@ class MinimalismOutputBuffer:
             需要立即显示的内容，如果应该缓冲则返回 None
         """
         import re
-        
+
         # 检测工具调用开始
         if "🔧 Executing tool:" in chunk:
             self.in_tool_execution = True
@@ -264,11 +263,11 @@ class MinimalismOutputBuffer:
                 self.current_tool = match.group(1)
             self.tool_output = [chunk]
             return None
-        
+
         # 检测工具调用结束
         if self.in_tool_execution:
             self.tool_output.append(chunk)
-            
+
             # 检测工具执行结果
             if "✅ Tool executed successfully" in chunk or "❌" in chunk:
                 self.in_tool_execution = False
@@ -276,29 +275,29 @@ class MinimalismOutputBuffer:
                 self.current_tool = None
                 self.tool_output = []
                 return summary
-            
+
             return None
-        
+
         # 普通文本输出：缓冲处理
         self.text_buffer += chunk
-        
+
         # 当缓冲区达到一定大小时，返回内容
         if len(self.text_buffer) >= self.text_buffer_size:
             result = self.text_buffer
             self.text_buffer = ""
             return result
-        
+
         return None
-    
+
     def flush(self) -> str:
         """刷新缓冲区，返回所有剩余内容"""
         result = ""
-        
+
         # 刷新文本缓冲区
         if self.text_buffer:
             result += self.text_buffer
             self.text_buffer = ""
-        
+
         # 刷新工具输出缓冲区
         if self.in_tool_execution and self.tool_output:
             summary = self._summarize_tool_output()
@@ -306,9 +305,9 @@ class MinimalismOutputBuffer:
             self.in_tool_execution = False
             self.current_tool = None
             self.tool_output = []
-        
+
         return result
-    
+
     def _summarize_tool_output(self) -> str:
         """
         汇总工具输出
@@ -316,43 +315,43 @@ class MinimalismOutputBuffer:
         根据工具类型生成简洁的摘要
         """
         full_output = "".join(self.tool_output)
-        
+
         # 编辑类工具：显示摘要
         edit_tools = ["write_file", "edit_file", "search_replace", "create_file"]
         # 读取类工具：显示摘要
         read_tools = ["read_file", "search_codebase", "grep", "glob", "ls"]
         # 运行类工具：完整输出
         run_tools = ["run_command", "execute_command", "shell"]
-        
+
         if self.current_tool:
             tool_lower = self.current_tool.lower()
-            
+
             # 编辑工具：显示简洁摘要
             if any(t in tool_lower for t in edit_tools):
                 return self._summarize_edit_operation(full_output)
-            
+
             # 读取工具：显示简洁摘要
             if any(t in tool_lower for t in read_tools):
                 return self._summarize_read_operation(full_output)
-            
+
             # 运行命令：完整输出
             if any(t in tool_lower for t in run_tools):
                 return self._format_run_output(full_output)
-        
+
         # 其他工具：显示简洁摘要
         return self._summarize_generic(full_output)
-    
+
     def _summarize_edit_operation(self, output: str) -> str:
         """汇总编辑操作"""
         import re
-        
+
         # 提取文件路径
         path_match = re.search(r"file_path[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
         if not path_match:
             path_match = re.search(r"([a-zA-Z]:[\\\\/][\\w\\\\/\\-\\.]+)", output)
-        
+
         file_path = path_match.group(1) if path_match else "未知文件"
-        
+
         # 提取操作类型
         if "✅" in output:
             status = "✅"
@@ -360,31 +359,31 @@ class MinimalismOutputBuffer:
             status = "❌"
         else:
             status = "📝"
-        
+
         # 简化路径显示
         if len(file_path) > 40:
             file_path = "..." + file_path[-37:]
-        
+
         return f"\n[编辑] {status} {file_path}\n"
-    
+
     def _summarize_read_operation(self, output: str) -> str:
         """汇总读取操作"""
         import re
-        
+
         # 提取文件路径或搜索关键词
         path_match = re.search(r"file_path[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
         if not path_match:
             path_match = re.search(r"([a-zA-Z]:[\\\\/][\\w\\\\/\\-\\.]+)", output)
-        
+
         # 提取行数信息
         lines_match = re.search(r"(\d+)\s*lines?", output)
-        
+
         file_path = path_match.group(1) if path_match else ""
-        
+
         # 简化路径显示
         if file_path and len(file_path) > 40:
             file_path = "..." + file_path[-37:]
-        
+
         if "✅" in output:
             status = "✅"
             if lines_match:
@@ -392,23 +391,23 @@ class MinimalismOutputBuffer:
             return f"\n[读取] {status} {file_path}\n"
         elif "❌" in output:
             return f"\n[读取] ❌ {file_path} - 失败\n"
-        
+
         return f"\n[读取] 📄 {file_path}\n"
-    
+
     def _format_run_output(self, output: str) -> str:
         """格式化运行命令输出（保持完整）"""
         # 提取命令
         import re
         cmd_match = re.search(r"command[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
-        
+
         if cmd_match:
             cmd = cmd_match.group(1)
             if len(cmd) > 30:
                 cmd = cmd[:27] + "..."
             return f"\n[运行] $ {cmd}\n{output}"
-        
+
         return f"\n[运行]\n{output}"
-    
+
     def _summarize_generic(self, output: str) -> str:
         """通用摘要"""
         # 截取前50个字符作为摘要
@@ -427,11 +426,11 @@ def _adjust_log_level_for_minimalism() -> None:
     """
     try:
         from foxcode.core.config import Config, OutputTopic
-        
+
         # 加载配置（不创建完整实例，只读取 output_topic）
         file_config = Config.load_from_file()
         output_topic = file_config.get("output_topic", OutputTopic.DEFAULT)
-        
+
         if output_topic == OutputTopic.MINIMALISM:
             # 极简模式：只将控制台 handler 的级别设置为 WARNING
             # 文件日志保持 INFO 级别，用于调试
@@ -459,7 +458,7 @@ def run_async(coro):
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
-    
+
     if loop is not None:
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -483,14 +482,14 @@ def _setup_signal_handlers() -> None:
         global _shutdown_requested
         signal_name = signal.Signals(signum).name
         logger.warning(f"收到信号 {signal_name} ({signum})，准备优雅退出...")
-        
+
         if _shutdown_requested:
             # 第二次收到信号，强制退出
             logger.error("重复收到终止信号，强制退出")
             sys.exit(1)
-        
+
         _shutdown_requested = True
-        
+
         # 尝试保存会话
         if _current_agent:
             try:
@@ -499,7 +498,7 @@ def _setup_signal_handlers() -> None:
                 logger.info("会话已保存")
             except Exception as e:
                 logger.error(f"保存会话失败: {e}")
-    
+
     # 注册信号处理器（仅在主线程中有效）
     try:
         signal.signal(signal.SIGINT, signal_handler)
@@ -517,9 +516,9 @@ def _cleanup_on_exit() -> None:
     确保进程退出时清理资源
     """
     global _watchdog
-    
+
     logger.info("执行退出清理...")
-    
+
     # 停止看门狗
     if _watchdog:
         import asyncio
@@ -530,14 +529,14 @@ def _cleanup_on_exit() -> None:
                 asyncio.run(_watchdog.stop())
         except Exception as e:
             logger.warning(f"停止看门狗失败: {e}")
-        
+
         # 导出最终性能指标
         try:
             metrics_file = log_dir / "final_metrics.json"
             _watchdog.export_metrics_to_file(metrics_file)
         except Exception as e:
             logger.warning(f"导出性能指标失败: {e}")
-    
+
     # 清理临时文件
     temp_dir = log_dir / "temp"
     if temp_dir.exists():
@@ -547,7 +546,7 @@ def _cleanup_on_exit() -> None:
             logger.debug("临时目录已清理")
         except Exception as e:
             logger.warning(f"清理临时文件失败: {e}")
-    
+
     logger.info("FoxCode 进程已退出")
 
 
@@ -559,7 +558,7 @@ def _init_watchdog() -> ProcessWatchdog:
         配置好的看门狗实例
     """
     global _watchdog
-    
+
     watchdog = init_watchdog(
         check_interval=30.0,  # 每30秒检查一次
         memory_threshold_mb=512.0,  # 内存超过512MB时警告
@@ -569,7 +568,7 @@ def _init_watchdog() -> ProcessWatchdog:
         enable_auto_recovery=True,  # 启用自动恢复
         health_check_port=None,  # 暂不启用HTTP健康检查（需要aiohttp）
     )
-    
+
     # 设置事件回调函数
     def on_memory_warning(memory_mb: float) -> None:
         """内存超限回调"""
@@ -584,13 +583,13 @@ def _init_watchdog() -> ProcessWatchdog:
             console.print(
                 "[red]内存使用非常高，可能存在内存泄漏！[/red]"
             )
-    
+
     def on_cpu_warning(cpu_percent: float) -> None:
         """CPU超限回调"""
         logger.warning(
             f"⚠️ CPU使用率过高 ({cpu_percent:.1f}%)"
         )
-    
+
     def on_error_threshold_reached(error_count: int) -> None:
         """错误达限回调"""
         logger.critical(
@@ -599,14 +598,14 @@ def _init_watchdog() -> ProcessWatchdog:
         console.print(
             f"\n[red]⚠️ 连续出现 {error_count} 次错误[/red]"
         )
-    
+
     def on_auto_recovery_triggered() -> None:
         """自动恢复触发回调"""
         global _current_agent
-        
+
         logger.critical("[RECOVER] 触发自动恢复机制...")
         console.print("\n[cyan][*] 正在执行自动恢复...[/cyan]")
-        
+
         # 尝试保存当前状态
         if _current_agent:
             try:
@@ -617,18 +616,18 @@ def _init_watchdog() -> ProcessWatchdog:
                 console.print(
                     f"[yellow]⚠️ 自动保存失败: {e}[/yellow]"
                 )
-    
+
     watchdog.set_callbacks(
         on_memory_warning=on_memory_warning,
         on_cpu_warning=on_cpu_warning,
         on_error_threshold_reached=on_error_threshold_reached,
         on_auto_recovery_triggered=on_auto_recovery_triggered,
     )
-    
+
     _watchdog = watchdog
-    
+
     logger.info("[OK] 进程看门狗已初始化并配置完成")
-    
+
     return watchdog
 
 
@@ -649,7 +648,7 @@ def _handle_unexpected_error(error: Exception) -> None:
     logger.critical("\n完整堆栈跟踪:")
     logger.critical(traceback.format_exc())
     logger.critical("=" * 80)
-    
+
     # 尝试保存崩溃报告
     crash_report_path = log_dir / "crash_report.log"
     try:
@@ -665,7 +664,7 @@ def _handle_unexpected_error(error: Exception) -> None:
         logger.info(f"崩溃报告已保存到: {crash_report_path}")
     except Exception as e:
         logger.error(f"保存崩溃报告失败: {e}")
-    
+
     # 显示用户友好的错误信息
     console.print("\n")
     console.print(Panel(
@@ -693,7 +692,7 @@ def _global_exception_hook(exc_type, exc_value, exc_traceback) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
         # Ctrl+C 不需要特殊处理
         return
-    
+
     logger.critical("未捕获的全局异常:")
     logger.critical("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 
@@ -706,7 +705,7 @@ def print_banner(config: Config | None = None) -> None:
     # 检查是否为极简模式
     if config and config.output_topic == OutputTopic.MINIMALISM:
         print("[foxcode: 初始化完毕]")
-    
+
     # 默认模式：完整横幅
     banner = """
     ███████╗ ██████╗ ██████╗  ██████╗ 
@@ -904,7 +903,7 @@ enable_shell = true
 @click.option("--version", "-v", is_flag=True, help="显示版本信息")
 @click.option("--help", "-h", is_flag=True, help="显示帮助信息")
 @click.option("--model", "-m", default=None, help="指定 AI 模型")
-@click.option("--mode", type=click.Choice(["default", "yolo", "plan", "accept_edits"]), 
+@click.option("--mode", type=click.Choice(["default", "yolo", "plan", "accept_edits"]),
               default="default", help="运行模式")
 @click.option("--yolo", is_flag=True, help="启用 YOLO 模式（自动执行）")
 @click.option("--plan", is_flag=True, help="启用规划模式（只读）")
@@ -939,47 +938,51 @@ def main(
     """
     # 首先根据极简模式调整日志级别（在信号处理器之前）
     _adjust_log_level_for_minimalism()
-    
+
     # 初始化信号处理器（必须在主函数开始时调用）
     _setup_signal_handlers()
-    
+
     # 初始化进程看门狗（性能监控和自动恢复）
     _init_watchdog()
-    
+
     # 启动后台更新检查（不阻塞主程序启动）
     _start_background_update_checker()
-    
+
     try:
         # 显示版本
         if version:
             console.print(f"FoxCode v{__version__}")
             return
-        
+
         # 显示帮助
         if help:
             print_help()
             return
-        
+
         # 创建配置
         config_overrides: dict[str, Any] = {}
-        
+
         if model:
             config_overrides["model"] = {"model_name": model}
-        
+
         if yolo:
             config_overrides["run_mode"] = RunMode.YOLO
         elif plan:
             config_overrides["run_mode"] = RunMode.PLAN
         elif mode:
             config_overrides["run_mode"] = RunMode(mode)
-        
+
         if debug:
             config_overrides["debug"] = True
             config_overrides["log_level"] = "DEBUG"
             logging.getLogger().setLevel(logging.DEBUG)
-        
+
         app_config = Config.create(**config_overrides)
-        
+
+        # 注册命令
+        cmd_manager = get_command_manager(app_config)
+        cmd_manager.register_commands(main)
+
         # 显示配置
         if config:
             console.print(Panel(
@@ -993,21 +996,21 @@ def main(
                 style="cyan",
             ))
             return
-        
+
         # 列出会话
         if list_sessions:
             sessions = Session.list_sessions(app_config)
             if not sessions:
                 console.print("暂无保存的会话")
                 return
-            
+
             from rich.table import Table
             table = Table(title="保存的会话")
             table.add_column("会话 ID", style="cyan")
             table.add_column("创建时间", style="green")
             table.add_column("消息数", justify="right")
             table.add_column("Token 数", justify="right")
-            
+
             for s in sessions:
                 table.add_row(
                     s["session_id"],
@@ -1015,10 +1018,10 @@ def main(
                     str(s["message_count"]),
                     str(s["total_tokens"]),
                 )
-            
+
             console.print(table)
             return
-        
+
         # 运行应用
         ctx.invoke(
             run,
@@ -1027,7 +1030,7 @@ def main(
             resume=resume,
             config=app_config,
         )
-        
+
     except KeyboardInterrupt:
         logger.info("用户中断 (Ctrl+C)")
         console.print("\n[yellow]用户中断[/yellow]")
@@ -1055,10 +1058,10 @@ def run(
     集成进程看门狗进行性能监控
     """
     global _current_agent, _watchdog
-    
+
     if config is None:
         config = Config.create()
-    
+
     # 初始化代理
     try:
         agent = FoxCodeAgent(config)
@@ -1067,7 +1070,7 @@ def run(
         logger.error(f"初始化代理失败: {e}")
         _handle_unexpected_error(e)
         return
-    
+
     # 启动进程看门狗监控（在异步事件循环中）
     async def _start_watchdog_and_run():
         """启动看门狗并运行主程序"""
@@ -1077,7 +1080,7 @@ def run(
                 logger.info("[OK] 进程看门狗监控已启动")
             except Exception as e:
                 logger.warning(f"启动看门狗失败: {e} (不影响主功能)")
-    
+
     # 恢复会话
     if resume or session_id:
         try:
@@ -1094,7 +1097,7 @@ def run(
         except Exception as e:
             logger.error(f"恢复会话失败: {e}")
             console.print(f"[red]恢复会话失败: {markup.escape(str(e))}[/red]")
-    
+
     # 直接处理提示
     if prompt:
         try:
@@ -1105,16 +1108,16 @@ def run(
         finally:
             _current_agent = None
         return
-    
+
     # 启动简单交互模式
     try:
         logger.info("启动简单交互模式...")
-        
+
         # 包装异步函数以启动看门狗
         async def _run_with_watchdog():
             await _start_watchdog_and_run()
             await _run_interactive(agent, config)
-        
+
         asyncio.run(_run_with_watchdog())
     except KeyboardInterrupt:
         logger.info("用户中断交互模式")
@@ -1135,7 +1138,7 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
     增强异常处理和日志记录
     """
     print_banner(config)
-    
+
     # 极简模式输出
     if config and config.output_topic == OutputTopic.MINIMALISM:
         print(f">>{prompt}")
@@ -1143,15 +1146,15 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
     else:
         console.print(f"\n[bold cyan]用户:[/bold cyan] {prompt}\n")
         console.print("[bold green]FoxCode:[/bold green]")
-    
+
     try:
         await agent.initialize()
-        
+
         # 极简模式：使用缓冲器处理输出
         output_buffer = None
         if config and config.output_topic == OutputTopic.MINIMALISM:
             output_buffer = MinimalismOutputBuffer()
-        
+
         async for chunk in agent.chat(prompt):
             # 极简模式：使用缓冲器处理
             if config and config.output_topic == OutputTopic.MINIMALISM:
@@ -1160,7 +1163,7 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
                     print(result, end="")
             else:
                 console.print(chunk, end="")
-        
+
         # 极简模式：刷新缓冲区并输出结束标记
         if config and config.output_topic == OutputTopic.MINIMALISM:
             remaining = output_buffer.flush()
@@ -1169,7 +1172,7 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
             print("\n[end]")
         else:
             console.print("\n")
-        
+
     except KeyboardInterrupt:
         logger.warning("单次提示执行被用户中断")
         if config and config.output_topic == OutputTopic.MINIMALISM:
@@ -1184,7 +1187,7 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
             print(f"\n[错误] {str(e)}")
         else:
             console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
-        
+
         # 重新抛出异常，让调用方处理
         raise
 
@@ -1197,10 +1200,9 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
     """
     from prompt_toolkit import PromptSession
     from prompt_toolkit.history import FileHistory
-    from prompt_toolkit.styles import Style as PromptStyle
-    
+
     print_banner(config)
-    
+
     # 初始化代理
     try:
         await agent.initialize()
@@ -1212,11 +1214,11 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
         else:
             console.print(f"[red]初始化失败: {markup.escape(str(e))}[/red]")
         return
-    
+
     # 创建 prompt session
     history_file = Path.home() / ".foxcode" / "history"
     history_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     def _get_prompt_text() -> str:
         """
         生成传统命令行样式的提示符
@@ -1228,55 +1230,55 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             total_tokens = token_usage.get('total_tokens', 0)
         except Exception:
             total_tokens = 0
-        
+
         # 极简模式：简洁提示符
         if config.output_topic == OutputTopic.MINIMALISM:
             return f"[FoxCode | 模型:{config.model.model_name}| Token:{total_tokens} | 模式: {config.run_mode.value}]\n>>"
-        
+
         return (
             f"[bold cyan]FoxCode[/bold cyan] | "
             f"模型: [yellow]{config.model.model_name}[/yellow] | "
             f"Token: [green]{total_tokens}[/green] | "
             f"模式: [cyan]{config.run_mode.value}[/cyan] > "
         )
-    
+
     session = PromptSession(
         history=FileHistory(str(history_file)),
     )
-    
+
     # 主循环（增加循环计数和健康检查）
     loop_count = 0
     max_consecutive_errors = 5  # 最大连续错误次数
     consecutive_errors = 0
-    
+
     while True:
         # 检查是否收到关闭信号
         if _shutdown_requested:
             logger.info("收到关闭信号，退出主循环")
             break
-        
+
         # 健康检查：每100次循环检查一次
         loop_count += 1
         if loop_count % 100 == 0:
             logger.debug(f"主循环健康检查: 已运行 {loop_count} 次迭代")
-        
+
         try:
             # 获取用户输入（使用传统命令行样式）
             user_input = await session.prompt_async(
                 _get_prompt_text(),
                 multiline=False,
             )
-            
+
             if not user_input.strip():
                 continue
-            
+
             # 处理命令
             if user_input.startswith("/"):
                 should_continue = _handle_command(user_input, agent, config)
                 if not should_continue:
                     break
                 continue
-            
+
             # 发送到 AI（添加性能监控）
             # 极简模式：简洁输出
             if config.output_topic == OutputTopic.MINIMALISM:
@@ -1284,21 +1286,21 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             else:
                 console.print()
                 console.print("[bold green]FoxCode:[/bold green]")
-            
+
             # 记录请求开始时间
             request_start_time = time.time()
             request_id = None
-            
+
             # 如果看门狗可用，记录请求开始
             if _watchdog:
                 request_id = _watchdog.record_request_start()
-            
+
             try:
                 # 极简模式：使用缓冲器处理输出
                 output_buffer = None
                 if config.output_topic == OutputTopic.MINIMALISM:
                     output_buffer = MinimalismOutputBuffer()
-                
+
                 async for chunk in agent.chat(user_input):
                     # 极简模式：使用缓冲器处理
                     if config.output_topic == OutputTopic.MINIMALISM:
@@ -1307,7 +1309,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                             print(result, end="")
                     else:
                         console.print(chunk, end="")
-                
+
                 # 极简模式：刷新缓冲区并输出结束标记
                 if config.output_topic == OutputTopic.MINIMALISM:
                     remaining = output_buffer.flush()
@@ -1316,20 +1318,20 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                     print("\n[end]")
                 else:
                     console.print("\n")
-                
+
                 # 计算响应时间并记录成功
                 response_time_ms = (time.time() - request_start_time) * 1000
                 if _watchdog and request_id:
                     _watchdog.record_request_success(
                         request_id, response_time_ms
                     )
-                    
+
                     # 显示性能信息（调试模式）
                     if config.debug:
                         console.print(
                             f"[dim]⏱️ 响应时间: {response_time_ms:.0f}ms[/dim]"
                         )
-                
+
             except Exception as chat_error:
                 # 记录失败请求
                 response_time_ms = (time.time() - request_start_time) * 1000
@@ -1337,13 +1339,13 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                     _watchdog.record_request_failure(
                         request_id, chat_error, response_time_ms
                     )
-                
+
                 # 重新抛出异常，由外层处理
                 raise
-            
+
             # 重置连续错误计数
             consecutive_errors = 0
-            
+
         except KeyboardInterrupt:
             logger.info("用户按下 Ctrl+C")
             if config.output_topic == OutputTopic.MINIMALISM:
@@ -1358,12 +1360,12 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             consecutive_errors += 1
             logger.error(f"交互错误 (第 {consecutive_errors}/{max_consecutive_errors} 次): {type(e).__name__}: {e}")
             logger.debug(f"错误堆栈:\n{traceback.format_exc()}")
-            
+
             if config.output_topic == OutputTopic.MINIMALISM:
                 print(f"\n[错误] {str(e)}")
             else:
                 console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
-            
+
             # 如果连续错误过多，提示用户并询问是否继续
             if consecutive_errors >= max_consecutive_errors:
                 logger.critical(f"连续错误次数达到上限 ({max_consecutive_errors})，可能存在系统性问题")
@@ -1373,14 +1375,14 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                 else:
                     console.print(f"\n[red]连续出现 {max_consecutive_errors} 次错误[/red]")
                     console.print("[yellow]建议保存会话并重启 FoxCode[/yellow]")
-                
+
                 try:
                     # 尝试保存会话
                     agent.save_session()
                     console.print("[green]会话已自动保存[/green]")
                 except Exception as save_error:
                     logger.error(f"自动保存会话失败: {save_error}")
-                
+
                 # 询问用户是否继续
                 try:
                     continue_choice = await session.prompt_async(
@@ -1398,7 +1400,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                     # 如果无法获取输入，直接退出
                     logger.warning("无法获取用户输入，退出")
                     break
-    
+
     console.print("\n[cyan]再见！[/cyan]")
 
 
@@ -1418,55 +1420,55 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
     parts = cmd.split(maxsplit=1)
     cmd_name = parts[0]
     cmd_arg = parts[1] if len(parts) > 1 else None
-    
+
     if cmd_name in ("/exit", "/quit", "/q"):
         # 结束会话时保存摘要
         if config.long_running.enable_long_running_mode:
             _handle_session_end(agent, config)
         return False
-    
+
     elif cmd_name == "/stats":
         """显示性能统计信息"""
         _handle_stats_command()
-    
+
     elif cmd_name == "/health":
         """显示健康状态"""
         _handle_health_command()
-    
+
     elif cmd_name == "/help":
         print_help()
-    
+
     elif cmd_name == "/clear":
         agent.clear_conversation()
         console.print("[green]对话已清空[/green]")
-    
+
     elif cmd_name == "/save":
         agent.save_session()
         console.print("[green]会话已保存[/green]")
-    
+
     elif cmd_name == "/load" and cmd_arg:
         try:
             agent.load_session(cmd_arg)
             console.print(f"[green]已加载会话: {cmd_arg}[/green]")
         except FileNotFoundError:
             console.print(f"[red]会话不存在: {cmd_arg}[/red]")
-    
+
     elif cmd_name == "/mode" and cmd_arg:
         try:
             config.run_mode = RunMode(cmd_arg)
             console.print(f"[green]已切换到 {cmd_arg} 模式[/green]")
         except ValueError:
             console.print(f"[red]无效的模式: {cmd_arg}[/red]")
-    
+
     elif cmd_name == "/model" and cmd_arg:
         config.model.model_name = cmd_arg
         console.print(f"[green]已切换模型: {cmd_arg}[/green]")
-    
+
     elif cmd_name == "/sessions":
         sessions = Session.list_sessions(config)
         for s in sessions[:10]:
             console.print(f"  {s['session_id']} - {s['message_count']} 条消息")
-    
+
     elif cmd_name == "/token":
         usage = agent.get_token_usage()
         console.print(
@@ -1474,99 +1476,99 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
             f"输出 {usage['output_tokens']}, "
             f"总计 {usage['total_tokens']}[/cyan]"
         )
-    
+
     # ==================== 长时间运行模式命令 ====================
-    
+
     elif cmd_name == "/init":
         _handle_init_command(agent, config)
-    
+
     elif cmd_name == "/progress":
         _handle_progress_command(agent, config)
-    
+
     elif cmd_name == "/features":
         _handle_features_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/summary":
         _handle_summary_command(agent, config)
-    
+
     elif cmd_name == "/next":
         _handle_next_command(agent, config)
-    
+
     elif cmd_name == "/long-running" or cmd_name == "/lr":
         _handle_long_running_toggle(config, cmd_arg)
-    
+
     elif cmd_name == "/workflow" or cmd_name == "/wf":
         _handle_workflow_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/phase":
         _handle_phase_command(agent, config, cmd_arg)
-    
+
     # ==================== Work模式命令 ====================
-    
+
     elif cmd_name == "/work":
         _handle_work_command(agent, config, cmd_arg)
-    
+
     # ==================== 高级功能命令 (v2.0 新增) ====================
-    
+
     elif cmd_name == "/index":
         _handle_index_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/search":
         _handle_search_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/kb":
         _handle_kb_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/analyze":
         _handle_analyze_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/debug":
         _handle_debug_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/profile":
         _handle_profile_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/security":
         _handle_security_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/format":
         _handle_format_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/refactor":
         _handle_refactor_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/test":
         _handle_test_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/doc":
         _handle_doc_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/git":
         _handle_git_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/diagram":
         _handle_diagram_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/space":
         _handle_space_command(agent, config, cmd_arg)
-    
+
     elif cmd_name == "/topic":
         _handle_topic_command(agent, config, cmd_arg)
-    
+
     # ==================== MCP 安装命令 ====================
-    
+
     elif cmd_name == "/mcp":
         _handle_mcp_command(agent, config, cmd_arg)
-    
+
     # ==================== 版本更新命令 ====================
-    
+
     elif cmd_name == "/update":
         _handle_update_command(agent, config, cmd_arg)
-    
+
     else:
         console.print(f"[yellow]未知命令: {cmd_name}[/yellow]")
         console.print("[dim]输入 /help 查看可用命令[/dim]")
-    
+
     return True
 
 
@@ -1577,32 +1579,32 @@ def _handle_init_command(agent: FoxCodeAgent, config: Config) -> None:
     启动初始化代理模式
     """
     from foxcode.core.init_script import InitScriptGenerator
-    
+
     console.print("[cyan]启动初始化代理模式...[/cyan]")
-    
+
     # 启用长时间运行模式
     config.long_running.enable_long_running_mode = True
-    
+
     # 生成初始化脚本
     try:
         generator = InitScriptGenerator(working_dir=config.working_dir)
         scripts = generator.generate_init_script()
-        
+
         console.print("[green]已生成初始化脚本:[/green]")
         for platform_name, path in scripts.items():
             console.print(f"  - {platform_name}: {path}")
-        
+
         # 显示项目类型
         env = generator.environment
         console.print(f"\n[cyan]检测到项目类型: {env.project_type.value}[/cyan]")
-        
+
         if env.required_tools:
             console.print(f"[dim]必需工具: {', '.join(env.required_tools)}[/dim]")
-        
+
         console.print("\n[yellow]提示: 运行初始化脚本设置项目环境[/yellow]")
         console.print("[dim]  Unix/Linux/Mac: bash .foxcode/init.sh[/dim]")
         console.print("[dim]  Windows: .foxcode\\init.bat[/dim]")
-        
+
     except Exception as e:
         console.print(f"[red]生成初始化脚本失败: {markup.escape(str(e))}[/red]")
 
@@ -1617,7 +1619,7 @@ def _handle_progress_command(agent: FoxCodeAgent, config: Config) -> None:
         console.print("[yellow]长时间运行模式未启用[/yellow]")
         console.print("[dim]使用 /long-running on 启用[/dim]")
         return
-    
+
     try:
         summary = agent.get_progress_summary()
         console.print(Panel(summary, title="项目进度", style="cyan"))
@@ -1635,16 +1637,16 @@ def _handle_features_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
         console.print("[yellow]长时间运行模式未启用[/yellow]")
         console.print("[dim]使用 /long-running on 启用[/dim]")
         return
-    
+
     try:
         feature_list = agent.session.get_feature_list()
-        
+
         # 如果有参数，解析子命令
         if cmd_arg:
             parts = cmd_arg.split(maxsplit=1)
             sub_cmd = parts[0]
             sub_arg = parts[1] if len(parts) > 1 else None
-            
+
             if sub_cmd == "add" and sub_arg:
                 # 添加功能
                 feature_id = agent.add_feature(title=sub_arg)
@@ -1652,18 +1654,18 @@ def _handle_features_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                     console.print(f"[green]✅ 已添加功能: {feature_id}[/green]")
                 else:
                     console.print("[red]添加功能失败[/red]")
-            
+
             elif sub_cmd == "complete" and sub_arg:
                 # 标记功能完成
                 if agent.mark_feature_completed(sub_arg):
                     console.print(f"[green]✅ 功能 {sub_arg} 已标记为完成[/green]")
                 else:
-                    console.print(f"[red]标记功能完成失败[/red]")
-            
+                    console.print("[red]标记功能完成失败[/red]")
+
             elif sub_cmd == "list":
                 # 列出所有功能
                 _display_features(feature_list)
-            
+
             else:
                 console.print(f"[yellow]未知子命令: {sub_cmd}[/yellow]")
                 console.print("[dim]用法: /features [add <title> | complete <id> | list][/dim]")
@@ -1671,7 +1673,7 @@ def _handle_features_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
             # 默认显示摘要
             summary = agent.get_feature_list_summary()
             console.print(Panel(summary, title="📋 功能列表", style="green"))
-    
+
     except Exception as e:
         console.print(f"[red]处理功能列表失败: {markup.escape(str(e))}[/red]")
 
@@ -1679,13 +1681,13 @@ def _handle_features_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
 def _display_features(feature_list) -> None:
     """显示功能列表"""
     from rich.table import Table
-    
+
     table = Table(title="功能需求列表")
     table.add_column("ID", style="cyan", width=12)
     table.add_column("标题", style="white")
     table.add_column("状态", style="green")
     table.add_column("优先级", style="yellow")
-    
+
     for feature in feature_list:
         status_color = {
             "pending": "white",
@@ -1693,18 +1695,18 @@ def _display_features(feature_list) -> None:
             "completed": "green",
             "failed": "red",
         }.get(feature.status.value, "white")
-        
+
         # 使用 Text 对象避免 markup 解析问题
         from rich.text import Text
         status_text = Text(feature.status.value, style=status_color)
-        
+
         table.add_row(
             feature.id,
             feature.title[:40] + "..." if len(feature.title) > 40 else feature.title,
             status_text,
             feature.priority.value,
         )
-    
+
     console.print(table)
 
 
@@ -1718,11 +1720,11 @@ def _handle_summary_command(agent: FoxCodeAgent, config: Config) -> None:
         console.print("[yellow]长时间运行模式未启用[/yellow]")
         console.print("[dim]使用 /long-running on 启用[/dim]")
         return
-    
+
     try:
         context_bridge = agent.session.get_context_bridge()
         summary = context_bridge.load_summary()
-        
+
         if summary:
             console.print(Panel(
                 summary.to_markdown(),
@@ -1731,7 +1733,7 @@ def _handle_summary_command(agent: FoxCodeAgent, config: Config) -> None:
             ))
         else:
             console.print("[yellow]暂无会话摘要[/yellow]")
-    
+
     except Exception as e:
         console.print(f"[red]获取会话摘要失败: {markup.escape(str(e))}[/red]")
 
@@ -1746,11 +1748,11 @@ def _handle_next_command(agent: FoxCodeAgent, config: Config) -> None:
         console.print("[yellow]长时间运行模式未启用[/yellow]")
         console.print("[dim]使用 /long-running on 启用[/dim]")
         return
-    
+
     try:
         feature_list = agent.session.get_feature_list()
         next_feature = feature_list.get_next_feature()
-        
+
         if next_feature:
             console.print(Panel(
                 f"[bold cyan]{next_feature.id}: {next_feature.title}[/bold cyan]\n\n"
@@ -1763,7 +1765,7 @@ def _handle_next_command(agent: FoxCodeAgent, config: Config) -> None:
             ))
         else:
             console.print("[green]✅ 所有功能已完成！[/green]")
-    
+
     except Exception as e:
         console.print(f"[red]获取下一个任务失败: {markup.escape(str(e))}[/red]")
 
@@ -1804,10 +1806,10 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
         console.print("[yellow]长时间运行模式未启用[/yellow]")
         console.print("[dim]使用 /long-running on 启用[/dim]")
         return
-    
+
     try:
         workflow_manager = agent.session.get_workflow_manager()
-        
+
         # 解析子命令
         if cmd_arg:
             parts = cmd_arg.split(maxsplit=1)
@@ -1816,31 +1818,31 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
         else:
             sub_cmd = None
             sub_arg = None
-        
+
         if sub_cmd == "start" and sub_arg:
             # 启动新工作流程
             args = sub_arg.split(maxsplit=1)
             feature_id = args[0]
             branch_name = args[1] if len(args) > 1 else f"feature/{feature_id.lower()}"
-            
+
             workflow = agent.session.start_workflow_for_feature(
                 feature_id=feature_id,
                 branch_name=branch_name,
             )
-            
+
             console.print(f"[green]✅ 已创建工作流程: {workflow.id}[/green]")
             console.print(f"   功能: {feature_id}")
             console.print(f"   分支: {branch_name}")
             console.print(f"   当前阶段: {workflow.current_phase.get_display_name()}")
-        
+
         elif sub_cmd == "list":
             # 列出所有工作流程
             workflows = workflow_manager.list_workflows()
-            
+
             if not workflows:
                 console.print("[yellow]暂无工作流程[/yellow]")
                 return
-            
+
             from rich.table import Table
             table = Table(title="工作流程列表")
             table.add_column("ID", style="cyan", width=20)
@@ -1848,7 +1850,7 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
             table.add_column("当前阶段", style="green")
             table.add_column("进度", justify="right")
             table.add_column("分支", style="yellow")
-            
+
             for wf in workflows:
                 progress = wf.get_progress()
                 table.add_row(
@@ -1858,9 +1860,9 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                     f"{progress['progress_percent']}%",
                     wf.branch_name or "-",
                 )
-            
+
             console.print(table)
-        
+
         elif sub_cmd == "status":
             # 显示工作流程详情
             workflow_id = sub_arg
@@ -1870,56 +1872,56 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                     console.print("[yellow]没有当前工作流程[/yellow]")
                     return
                 workflow_id = workflow.id
-            
+
             workflow = workflow_manager.get_workflow(workflow_id)
             if not workflow:
                 console.print(f"[red]工作流程不存在: {workflow_id}[/red]")
                 return
-            
+
             console.print(Panel(
                 workflow.to_markdown(),
                 title=f"📋 工作流程: {workflow_id}",
                 style="cyan",
             ))
-        
+
         elif sub_cmd == "advance":
             # 推进工作流程
             workflow = agent.session.get_current_workflow()
             if not workflow:
                 console.print("[yellow]没有当前工作流程[/yellow]")
                 return
-            
+
             current_phase = workflow.current_phase
             success = agent.session.advance_workflow(
                 output=sub_arg or "",
             )
-            
+
             if success:
                 console.print(f"[green]✅ 阶段已完成: {current_phase.get_display_name()}[/green]")
                 console.print(f"   下一阶段: {workflow.current_phase.get_display_name()}")
             else:
                 console.print("[red]推进工作流程失败[/red]")
-        
+
         elif sub_cmd == "skip":
             # 跳过当前阶段
             workflow = agent.session.get_current_workflow()
             if not workflow:
                 console.print("[yellow]没有当前工作流程[/yellow]")
                 return
-            
+
             current_phase = workflow.current_phase
             success = workflow_manager.skip_phase(
                 workflow_id=workflow.id,
                 phase=current_phase,
                 reason=sub_arg or "用户跳过",
             )
-            
+
             if success:
                 console.print(f"[yellow]已跳过阶段: {current_phase.get_display_name()}[/yellow]")
                 console.print(f"   当前阶段: {workflow.current_phase.get_display_name()}")
             else:
                 console.print("[red]跳过阶段失败[/red]")
-        
+
         else:
             # 显示当前工作流程状态
             workflow = agent.session.get_current_workflow()
@@ -1927,7 +1929,7 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                 console.print("[yellow]当前没有活动的工作流程[/yellow]")
                 console.print("[dim]使用 /workflow start <feature_id> 启动新工作流程[/dim]")
                 return
-            
+
             progress = workflow.get_progress()
             console.print(Panel(
                 f"[bold]工作流程 ID:[/bold] {workflow.id}\n"
@@ -1939,10 +1941,10 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                 title="📋 当前工作流程",
                 style="cyan",
             ))
-            
+
             # 显示工作流程阶段进度
-            from foxcode.core.workflow import WorkflowPhase, PhaseStatus
-            
+            from foxcode.core.workflow import PhaseStatus, WorkflowPhase
+
             console.print("\n[bold]阶段进度:[/bold]")
             for phase in WorkflowPhase.get_order():
                 result = workflow.get_phase_result(phase)
@@ -1954,10 +1956,10 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                     PhaseStatus.SKIPPED: "⏭️",
                     PhaseStatus.BLOCKED: "🚫",
                 }.get(result.status, "❓")
-                
+
                 current = " ← 当前" if phase == workflow.current_phase else ""
                 console.print(f"  {status_icon} {phase.get_display_name()}{current}")
-    
+
     except Exception as e:
         console.print(f"[red]处理工作流程命令失败: {markup.escape(str(e))}[/red]")
 
@@ -1976,16 +1978,16 @@ def _handle_phase_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     if not config.long_running.enable_long_running_mode:
         console.print("[yellow]长时间运行模式未启用[/yellow]")
         return
-    
+
     try:
         workflow = agent.session.get_current_workflow()
         if not workflow:
             console.print("[yellow]没有当前工作流程[/yellow]")
             return
-        
+
         current_phase = workflow.current_phase
         result = workflow.get_phase_result(current_phase)
-        
+
         if cmd_arg == "complete":
             # 完成当前阶段
             success = agent.session.advance_workflow()
@@ -1993,7 +1995,7 @@ def _handle_phase_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 console.print(f"[green]✅ 阶段已完成: {current_phase.get_display_name()}[/green]")
             else:
                 console.print("[red]完成阶段失败[/red]")
-        
+
         elif cmd_arg == "fail":
             # 标记失败
             workflow_manager = agent.session.get_workflow_manager()
@@ -2003,7 +2005,7 @@ def _handle_phase_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 error="用户标记失败",
             )
             console.print(f"[red]❌ 阶段已标记失败: {current_phase.get_display_name()}[/red]")
-        
+
         else:
             # 显示当前阶段信息
             console.print(Panel(
@@ -2015,7 +2017,7 @@ def _handle_phase_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 title="🔄 当前阶段",
                 style="yellow",
             ))
-    
+
     except Exception as e:
         console.print(f"[red]处理阶段命令失败: {markup.escape(str(e))}[/red]")
 
@@ -2036,23 +2038,23 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
         /work records                 - 查看任务记录
     """
     from foxcode.core.work_mode import WorkModeManager
-    from foxcode.core.work_mode_config import AgentExecutionMode, WorkModeStatus
-    
+    from foxcode.core.work_mode_config import AgentExecutionMode
+
     # 获取或创建Work模式管理器
     if not hasattr(agent, '_work_mode_manager'):
         # 根据配置决定执行模式
         # 默认使用单代理模式进行代码编写
         execution_mode = AgentExecutionMode.SINGLE_AGENT
-        
+
         agent._work_mode_manager = WorkModeManager(
             config=config.work_mode,
             working_dir=config.working_dir,
             foxcode_config=config,
             execution_mode=execution_mode,
         )
-    
+
     manager = agent._work_mode_manager
-    
+
     # 解析子命令
     if cmd_arg:
         parts = cmd_arg.split(maxsplit=1)
@@ -2061,7 +2063,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
     else:
         sub_cmd = None
         sub_arg = None
-    
+
     try:
         # 不带参数时，前台启用Work模式
         if sub_cmd is None:
@@ -2087,7 +2089,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                 else:
                     console.print(f"[red]启用失败: {msg}[/red]")
             return
-        
+
         # 关闭Work模式
         if sub_cmd == "off":
             if not manager.is_enabled():
@@ -2100,12 +2102,12 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
             else:
                 console.print(f"[red]关闭失败: {msg}[/red]")
             return
-        
+
         # 启动新任务
         if sub_cmd and sub_cmd not in ["status", "list", "stop", "records", "off"]:
             # 整个 cmd_arg 是任务描述
             task_description = cmd_arg
-            
+
             # 确保Work模式已启用（默认启用）
             if not manager.is_enabled():
                 console.print("[cyan]正在启用Work模式...[/cyan]")
@@ -2114,16 +2116,16 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                     console.print(f"[red]启用Work模式失败: {msg}[/red]")
                     return
                 console.print(f"[green]✅ {msg}[/green]")
-            
+
             # 分析任务，尝试提取目标子文件夹
             target_subfolder = _extract_target_subfolder(task_description, config.working_dir)
-            
+
             # 创建任务（自动保存记录）
             task = manager.create_work_task(
                 description=task_description,
                 target_subfolder=target_subfolder,
             )
-            
+
             console.print(Panel(
                 f"[bold cyan]任务 ID:[/bold cyan] {task.id}\n"
                 f"[bold cyan]描述:[/bold cyan] {task_description}\n"
@@ -2133,7 +2135,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                 title="[WORK] 创建工作任务",
                 style="cyan",
             ))
-            
+
             # 设置报告回调
             def report_callback(task, phase, result):
                 console.print(f"\n[cyan][REPORT] 阶段报告 [{task.id}][/cyan]")
@@ -2142,23 +2144,23 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                 if result.get('output'):
                     output_preview = result['output'][:200]
                     console.print(f"   输出: {output_preview}...")
-            
+
             manager.set_report_callback(report_callback)
-            
+
             # 启动任务
             success = run_async(manager.start_work_task(task))
             if success:
                 console.print(f"[green][OK] 任务已启动: {task.id}[/green]")
                 console.print("[dim]使用 /work status 查看进度，/work records 查看记录[/dim]")
             else:
-                console.print(f"[red]启动任务失败[/red]")
-        
+                console.print("[red]启动任务失败[/red]")
+
         # 查看状态
         elif sub_cmd == "status":
             if not manager.is_enabled():
                 console.print("[yellow]Work模式未启用[/yellow]")
                 return
-            
+
             status = manager.get_status()
             console.print(Panel(
                 f"[bold]Work模式状态:[/bold] {status['status']}\n"
@@ -2169,7 +2171,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                 title="[STATS] Work模式状态",
                 style="cyan",
             ))
-            
+
             # 显示活动任务
             if status['active_tasks']:
                 console.print("\n[bold]活动任务:[/bold]")
@@ -2177,15 +2179,15 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                     task = manager.get_task(task_id)
                     if task:
                         console.print(f"  [LOOP] {task_id}: {task.description[:40]}... ({task.current_phase})")
-        
+
         # 列出任务
         elif sub_cmd == "list":
             tasks = manager.list_tasks(limit=10)
-            
+
             if not tasks:
                 console.print("[yellow]暂无工作任务[/yellow]")
                 return
-            
+
             from rich.table import Table
             table = Table(title="工作任务列表")
             table.add_column("ID", style="cyan", width=15)
@@ -2193,7 +2195,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
             table.add_column("状态", style="green")
             table.add_column("目标", style="yellow")
             table.add_column("当前阶段", style="magenta")
-            
+
             for task in tasks:
                 status_color = {
                     "pending": "white",
@@ -2201,7 +2203,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                     "completed": "green",
                     "failed": "red",
                 }.get(task.status, "white")
-                
+
                 table.add_row(
                     task.id,
                     task.description[:30] + "..." if len(task.description) > 30 else task.description,
@@ -2209,17 +2211,17 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                     task.target_subfolder[:20] if task.target_subfolder else "-",
                     task.current_phase or "-",
                 )
-            
+
             console.print(table)
-        
+
         # 查看任务记录
         elif sub_cmd == "records":
             tasks = manager.list_tasks(limit=20)
-            
+
             if not tasks:
                 console.print("[yellow]暂无任务记录[/yellow]")
                 return
-            
+
             from rich.table import Table
             table = Table(title="任务记录")
             table.add_column("ID", style="cyan", width=15)
@@ -2227,7 +2229,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
             table.add_column("状态", style="green")
             table.add_column("创建时间", style="yellow")
             table.add_column("完成时间", style="magenta")
-            
+
             for task in tasks:
                 status_color = {
                     "pending": "white",
@@ -2235,7 +2237,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                     "completed": "green",
                     "failed": "red",
                 }.get(task.status, "white")
-                
+
                 table.add_row(
                     task.id,
                     task.description[:25] + "..." if len(task.description) > 25 else task.description,
@@ -2243,25 +2245,25 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                     task.created_at[:16] if task.created_at else "-",
                     task.completed_at[:16] if task.completed_at else "-",
                 )
-            
+
             console.print(table)
             console.print(f"\n[dim]记录保存位置: {config.working_dir}/.foxcode/work_records.json[/dim]")
-        
+
         # 停止任务
         elif sub_cmd == "stop" and sub_arg:
             task = manager.get_task(sub_arg)
             if not task:
                 console.print(f"[red]任务不存在: {sub_arg}[/red]")
                 return
-            
+
             task.status = "failed"
             task.error = "用户手动停止"
             manager._save_records()  # 保存记录
             console.print(f"[yellow]已停止任务: {sub_arg}[/yellow]")
-        
+
         else:
             console.print("[yellow]用法: /work [off] | <任务描述> | status | list | records | stop <id>[/yellow]")
-    
+
     except Exception as e:
         console.print(f"[red]处理 /work 命令失败: {markup.escape(str(e))}[/red]")
 
@@ -2278,7 +2280,7 @@ def _extract_target_subfolder(description: str, working_dir: Path) -> str:
         目标子文件夹路径
     """
     import re
-    
+
     # 尝试匹配路径模式
     path_patterns = [
         r'在\s+([^\s]+)\s+中',          # "在 src/core 中"
@@ -2288,22 +2290,22 @@ def _extract_target_subfolder(description: str, working_dir: Path) -> str:
         r'分析\s+([^\s]+)',              # "分析 frontend/"
         r'([a-zA-Z_][a-zA-Z0-9_/.-]*)',  # 路径模式
     ]
-    
+
     for pattern in path_patterns:
         match = re.search(pattern, description)
         if match:
             potential_path = match.group(1)
-            
+
             # 检查是否是有效路径
             full_path = working_dir / potential_path
             if full_path.exists():
                 return potential_path
-            
+
             # 检查是否是文件所在目录
             parent_dir = full_path.parent
             if parent_dir.exists():
                 return str(parent_dir.relative_to(working_dir))
-    
+
     # 根据关键词推断
     keywords_to_folders = {
         "前端": ["src/frontend", "frontend", "web", "client", "src"],
@@ -2314,17 +2316,17 @@ def _extract_target_subfolder(description: str, working_dir: Path) -> str:
         "核心": ["src/core", "core", "src"],
         "工具": ["src/tools", "tools", "utils"],
     }
-    
+
     for keyword, folders in keywords_to_folders.items():
         if keyword in description:
             for folder in folders:
                 if (working_dir / folder).exists():
                     return folder
-    
+
     # 默认返回 src 目录
     if (working_dir / "src").exists():
         return "src"
-    
+
     return "."
 
 
@@ -2336,19 +2338,19 @@ def _handle_session_end(agent: FoxCodeAgent, config: Config) -> None:
     """
     if not config.long_running.auto_generate_summary:
         return
-    
+
     try:
         # 获取进度信息
         progress_manager = agent.session.get_progress_manager()
         pending_todos = progress_manager.get_pending_todos()
-        
+
         # 保存摘要
         agent.end_session(
             incomplete_work=[t.content for t in pending_todos],
         )
-        
+
         console.print("[dim]会话摘要已保存[/dim]")
-    
+
     except Exception as e:
         logger.warning(f"保存会话摘要失败: {e}")
 
@@ -2362,18 +2364,18 @@ def _handle_stats_command() -> None:
     if not _watchdog:
         console.print("[yellow]看门狗未启用[/yellow]")
         return
-    
+
     try:
         metrics = _watchdog.get_current_metrics()
-        
+
         from rich.table import Table
-        
+
         # 创建统计表格
         table = Table(title="📊 性能统计", show_header=True)
         table.add_column("指标", style="cyan")
         table.add_column("值", style="green")
         table.add_column("说明", style="dim")
-        
+
         table.add_row(
             "总请求数",
             str(metrics.total_requests),
@@ -2414,20 +2416,20 @@ def _handle_stats_command() -> None:
             str(metrics.consecutive_errors),
             "连续失败的请求次数"
         )
-        
+
         console.print(table)
-        
+
         # 显示警告信息
         if metrics.consecutive_errors >= 3:
             console.print(
                 f"\n[yellow]⚠️ 连续 {metrics.consecutive_errors} 次错误，请检查日志[/yellow]"
             )
-        
+
         if metrics.memory_usage_mb > 400:
             console.print(
                 f"\n[yellow]⚠️ 内存使用较高 ({metrics.memory_usage_mb:.1f}MB)[/yellow]"
             )
-    
+
     except Exception as e:
         logger.error(f"获取统计信息失败: {e}")
         console.print(f"[red]获取统计信息失败: {markup.escape(str(e))}[/red]")
@@ -2442,25 +2444,25 @@ def _handle_health_command() -> None:
     if not _watchdog:
         console.print("[yellow]看门狗未启用[/yellow]")
         return
-    
+
     try:
         health = _watchdog.get_health_status()
-        
+
         from rich.panel import Panel
         from rich.text import Text
-        
+
         # 状态颜色
         status_color = {
             'healthy': 'green',
             'warning': 'yellow',
             'critical': 'red',
         }.get(health['status'], 'white')
-        
+
         status_text = Text.assemble(
             ('状态: ', 'bold'),
             (health['status'].upper(), status_color),
         )
-        
+
         content = (
             f"{status_text}\n\n"
             f"[bold]运行时间:[/bold] {health['uptime']}\n\n"
@@ -2478,13 +2480,13 @@ def _handle_health_command() -> None:
             f"  看门狗: {'✅ 运行中' if health['watchdog_active'] else '❌ 已停止'}\n"
             f"  历史记录: {health['history_count']} 条"
         )
-        
+
         console.print(Panel(
             content,
             title="🏥 健康检查报告",
             border_style=status_color,
         ))
-    
+
     except Exception as e:
         logger.error(f"获取健康状态失败: {e}")
         console.print(f"[red]获取健康状态失败: {markup.escape(str(e))}[/red]")
@@ -2509,11 +2511,11 @@ def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     """
     try:
         from foxcode.core.semantic_index import SemanticCodeIndex, SemanticIndexConfig
-        
+
         index_dir = Path(config.working_dir) / ".foxcode" / "semantic_index"
         index_config = SemanticIndexConfig(index_dir=str(index_dir))
         index = SemanticCodeIndex(index_config)
-        
+
         if cmd_arg == "status":
             stats = index.get_stats()
             console.print(Panel(
@@ -2524,17 +2526,17 @@ def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 title="📚 语义索引状态",
                 style="cyan",
             ))
-        
+
         elif cmd_arg == "update":
             console.print("[cyan]正在增量更新索引...[/cyan]")
             result = run_async(index.index_directory(Path(config.working_dir), incremental=True))
             console.print(f"[green]✅ 更新完成: {result.get('files_updated', 0)} 个文件[/green]")
-        
+
         else:
             console.print("[cyan]正在构建语义索引...[/cyan]")
             result = run_async(index.index_directory(Path(config.working_dir)))
             console.print(f"[green]✅ 索引构建完成: {result.get('files_indexed', 0)} 个文件[/green]")
-    
+
     except ImportError:
         console.print("[yellow]语义索引模块未安装，请安装: pip install sentence-transformers[/yellow]")
     except Exception as e:
@@ -2553,27 +2555,27 @@ def _handle_search_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
     if not cmd_arg:
         console.print("[yellow]请提供搜索查询: /search <query>[/yellow]")
         return
-    
+
     try:
         from foxcode.core.semantic_index import SemanticCodeIndex, SemanticIndexConfig
-        
+
         index_dir = Path(config.working_dir) / ".foxcode" / "semantic_index"
         index_config = SemanticIndexConfig(index_dir=str(index_dir))
         index = SemanticCodeIndex(index_config)
-        
+
         results = run_async(index.search(cmd_arg, top_k=10))
-        
+
         if not results:
             console.print("[yellow]未找到匹配的代码[/yellow]")
             return
-        
+
         from rich.table import Table
         table = Table(title=f"🔍 搜索结果: {cmd_arg}", show_header=True)
         table.add_column("文件", style="cyan")
         table.add_column("行号", style="green")
         table.add_column("相似度", style="yellow")
         table.add_column("代码片段", style="white")
-        
+
         for result in results[:10]:
             table.add_row(
                 str(Path(result['file_path']).relative_to(config.working_dir)),
@@ -2581,9 +2583,9 @@ def _handle_search_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                 f"{result.get('score', 0):.2f}",
                 result.get('content', '')[:50] + "...",
             )
-        
+
         console.print(table)
-    
+
     except ImportError:
         console.print("[yellow]语义索引模块未安装[/yellow]")
     except Exception as e:
@@ -2604,29 +2606,29 @@ def _handle_kb_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None)
     """
     try:
         from foxcode.core.knowledge_base import KnowledgeBase, KnowledgeBaseConfig
-        
+
         kb_dir = Path(config.working_dir) / ".foxcode" / "knowledge_base"
         kb_config = KnowledgeBaseConfig(storage_path=str(kb_dir))
         kb = KnowledgeBase(kb_config)
-        
+
         parts = cmd_arg.split(maxsplit=1) if cmd_arg else [None]
         sub_cmd = parts[0]
         sub_arg = parts[1] if len(parts) > 1 else None
-        
+
         if sub_cmd == "add" and sub_arg:
             entry = run_async(kb.store(sub_arg))
             console.print(f"[green]✅ 已添加知识条目: {entry.id}[/green]")
-        
+
         elif sub_cmd == "search" and sub_arg:
             results = run_async(kb.retrieve(sub_arg))
             console.print(f"[cyan]找到 {len(results)} 条知识:[/cyan]")
             for r in results[:5]:
                 console.print(f"  - {r.get('content', '')[:100]}...")
-        
+
         elif sub_cmd == "tags":
             tags = kb.get_all_tags()
             console.print(f"[cyan]标签列表: {', '.join(tags) if tags else '无标签'}[/cyan]")
-        
+
         else:
             stats = kb.get_stats()
             console.print(Panel(
@@ -2636,7 +2638,7 @@ def _handle_kb_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None)
                 title="📖 知识库状态",
                 style="cyan",
             ))
-    
+
     except Exception as e:
         console.print(f"[red]知识库操作失败: {markup.escape(str(e))}[/red]")
 
@@ -2654,10 +2656,10 @@ def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
     """
     try:
         from foxcode.core.project_analyzer import ProjectAnalyzer, ProjectAnalyzerConfig
-        
+
         analyzer_config = ProjectAnalyzerConfig()
         analyzer = ProjectAnalyzer(analyzer_config)
-        
+
         if cmd_arg == "tech":
             tech_stack = analyzer.detect_tech_stack(Path(config.working_dir))
             console.print(Panel(
@@ -2665,7 +2667,7 @@ def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
                 title="🔧 技术栈分析",
                 style="cyan",
             ))
-        
+
         elif cmd_arg == "quality":
             report = run_async(analyzer.analyze(Path(config.working_dir)))
             console.print(Panel(
@@ -2675,7 +2677,7 @@ def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
                 title="📊 代码质量分析",
                 style="yellow",
             ))
-        
+
         else:
             report = run_async(analyzer.analyze(Path(config.working_dir)))
             console.print(Panel(
@@ -2686,7 +2688,7 @@ def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
                 title="📁 项目分析",
                 style="cyan",
             ))
-    
+
     except Exception as e:
         console.print(f"[red]项目分析失败: {markup.escape(str(e))}[/red]")
 
@@ -2706,31 +2708,31 @@ def _handle_debug_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     """
     try:
         from foxcode.core.advanced_debugger import AdvancedDebugger, DebuggerConfig
-        
+
         debugger_config = DebuggerConfig()
         debugger = AdvancedDebugger(debugger_config)
-        
+
         parts = cmd_arg.split(maxsplit=1) if cmd_arg else [None]
         sub_cmd = parts[0]
         sub_arg = parts[1] if len(parts) > 1 else None
-        
+
         if sub_cmd == "start":
             console.print("[cyan]调试会话已启动[/cyan]")
             console.print("[dim]使用 /debug break <file:line> 设置断点[/dim]")
-        
+
         elif sub_cmd == "break" and sub_arg:
             file_path, line = sub_arg.rsplit(":", 1)
             debugger.set_breakpoint(Path(file_path), int(line))
             console.print(f"[green]✅ 断点已设置: {file_path}:{line}[/green]")
-        
+
         elif sub_cmd == "continue":
             run_async(debugger.continue_execution())
             console.print("[cyan]继续执行...[/cyan]")
-        
+
         elif sub_cmd == "step":
             run_async(debugger.step())
             console.print("[cyan]单步执行...[/cyan]")
-        
+
         elif sub_cmd == "vars":
             variables = debugger.get_variables()
             console.print(Panel(
@@ -2738,10 +2740,10 @@ def _handle_debug_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 title="🔍 变量列表",
                 style="cyan",
             ))
-        
+
         else:
             console.print("[yellow]用法: /debug [start|break|continue|step|vars][/yellow]")
-    
+
     except Exception as e:
         console.print(f"[red]调试操作失败: {markup.escape(str(e))}[/red]")
 
@@ -2758,10 +2760,10 @@ def _handle_profile_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
     """
     try:
         from foxcode.core.performance_analyzer import PerformanceAnalyzer, PerformanceConfig
-        
+
         analyzer_config = PerformanceConfig()
         analyzer = PerformanceAnalyzer(analyzer_config)
-        
+
         if cmd_arg == "report":
             console.print(Panel(
                 "[bold]性能分析报告[/bold]\n\n"
@@ -2770,11 +2772,11 @@ def _handle_profile_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
                 title="📊 性能分析报告",
                 style="cyan",
             ))
-        
+
         else:
             console.print("[cyan]性能分析已启动...[/cyan]")
             console.print("[dim]使用 /profile <函数名> 来分析特定函数的性能[/dim]")
-    
+
     except Exception as e:
         console.print(f"[red]性能分析失败: {markup.escape(str(e))}[/red]")
 
@@ -2790,20 +2792,21 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
         /security deps  - 扫描依赖漏洞
     """
     try:
-        from foxcode.core.security_scanner import SecurityScanner, SecurityConfig
         from pathlib import Path as PathlibPath
-        
+
+        from foxcode.core.security_scanner import SecurityConfig, SecurityScanner
+
         # 日志文件路径
         log_file_path = PathlibPath.home() / ".foxcode" / "security_scan.log"
-        
+
         scanner_config = SecurityConfig()
         scanner = SecurityScanner(scanner_config)
-        
+
         if cmd_arg == "deps":
             # 扫描依赖漏洞
             console.print("[cyan]正在扫描依赖漏洞...[/cyan]")
             dependency_issues = run_async(scanner.check_dependencies(Path(config.working_dir)))
-            
+
             if not dependency_issues:
                 console.print(Panel(
                     f"[green]✅ 未发现依赖漏洞[/green]\n\n"
@@ -2821,7 +2824,7 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                         "medium": "yellow",
                         "low": "blue",
                     }.get(issue.severity.value, "white")
-                    
+
                     issues_text.append(
                         f"  [{severity_color}]• {issue.package} {issue.version}[/{severity_color}]\n"
                         f"    漏洞: {issue.vulnerability_id}\n"
@@ -2829,25 +2832,25 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                         f"    修复版本: {issue.fixed_version}\n"
                         f"    描述: {issue.description}"
                     )
-                
+
                 console.print(Panel(
                     f"[bold]发现依赖漏洞:[/bold] {len(dependency_issues)}\n\n" + "\n\n".join(issues_text) +
                     f"\n\n[dim]详细日志: {log_file_path}[/dim]",
                     title="依赖安全扫描",
                     style="red",
                 ))
-        
+
         else:
             # 运行完整安全扫描
             console.print("[cyan]正在进行安全扫描，请稍候...[/cyan]")
             results = run_async(scanner.scan_directory(Path(config.working_dir)))
-            
+
             # 从 summary 中获取严重程度分布
             severity_dist = results.summary.get("by_severity", {})
             severity_text = "\n".join(
                 f"  - {k}: {v}" for k, v in severity_dist.items()
             ) if severity_dist else "  无问题"
-            
+
             # 构建结果面板
             result_text = (
                 f"[bold]扫描文件数:[/bold] {results.files_scanned}\n"
@@ -2858,7 +2861,7 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                 f"[bold]风险等级:[/bold] {results.summary.get('risk_level', 'unknown')}\n"
                 f"[bold]扫描耗时:[/bold] {results.duration_seconds:.2f} 秒"
             )
-            
+
             # 显示详细问题（如果有）
             if results.issues:
                 result_text += "\n\n[bold yellow]发现的安全问题:[/bold yellow]"
@@ -2869,26 +2872,26 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                         "medium": "yellow",
                         "low": "blue",
                     }.get(issue.severity.value, "white")
-                    
+
                     result_text += (
                         f"\n  [{severity_color}]• [{issue.id}] {issue.title}[/{severity_color}]\n"
                         f"    文件: {issue.file_path}:{issue.line_number}\n"
                         f"    类型: {issue.vulnerability_type.value}\n"
                         f"    建议: {issue.recommendation}"
                     )
-                
+
                 if len(results.issues) > 10:
                     result_text += f"\n  ... 还有 {len(results.issues) - 10} 个问题"
-            
+
             # 添加日志文件路径
             result_text += f"\n\n[dim]详细日志已保存至: {log_file_path}[/dim]"
-            
+
             console.print(Panel(
                 result_text,
                 title="安全扫描结果",
                 style="red" if len(results.issues) > 0 else "green",
             ))
-    
+
     except Exception as e:
         logger.error(f"安全扫描失败: {e}", exc_info=True)
         console.print(f"[red]安全扫描失败: {markup.escape(str(e))}[/red]")
@@ -2905,10 +2908,10 @@ def _handle_format_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
     """
     try:
         from foxcode.core.code_formatter import CodeFormatter, FormatterConfig
-        
+
         formatter_config = FormatterConfig()
         formatter = CodeFormatter(formatter_config)
-        
+
         if cmd_arg:
             files = [Path(f) for f in cmd_arg.split()]
             for f in files:
@@ -2921,10 +2924,10 @@ def _handle_format_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
         else:
             result = run_async(formatter.format_directory(Path(config.working_dir)))
             console.print(f"[green]✅ 已格式化 {result.successful} 个文件[/green]")
-            
+
             if result.failed > 0:
                 console.print(f"[yellow]警告: {result.failed} 个文件格式化失败[/yellow]")
-    
+
     except Exception as e:
         console.print(f"[red]代码格式化失败: {markup.escape(str(e))}[/red]")
 
@@ -2939,21 +2942,21 @@ def _handle_refactor_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
         /refactor [file]  - 获取重构建议
     """
     try:
-        from foxcode.core.refactoring_suggester import RefactoringSuggester, RefactoringConfig
-        
+        from foxcode.core.refactoring_suggester import RefactoringConfig, RefactoringSuggester
+
         suggester_config = RefactoringConfig()
         suggester = RefactoringSuggester(suggester_config)
         target = Path(cmd_arg) if cmd_arg else Path(config.working_dir)
-        
+
         if target.is_file():
             report = suggester.analyze_file(target)
         else:
             report = suggester.analyze_file(target)
-        
+
         if not report.smells:
             console.print("[green]✅ 未发现需要重构的代码[/green]")
             return
-        
+
         console.print(Panel(
             "\n".join(f"[bold]{smell.type}:[/bold] {smell.description}\n"
                      f"  位置: {smell.location}\n"
@@ -2962,7 +2965,7 @@ def _handle_refactor_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
             title="🔧 重构建议",
             style="yellow",
         ))
-    
+
     except Exception as e:
         console.print(f"[red]重构分析失败: {markup.escape(str(e))}[/red]")
 
@@ -2978,11 +2981,11 @@ def _handle_test_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
     """
     try:
         from foxcode.core.test_generator import TestGenerator, TestGeneratorConfig
-        
+
         parts = cmd_arg.split(maxsplit=1) if cmd_arg else [None]
         sub_cmd = parts[0]
         sub_arg = parts[1] if len(parts) > 1 else None
-        
+
         if sub_cmd == "gen" and sub_arg:
             generator_config = TestGeneratorConfig()
             generator = TestGenerator(generator_config)
@@ -2992,7 +2995,7 @@ def _handle_test_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                 console.print(f"  - {test.name}")
         else:
             console.print("[yellow]用法: /test gen <file>[/yellow]")
-    
+
     except Exception as e:
         console.print(f"[red]测试生成失败: {markup.escape(str(e))}[/red]")
 
@@ -3008,20 +3011,20 @@ def _handle_doc_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
     """
     try:
         from foxcode.core.doc_generator import DocGenerator, DocGeneratorConfig
-        
+
         parts = cmd_arg.split(maxsplit=1) if cmd_arg else [None]
         sub_cmd = parts[0]
         sub_arg = parts[1] if len(parts) > 1 else None
-        
+
         if sub_cmd == "gen" and sub_arg:
             generator_config = DocGeneratorConfig()
             generator = DocGenerator(generator_config)
             result = run_async(generator.generate_api_docs(Path(sub_arg)))
-            console.print(f"[green]✅ 文档已生成[/green]")
+            console.print("[green]✅ 文档已生成[/green]")
             console.print(f"[dim]端点数: {len(result.endpoints)}[/dim]")
         else:
             console.print("[yellow]用法: /doc gen <file>[/yellow]")
-    
+
     except Exception as e:
         console.print(f"[red]文档生成失败: {markup.escape(str(e))}[/red]")
 
@@ -3038,18 +3041,18 @@ def _handle_git_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
     """
     try:
         from foxcode.core.git_advanced_ops import GitAdvancedOps, GitConfig
-        
+
         git_config = GitConfig()
         git_ops = GitAdvancedOps(git_config)
-        
+
         parts = cmd_arg.split(maxsplit=1) if cmd_arg else [None]
         sub_cmd = parts[0]
-        
+
         if sub_cmd == "commit":
             message = git_ops.generate_commit_message(Path(config.working_dir))
-            console.print(f"[cyan]建议的提交信息:[/cyan]")
+            console.print("[cyan]建议的提交信息:[/cyan]")
             console.print(f"[dim]{message.to_message()}[/dim]")
-        
+
         elif sub_cmd == "conflicts":
             conflicts = git_ops.analyze_conflicts(Path(config.working_dir))
             if not conflicts:
@@ -3061,10 +3064,10 @@ def _handle_git_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
                     title="⚠️ 冲突分析",
                     style="yellow",
                 ))
-        
+
         else:
             console.print("[yellow]用法: /git [commit|conflicts][/yellow]")
-    
+
     except Exception as e:
         console.print(f"[red]Git 操作失败: {markup.escape(str(e))}[/red]")
 
@@ -3079,15 +3082,15 @@ def _handle_diagram_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
         /diagram <type>  - 生成图表 (architecture/chart)
     """
     try:
-        from foxcode.core.multimodal_processor import MultimodalProcessor, MultimodalConfig
-        
+        from foxcode.core.multimodal_processor import MultimodalConfig, MultimodalProcessor
+
         processor_config = MultimodalConfig()
         processor = MultimodalProcessor(processor_config)
         diagram_type = cmd_arg or "architecture"
-        
+
         if diagram_type == "architecture":
             result = processor.generate_architecture_diagram({})
-            console.print(f"[green]✅ 架构图已生成[/green]")
+            console.print("[green]✅ 架构图已生成[/green]")
             if result:
                 console.print(Panel(
                     result[:500] + "..." if len(result) > 500 else result,
@@ -3095,8 +3098,8 @@ def _handle_diagram_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
                     style="cyan",
                 ))
         else:
-            console.print(f"[green]✅ 图表已生成[/green]")
-    
+            console.print("[green]✅ 图表已生成[/green]")
+
     except Exception as e:
         console.print(f"[red]图表生成失败: {markup.escape(str(e))}[/red]")
 
@@ -3128,15 +3131,15 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     """
     try:
         from foxcode.core.open_space import (
+            Experience,
+            ExperienceCategory,
             get_open_space_manager,
             reset_open_space_manager,
-            ExperienceCategory,
-            Experience,
         )
-        
+
         # 使用工作目录获取管理器
         manager = get_open_space_manager(working_dir=config.working_dir)
-        
+
         # 解析子命令
         if cmd_arg:
             parts = cmd_arg.split(maxsplit=2)
@@ -3147,7 +3150,7 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             sub_cmd = None
             sub_arg1 = None
             sub_arg2 = None
-        
+
         # 启用 OpenSpace
         if sub_cmd == "true" or sub_cmd == "on" or sub_cmd == "enable":
             manager.enable()
@@ -3155,7 +3158,7 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             console.print("[green]✅ OpenSpace 已启用[/green]")
             console.print("[dim]AI 经验知识将在下次对话中加载到上下文[/dim]")
             return
-        
+
         # 禁用 OpenSpace
         if sub_cmd == "false" or sub_cmd == "off" or sub_cmd == "disable":
             manager.disable()
@@ -3163,7 +3166,7 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             console.print("[yellow]OpenSpace 已禁用[/yellow]")
             console.print("[dim]AI 经验知识将不会加载到上下文[/dim]")
             return
-        
+
         # AI 自动总结功能
         if sub_cmd == "ai":
             if sub_arg1 == "true" or sub_arg1 == "on" or sub_arg1 == "enable":
@@ -3180,16 +3183,16 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 console.print(f"[cyan]AI 自动总结状态: {ai_status}[/cyan]")
                 console.print("[dim]用法: /space ai [true|false][/dim]")
                 return
-        
+
         # 列出所有经验
         if sub_cmd == "list":
             experiences = manager.list_all(enabled_only=False)
-            
+
             if not experiences:
                 console.print("[yellow]暂无经验记录[/yellow]")
                 console.print("[dim]使用 /space add <标题> <内容> 添加新经验[/dim]")
                 return
-            
+
             from rich.table import Table
             table = Table(title="📚 OpenSpace 经验列表")
             table.add_column("ID", style="cyan", width=15)
@@ -3197,7 +3200,7 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             table.add_column("分类", style="green")
             table.add_column("状态", style="yellow")
             table.add_column("创建时间", style="dim")
-            
+
             for exp in experiences:
                 status = "✅" if exp.enabled else "❌"
                 table.add_row(
@@ -3207,29 +3210,29 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                     status,
                     exp.created_at[:10] if exp.created_at else "-",
                 )
-            
+
             console.print(table)
             console.print(f"\n[dim]共 {len(experiences)} 条经验[/dim]")
             return
-        
+
         # 添加新经验
         if sub_cmd == "add":
             if sub_arg1 and sub_arg2:
                 # 快速添加模式: /space add <title> <content>
                 title = sub_arg1
                 content = sub_arg2
-                
+
                 # 检查内容长度
                 if len(content) > 500:
                     content = content[:500]
                     console.print("[yellow]内容已截断至 500 字[/yellow]")
-                
+
                 exp = manager.create_experience(
                     title=title,
                     content=content,
                     category=ExperienceCategory.GENERAL,
                 )
-                
+
                 if manager.save(exp):
                     console.print(f"[green]✅ 已添加经验: {exp.id}[/green]")
                     console.print(f"   标题: {title}")
@@ -3241,21 +3244,21 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 console.print("[cyan]添加新经验[/cyan]")
                 console.print("[dim]提示: 使用 /space add <标题> <内容> 快速添加[/dim]")
                 console.print("[dim]经验内容不超过 500 字[/dim]")
-                
+
                 console.print("\n[yellow]请使用以下格式添加:[/yellow]")
                 console.print("  /space add <标题> <内容>")
                 console.print("\n[dim]示例:[/dim]")
                 console.print("  /space add \"Windows路径问题\" \"在Windows上使用反斜杠路径，但Python推荐使用正斜杠或Path对象\"")
             return
-        
+
         # 显示经验详情
         if sub_cmd == "show" and sub_arg1:
             exp = manager.get(sub_arg1)
-            
+
             if not exp:
                 console.print(f"[red]经验不存在: {sub_arg1}[/red]")
                 return
-            
+
             console.print(Panel(
                 f"[bold]标题:[/bold] {exp.title}\n"
                 f"[bold]分类:[/bold] {exp.category.value}\n"
@@ -3267,27 +3270,27 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 style="cyan",
             ))
             return
-        
+
         # 删除经验
         if sub_cmd == "delete" and sub_arg1:
             exp = manager.get(sub_arg1)
-            
+
             if not exp:
                 console.print(f"[red]经验不存在: {sub_arg1}[/red]")
                 return
-            
+
             if manager.delete(sub_arg1):
                 console.print(f"[green]✅ 已删除经验: {sub_arg1}[/green]")
             else:
                 console.print(f"[red]删除失败: {sub_arg1}[/red]")
             return
-        
+
         # 显示统计信息
         if sub_cmd == "stats":
             stats = manager.get_statistics()
-            
+
             ai_status = "✅ 启用" if stats.get('ai_auto_summarize', False) else "❌ 禁用"
-            
+
             console.print(Panel(
                 f"[bold]总经验数:[/bold] {stats['total']}\n"
                 f"[bold]启用:[/bold] {stats['enabled']}\n"
@@ -3300,12 +3303,12 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 style="cyan",
             ))
             return
-        
+
         # 默认显示状态
         status = "✅ 启用" if manager.enabled else "❌ 禁用"
         ai_status = "✅ 启用" if manager.ai_auto_summarize else "❌ 禁用"
         stats = manager.get_statistics()
-        
+
         console.print(Panel(
             f"[bold]状态:[/bold] {status}\n"
             f"[bold]AI自动总结:[/bold] {ai_status}\n"
@@ -3324,7 +3327,7 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             title="OpenSpace - AI 经验知识库",
             style="cyan",
         ))
-        
+
     except ImportError as e:
         console.print(f"[red]OpenSpace 模块加载失败: {e}[/red]")
     except Exception as e:
@@ -3349,7 +3352,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             sub_cmd = cmd_arg.lower().strip()
         else:
             sub_cmd = None
-        
+
         # 切换到指定模式
         if sub_cmd == "default":
             config.output_topic = OutputTopic.DEFAULT
@@ -3360,7 +3363,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 console.print("[green]✅ 已切换到默认模式（完整输出）[/green]")
                 console.print("[yellow]⚠️ 配置保存失败，下次启动将恢复默认设置[/yellow]")
             return
-        
+
         elif sub_cmd == "debug":
             config.output_topic = OutputTopic.DEBUG
             config.debug = True
@@ -3373,7 +3376,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 console.print("[green]✅ 已切换到调试模式（详细输出）[/green]")
                 console.print("[yellow]⚠️ 配置保存失败，下次启动将恢复默认设置[/yellow]")
             return
-        
+
         elif sub_cmd == "minimalism":
             config.output_topic = OutputTopic.MINIMALISM
             # 保存配置到文件
@@ -3384,7 +3387,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
                 print("[WARN] 配置保存失败，下次启动将恢复默认设置")
 
             return
-        
+
         # 显示当前模式状态
         current_topic = config.output_topic.value
         topic_desc = {
@@ -3392,14 +3395,14 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             OutputTopic.DEBUG.value: "调试模式（详细输出）",
             OutputTopic.MINIMALISM.value: "极简模式（精简输出）",
         }
-        
+
         # 极简模式：简洁输出
         if config.output_topic == OutputTopic.MINIMALISM:
             print(f"[topic] 当前模式: {topic_desc.get(current_topic, current_topic)}")
             print("[topic] 可用模式: default, debug, minimalism")
             print("[topic] 用法: /topic [default|debug|minimalism]")
             return
-        
+
         console.print(Panel(
             f"[bold]当前模式:[/bold] {topic_desc.get(current_topic, current_topic)}\n\n"
             f"[bold]可用模式:[/bold]\n"
@@ -3411,7 +3414,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             title="📋 输出主题模式",
             style="cyan",
         ))
-    
+
     except Exception as e:
         if config.output_topic == OutputTopic.MINIMALISM:
             print(f"[错误] 切换输出模式失败: {str(e)}")
@@ -3434,15 +3437,15 @@ def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
         /mcp uninstall <name>    - 卸载指定的 MCP 或 Skill
     """
     import asyncio
-    
+
     try:
-        from foxcode.core.mcp_installer import get_installer, InstallStatus
-        
+        from foxcode.core.mcp_installer import InstallStatus, get_installer
+
         installer = get_installer(config.working_dir)
-        
+
         # 极简模式检查
         is_minimalism = config.output_topic == OutputTopic.MINIMALISM
-        
+
         # 解析命令参数
         if not cmd_arg:
             # 显示帮助
@@ -3468,17 +3471,17 @@ def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
                     style="cyan",
                 ))
             return
-        
+
         # 解析子命令
         parts = cmd_arg.split()
         first_arg = parts[0]
         force = "--force" in parts or "-f" in parts
-        
+
         # 列出已安装
         if first_arg == "list":
             skills = installer.list_installed_skills()
             servers = installer.list_installed_mcp_servers()
-            
+
             if is_minimalism:
                 print(f"[mcp] 已安装: {len(skills)} skills, {len(servers)} servers")
                 for skill in skills:
@@ -3491,20 +3494,20 @@ def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
                 table.add_column("类型", style="cyan")
                 table.add_column("名称", style="green")
                 table.add_column("描述", style="dim")
-                
+
                 for skill in skills:
                     table.add_row("Skill", skill.name, skill.description[:50] if skill.description else "")
-                
+
                 for server in servers:
                     table.add_row("MCP Server", server.name, str(server.path))
-                
+
                 console.print(table)
             return
-        
+
         # 列出 Skills
         if first_arg == "skills":
             skills = installer.list_installed_skills()
-            
+
             if is_minimalism:
                 print(f"[mcp] 已安装 Skills: {len(skills)}")
                 for skill in skills:
@@ -3515,17 +3518,17 @@ def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
                 table.add_column("名称", style="green")
                 table.add_column("描述", style="dim")
                 table.add_column("路径", style="cyan")
-                
+
                 for skill in skills:
                     table.add_row(skill.name, skill.description[:50] if skill.description else "", str(skill.path))
-                
+
                 console.print(table)
             return
-        
+
         # 列出 MCP 服务器
         if first_arg == "servers":
             servers = installer.list_installed_mcp_servers()
-            
+
             if is_minimalism:
                 print(f"[mcp] 已安装 MCP 服务器: {len(servers)}")
                 for server in servers:
@@ -3535,85 +3538,85 @@ def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
                 table = Table(title="已安装的 MCP 服务器")
                 table.add_column("名称", style="green")
                 table.add_column("路径", style="cyan")
-                
+
                 for server in servers:
                     table.add_row(server.name, str(server.path))
-                
+
                 console.print(table)
             return
-        
+
         # 卸载
         if first_arg == "uninstall":
             if len(parts) < 2:
                 console.print("[red]请指定要卸载的名称[/red]")
                 return
-            
+
             name = parts[1]
-            
+
             # 尝试卸载 Skill
             if installer.uninstall_skill(name):
                 console.print(f"[green]✅ 已卸载 Skill: {name}[/green]")
                 return
-            
+
             # 尝试卸载 MCP 服务器
             if installer.uninstall_mcp_server(name):
                 console.print(f"[green]✅ 已卸载 MCP 服务器: {name}[/green]")
                 return
-            
+
             console.print(f"[red]未找到: {name}[/red]")
             return
-        
+
         # 检查是否是 GitHub URL
         if first_arg.startswith("https://github.com/") or first_arg.startswith("http://github.com/"):
             url = first_arg
-            
+
             if is_minimalism:
                 print(f"[mcp] 正在安装: {url}")
             else:
                 console.print(f"[cyan]正在从 GitHub 安装: {url}[/cyan]")
-            
+
             # 执行安装
             async def do_install():
                 return await installer.install_from_url(url, force=force)
-            
+
             result = asyncio.run(do_install())
-            
+
             # 显示结果
             if result.status == InstallStatus.COMPLETED:
                 if is_minimalism:
                     print(f"[mcp] 安装成功: {result.message}")
                 else:
-                    console.print(f"[green]✅ 安装成功![/green]")
+                    console.print("[green]✅ 安装成功![/green]")
                     console.print(f"[dim]路径: {result.target_path}[/dim]")
-                    
+
                     if result.skills:
-                        console.print(f"\n[bold]已安装的 Skills:[/bold]")
+                        console.print("\n[bold]已安装的 Skills:[/bold]")
                         for skill in result.skills:
                             console.print(f"  - [cyan]{skill.name}[/cyan]: {skill.description[:50]}")
-                    
+
                     if result.mcp_servers:
-                        console.print(f"\n[bold]已安装的 MCP 服务器:[/bold]")
+                        console.print("\n[bold]已安装的 MCP 服务器:[/bold]")
                         for server in result.mcp_servers:
                             console.print(f"  - [cyan]{server.name}[/cyan]")
-            
+
             elif result.status == InstallStatus.ALREADY_EXISTS:
                 if is_minimalism:
                     print(f"[mcp] 已存在: {result.message}")
                 else:
                     console.print(f"[yellow]⚠️ {result.message}[/yellow]")
-            
+
             else:
                 if is_minimalism:
                     print(f"[mcp] 安装失败: {result.error}")
                 else:
                     console.print(f"[red]❌ 安装失败: {result.error}[/red]")
-            
+
             return
-        
+
         # 未知命令
         console.print(f"[red]未知参数: {first_arg}[/red]")
         console.print("[dim]使用 /mcp 查看帮助[/dim]")
-        
+
     except ImportError as e:
         console.print(f"[red]MCP 安装器模块加载失败: {e}[/red]")
     except Exception as e:
@@ -3634,13 +3637,13 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
         /update prerelease   - 检查预发布版本
     """
     try:
+        from foxcode import __version__
         from foxcode.core.updater import (
             FoxCodeUpdater,
             UpdateStatus,
             VersionComparator,
         )
-        from foxcode import __version__
-        
+
         # 解析子命令
         if cmd_arg:
             parts = cmd_arg.split(maxsplit=1)
@@ -3649,15 +3652,15 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
         else:
             sub_cmd = None
             sub_arg = None
-        
+
         # 极简模式检查
         is_minimalism = config.output_topic == OutputTopic.MINIMALISM
-        
+
         # 显示当前版本信息
         if sub_cmd == "info":
             if is_minimalism:
                 print(f"[update] 当前版本: {__version__}")
-                print(f"[update] 仓库: https://github.com/wuhulab/FoxCode")
+                print("[update] 仓库: https://github.com/wuhulab/FoxCode")
             else:
                 console.print(Panel(
                     f"[bold]当前版本:[/bold] {__version__}\n"
@@ -3668,24 +3671,24 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                     style="cyan",
                 ))
             return
-        
+
         # 列出最近的版本发布
         if sub_cmd == "list":
             if is_minimalism:
                 print("[update] 正在获取版本列表...")
             else:
                 console.print("[cyan]正在获取版本列表...[/cyan]")
-            
+
             updater = FoxCodeUpdater()
             releases = updater.client.get_releases(limit=10)
-            
+
             if not releases:
                 if is_minimalism:
                     print("[update] 无法获取版本列表")
                 else:
                     console.print("[yellow]无法获取版本列表[/yellow]")
                 return
-            
+
             if is_minimalism:
                 print(f"[update] 找到 {len(releases)} 个版本:")
                 for release in releases[:5]:
@@ -3699,22 +3702,22 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                 table.add_column("状态", style="green")
                 table.add_column("发布时间", style="yellow")
                 table.add_column("类型", style="magenta")
-                
+
                 for release in releases[:10]:
                     status = "✅ 当前" if release.version == __version__ else ""
                     release_type = "预发布" if release.prerelease else "正式版"
                     pub_date = release.published_at[:10] if release.published_at else "-"
-                    
+
                     table.add_row(
                         release.version,
                         status,
                         pub_date,
                         release_type,
                     )
-                
+
                 console.print(table)
             return
-        
+
         # 检查更新（不自动安装）
         if sub_cmd == "check":
             if is_minimalism:
@@ -3723,17 +3726,17 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
             else:
                 console.print(f"[cyan]当前版本: {__version__}[/cyan]")
                 console.print("[cyan]正在检查更新...[/cyan]")
-            
+
             include_prerelease = sub_cmd == "prerelease"
             updater = FoxCodeUpdater(include_prerelease=include_prerelease)
             result = updater.check_for_updates()
-            
+
             if result.status == UpdateStatus.UP_TO_DATE:
                 if is_minimalism:
                     print(f"[update] 已是最新版本: {result.latest_version}")
                 else:
                     console.print(f"[green]✅ 已是最新版本: {result.latest_version}[/green]")
-            
+
             elif result.status == UpdateStatus.UPDATE_AVAILABLE:
                 release = result.release_info
                 if is_minimalism:
@@ -3743,7 +3746,7 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                 else:
                     file_size = release.get_file_size() if release else 0
                     size_str = f"{file_size / 1024 / 1024:.1f} MB" if file_size > 0 else "未知"
-                    
+
                     console.print(Panel(
                         f"[bold]新版本:[/bold] {result.latest_version}\n"
                         f"[bold]当前版本:[/bold] {__version__}\n"
@@ -3754,14 +3757,14 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                         title="🔄 发现新版本",
                         style="yellow",
                     ))
-            
+
             else:
                 if is_minimalism:
                     print(f"[update] 检查失败: {result.error or result.message}")
                 else:
                     console.print(f"[red]检查更新失败: {result.error or result.message}[/red]")
             return
-        
+
         # 检查预发布版本
         if sub_cmd == "prerelease":
             if is_minimalism:
@@ -3770,16 +3773,16 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
             else:
                 console.print(f"[cyan]当前版本: {__version__}[/cyan]")
                 console.print("[cyan]正在检查预发布版本...[/cyan]")
-            
+
             updater = FoxCodeUpdater(include_prerelease=True)
             result = updater.check_for_updates()
-            
+
             if result.status == UpdateStatus.UP_TO_DATE:
                 if is_minimalism:
                     print(f"[update] 已是最新版本: {result.latest_version}")
                 else:
                     console.print(f"[green]✅ 已是最新版本: {result.latest_version}[/green]")
-            
+
             elif result.status == UpdateStatus.UPDATE_AVAILABLE:
                 release = result.release_info
                 if is_minimalism:
@@ -3794,14 +3797,14 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                         title="🔄 发现预发布版本",
                         style="yellow",
                     ))
-            
+
             else:
                 if is_minimalism:
                     print(f"[update] 检查失败: {result.error or result.message}")
                 else:
                     console.print(f"[red]检查更新失败: {result.error or result.message}[/red]")
             return
-        
+
         # 默认：检查并更新（使用源码安装方式）
         if is_minimalism:
             print(f"[update] 当前版本: {__version__}")
@@ -3809,25 +3812,25 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
         else:
             console.print(f"[cyan]当前版本: {__version__}[/cyan]")
             console.print("[cyan]正在检查更新...[/cyan]")
-        
+
         updater = FoxCodeUpdater(use_source_install=True)
-        
+
         # 定义进度回调
         def progress_callback(stage: str, progress: float):
             if is_minimalism:
                 print(f"[update] {stage} ({progress*100:.0f}%)")
             else:
                 console.print(f"[dim]{stage} ({progress*100:.0f}%)[/dim]")
-        
+
         # 使用源码安装方式更新
         result = updater.update_from_source(progress_callback)
-        
+
         if result.status == UpdateStatus.UP_TO_DATE:
             if is_minimalism:
                 print(f"[update] 已是最新版本: {result.latest_version}")
             else:
                 console.print(f"[green]✅ 已是最新版本: {result.latest_version}[/green]")
-        
+
         elif result.status == UpdateStatus.UPDATE_SUCCESS:
             if is_minimalism:
                 print(f"[update] 更新成功: {result.latest_version}")
@@ -3841,20 +3844,20 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                     title="🎉 更新完成",
                     style="green",
                 ))
-        
+
         elif result.status == UpdateStatus.UPDATE_AVAILABLE:
             # 有更新但无法自动安装
             release = result.release_info
-            
+
             # 检查是否是自更新情况（已生成更新脚本）
             if result.message and "需要退出后更新" in result.message:
                 # 从 message 中提取脚本路径
                 script_path = result.message.split("更新脚本: ")[-1] if "更新脚本: " in result.message else ""
-                
+
                 if is_minimalism:
                     print(f"[update] 发现新版本: {result.latest_version}")
-                    print(f"[update] FoxCode 正在运行，无法覆盖可执行文件")
-                    print(f"[update] 请退出后运行更新脚本:")
+                    print("[update] FoxCode 正在运行，无法覆盖可执行文件")
+                    print("[update] 请退出后运行更新脚本:")
                     print(f"[update] {script_path}")
                 else:
                     console.print(Panel(
@@ -3886,14 +3889,14 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                         title="🔄 发现新版本",
                         style="yellow",
                     ))
-        
+
         else:
             if is_minimalism:
                 print(f"[update] 更新失败: {result.error or result.message}")
             else:
                 console.print(f"[red]更新失败: {result.error or result.message}[/red]")
                 console.print("[dim]请检查网络连接或手动下载源码安装[/dim]")
-    
+
     except ImportError as e:
         if config.output_topic == OutputTopic.MINIMALISM:
             print(f"[update] 更新模块加载失败: {e}")

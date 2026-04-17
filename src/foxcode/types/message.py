@@ -84,25 +84,25 @@ class Message(BaseModel):
     content: str | list[ContentBlock]
     created_at: datetime = Field(default_factory=datetime.now)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    
+
     # Token 统计
     input_tokens: int = 0
     output_tokens: int = 0
-    
+
     def get_text_content(self) -> str:
         """获取文本内容"""
         if isinstance(self.content, str):
             return self.content
-        
+
         texts = []
         for block in self.content:
             if isinstance(block, TextContent):
                 texts.append(block.text)
             elif isinstance(block, CodeContent):
                 texts.append(f"```{block.language}\n{block.code}\n```")
-        
+
         return "\n".join(texts)
-    
+
     def to_api_format(self) -> dict[str, Any]:
         """
         转换为 API 调用格式
@@ -115,7 +115,7 @@ class Message(BaseModel):
                 "role": self.role.value,
                 "content": self.content,
             }
-        
+
         # 处理多内容块
         content_parts = []
         for block in self.content:
@@ -148,27 +148,27 @@ class Message(BaseModel):
                     "content": block.result,
                     "is_error": block.is_error,
                 })
-        
+
         return {
             "role": self.role.value,
             "content": content_parts,
         }
-    
+
     def to_dict(self) -> dict[str, Any]:
         """转换为字典格式"""
         return {
             "id": self.id,
             "role": self.role.value,
-            "content": self.content if isinstance(self.content, str) 
+            "content": self.content if isinstance(self.content, str)
                       else [block.model_dump() for block in self.content],
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Message":
+    def from_dict(cls, data: dict[str, Any]) -> Message:
         """从字典创建消息"""
         content = data["content"]
         if isinstance(content, list):
@@ -186,7 +186,7 @@ class Message(BaseModel):
                 elif block_type == ContentType.TOOL_RESULT:
                     parsed_content.append(ToolResultContent(**block))
             content = parsed_content
-        
+
         return cls(
             id=data.get("id", str(uuid.uuid4())),
             role=MessageRole(data["role"]),
@@ -209,22 +209,22 @@ class Conversation(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    
+
     # Token 统计
     total_input_tokens: int = 0
     total_output_tokens: int = 0
-    
+
     def add_message(self, message: Message) -> None:
         """添加消息"""
         self.messages.append(message)
         self.total_input_tokens += message.input_tokens
         self.total_output_tokens += message.output_tokens
         self.updated_at = datetime.now()
-    
+
     def get_last_message(self) -> Message | None:
         """获取最后一条消息"""
         return self.messages[-1] if self.messages else None
-    
+
     def get_messages_for_api(self, include_system: bool = True) -> list[dict[str, Any]]:
         """
         获取用于 API 调用的消息列表
@@ -241,14 +241,14 @@ class Conversation(BaseModel):
                 continue
             messages.append(msg.to_api_format())
         return messages
-    
+
     def clear(self) -> None:
         """清空对话"""
         self.messages.clear()
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.updated_at = datetime.now()
-    
+
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         return {
@@ -260,9 +260,9 @@ class Conversation(BaseModel):
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Conversation":
+    def from_dict(cls, data: dict[str, Any]) -> Conversation:
         """从字典创建对话"""
         return cls(
             id=data.get("id", str(uuid.uuid4())),
@@ -273,12 +273,12 @@ class Conversation(BaseModel):
             total_input_tokens=data.get("total_input_tokens", 0),
             total_output_tokens=data.get("total_output_tokens", 0),
         )
-    
+
     def to_json(self) -> str:
         """转换为 JSON 字符串"""
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
-    
+
     @classmethod
-    def from_json(cls, json_str: str) -> "Conversation":
+    def from_json(cls, json_str: str) -> Conversation:
         """从 JSON 字符串创建对话"""
         return cls.from_dict(json.loads(json_str))

@@ -12,10 +12,7 @@ FoxCode 代码格式化器
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import re
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -81,7 +78,7 @@ class FormatResult:
     error: str = ""
     file_path: str = ""
     duration_ms: int = 0
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "success": self.success,
@@ -114,7 +111,7 @@ class BatchFormatResult:
     unchanged: int = 0
     results: list[FormatResult] = field(default_factory=list)
     duration_ms: int = 0
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "total_files": self.total_files,
@@ -166,7 +163,7 @@ class CodeFormatter:
         >>> result = await formatter.format_file(Path("main.py"))
         >>> print(f"格式化成功: {result.success}")
     """
-    
+
     # 文件扩展名到语言的映射
     EXTENSION_LANGUAGE_MAP = {
         ".py": Language.PYTHON,
@@ -194,7 +191,7 @@ class CodeFormatter:
         ".cc": Language.CPP,
         ".java": Language.JAVA,
     }
-    
+
     # 语言到格式化器的映射
     LANGUAGE_FORMATTER_MAP = {
         Language.PYTHON: [FormatterType.RUFF, FormatterType.BLACK, FormatterType.AUTOPEP8],
@@ -209,7 +206,7 @@ class CodeFormatter:
         Language.C: [FormatterType.CLANG_FORMAT],
         Language.CPP: [FormatterType.CLANG_FORMAT],
     }
-    
+
     def __init__(self, config: FormatterConfig | None = None):
         """
         初始化格式化器
@@ -220,11 +217,11 @@ class CodeFormatter:
         self.config = config or FormatterConfig()
         self._available_formatters = self._detect_available_formatters()
         logger.info(f"代码格式化器初始化完成，可用格式化器: {list(self._available_formatters.keys())}")
-    
+
     def _detect_available_formatters(self) -> dict[FormatterType, bool]:
         """检测可用的格式化器"""
         available = {}
-        
+
         formatters = [
             (FormatterType.BLACK, "black"),
             (FormatterType.AUTOPEP8, "autopep8"),
@@ -234,7 +231,7 @@ class CodeFormatter:
             (FormatterType.RUSTFMT, "rustfmt"),
             (FormatterType.CLANG_FORMAT, "clang-format"),
         ]
-        
+
         for formatter_type, command in formatters:
             try:
                 result = subprocess.run(
@@ -245,9 +242,9 @@ class CodeFormatter:
                 available[formatter_type] = result.returncode == 0
             except (subprocess.SubprocessError, FileNotFoundError):
                 available[formatter_type] = False
-        
+
         return available
-    
+
     def detect_language(self, file_path: Path) -> Language:
         """
         检测文件语言
@@ -260,7 +257,7 @@ class CodeFormatter:
         """
         ext = file_path.suffix.lower()
         return self.EXTENSION_LANGUAGE_MAP.get(ext, Language.UNKNOWN)
-    
+
     def detect_formatter(self, file_path: Path) -> FormatterType | None:
         """
         检测应使用的格式化器
@@ -272,24 +269,24 @@ class CodeFormatter:
             格式化器类型
         """
         language = self.detect_language(file_path)
-        
+
         if language == Language.UNKNOWN:
             return None
-        
+
         # 检查项目配置
         project_formatter = self._check_project_formatter(file_path, language)
         if project_formatter:
             return project_formatter
-        
+
         # 使用默认格式化器
         formatters = self.LANGUAGE_FORMATTER_MAP.get(language, [])
-        
+
         for formatter in formatters:
             if self._available_formatters.get(formatter, False):
                 return formatter
-        
+
         return None
-    
+
     def _check_project_formatter(
         self,
         file_path: Path,
@@ -304,7 +301,7 @@ class CodeFormatter:
                     import tomli
                     with open(pyproject, "rb") as f:
                         data = tomli.load(f)
-                    
+
                     # 检查 black 配置
                     if "tool" in data and "black" in data["tool"]:
                         return FormatterType.BLACK
@@ -313,27 +310,27 @@ class CodeFormatter:
                         return FormatterType.RUFF
                 except Exception:
                     pass
-        
+
         # 检查 .prettierrc
         if language in (Language.JAVASCRIPT, Language.TYPESCRIPT, Language.JSON, Language.CSS):
             prettier_config = self._find_config_file(file_path, ".prettierrc")
             if prettier_config:
                 return FormatterType.PRETTIER
-        
+
         return None
-    
+
     def _find_config_file(self, file_path: Path, config_name: str) -> Path | None:
         """查找配置文件"""
         current = file_path.parent if file_path.is_file() else file_path
-        
+
         while current != current.parent:
             config_path = current / config_name
             if config_path.exists():
                 return config_path
             current = current.parent
-        
+
         return None
-    
+
     def load_editorconfig(self, file_path: Path) -> dict[str, Any]:
         """
         加载 .editorconfig 配置
@@ -346,30 +343,30 @@ class CodeFormatter:
         """
         config = {}
         editorconfig_path = self._find_config_file(file_path, ".editorconfig")
-        
+
         if not editorconfig_path:
             return config
-        
+
         try:
-            with open(editorconfig_path, "r", encoding="utf-8") as f:
+            with open(editorconfig_path, encoding="utf-8") as f:
                 content = f.read()
-            
+
             # 简单解析 .editorconfig
             current_section = None
             for line in content.split("\n"):
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                
+
                 if line.startswith("[") and line.endswith("]"):
                     current_section = line[1:-1]
                     continue
-                
+
                 if "=" in line:
                     key, value = line.split("=", 1)
                     key = key.strip().lower()
                     value = value.strip().lower()
-                    
+
                     if key == "indent_style":
                         config["use_tabs"] = value == "tab"
                     elif key == "indent_size":
@@ -378,12 +375,12 @@ class CodeFormatter:
                         config["line_length"] = int(value)
                     elif key == "quote_type":
                         config["quote_style"] = value
-            
+
         except Exception as e:
             logger.debug(f"解析 .editorconfig 失败: {e}")
-        
+
         return config
-    
+
     async def format_file(self, file_path: Path) -> FormatResult:
         """
         格式化单个文件
@@ -395,14 +392,14 @@ class CodeFormatter:
             格式化结果
         """
         start_time = datetime.now()
-        
+
         if not file_path.exists():
             return FormatResult(
                 success=False,
                 error=f"文件不存在: {file_path}",
                 file_path=str(file_path),
             )
-        
+
         # 检测格式化器
         formatter_type = self.detect_formatter(file_path)
         if not formatter_type:
@@ -411,7 +408,7 @@ class CodeFormatter:
                 error="未找到可用的格式化器",
                 file_path=str(file_path),
             )
-        
+
         # 检查格式化器是否可用
         if not self._available_formatters.get(formatter_type, False):
             return FormatResult(
@@ -419,30 +416,30 @@ class CodeFormatter:
                 error=f"格式化器 {formatter_type.value} 不可用",
                 file_path=str(file_path),
             )
-        
+
         try:
             # 读取文件内容
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 original_content = f.read()
-            
+
             # 格式化
             formatted_content = await self._format_with_formatter(
                 original_content,
                 formatter_type,
                 file_path,
             )
-            
+
             # 计算耗时
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-            
+
             # 检查是否有更改
             changes_made = formatted_content != original_content
-            
+
             # 如果有更改，写回文件
             if changes_made:
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(formatted_content)
-            
+
             return FormatResult(
                 success=True,
                 original_content=original_content,
@@ -452,14 +449,14 @@ class CodeFormatter:
                 file_path=str(file_path),
                 duration_ms=duration_ms,
             )
-            
+
         except Exception as e:
             return FormatResult(
                 success=False,
                 error=str(e),
                 file_path=str(file_path),
             )
-    
+
     async def format_code(
         self,
         code: str,
@@ -477,14 +474,14 @@ class CodeFormatter:
         """
         # 获取默认格式化器
         formatters = self.LANGUAGE_FORMATTER_MAP.get(language, [])
-        
+
         for formatter in formatters:
             if self._available_formatters.get(formatter, False):
                 return await self._format_with_formatter(code, formatter, None)
-        
+
         # 没有可用的格式化器，返回原代码
         return code
-    
+
     async def _format_with_formatter(
         self,
         code: str,
@@ -504,7 +501,7 @@ class CodeFormatter:
             return await self._format_with_gofmt(code, file_path)
         else:
             return code
-    
+
     async def _format_with_black(
         self,
         code: str,
@@ -513,12 +510,12 @@ class CodeFormatter:
         """使用 black 格式化"""
         try:
             import black
-            
+
             mode = black.FileMode(
                 line_length=self.config.line_length,
                 string_normalization=self.config.quote_style == "double",
             )
-            
+
             return black.format_str(code, mode=mode)
         except ImportError:
             # 使用命令行
@@ -526,7 +523,7 @@ class CodeFormatter:
                 ["black", "--line-length", str(self.config.line_length), "-"],
                 code,
             )
-    
+
     async def _format_with_autopep8(
         self,
         code: str,
@@ -535,7 +532,7 @@ class CodeFormatter:
         """使用 autopep8 格式化"""
         try:
             import autopep8
-            
+
             return autopep8.fix_code(
                 code,
                 options={"max_line_length": self.config.line_length},
@@ -545,7 +542,7 @@ class CodeFormatter:
                 ["autopep8", "--max-line-length", str(self.config.line_length), "-"],
                 code,
             )
-    
+
     async def _format_with_ruff(
         self,
         code: str,
@@ -556,7 +553,7 @@ class CodeFormatter:
             ["ruff", "format", "--line-length", str(self.config.line_length), "-"],
             code,
         )
-    
+
     async def _format_with_prettier(
         self,
         code: str,
@@ -571,9 +568,9 @@ class CodeFormatter:
             "--single-quote" if self.config.quote_style == "single" else "--no-single-quote",
             "--stdin-filepath", str(file_path) if file_path else "stdin",
         ]
-        
+
         return await self._run_formatter_command(args, code)
-    
+
     async def _format_with_gofmt(
         self,
         code: str,
@@ -581,7 +578,7 @@ class CodeFormatter:
     ) -> str:
         """使用 gofmt 格式化"""
         return await self._run_formatter_command(["gofmt"], code)
-    
+
     async def _run_formatter_command(
         self,
         args: list[str],
@@ -596,20 +593,20 @@ class CodeFormatter:
                 text=True,
                 timeout=30,
             )
-            
+
             if result.returncode == 0:
                 return result.stdout
             else:
                 logger.warning(f"格式化器返回错误: {result.stderr}")
                 return input_code
-                
+
         except subprocess.TimeoutExpired:
             logger.error("格式化器执行超时")
             return input_code
         except Exception as e:
             logger.error(f"格式化器执行失败: {e}")
             return input_code
-    
+
     async def format_directory(
         self,
         directory: Path,
@@ -627,7 +624,7 @@ class CodeFormatter:
         """
         start_time = datetime.now()
         result = BatchFormatResult()
-        
+
         # 收集文件
         files = []
         if recursive:
@@ -636,20 +633,20 @@ class CodeFormatter:
         else:
             for ext in self.EXTENSION_LANGUAGE_MAP.keys():
                 files.extend(directory.glob(f"*{ext}"))
-        
+
         # 过滤排除的文件
         files = [
             f for f in files
             if not any(pattern in str(f) for pattern in self.config.exclude_patterns)
         ]
-        
+
         result.total_files = len(files)
-        
+
         # 格式化每个文件
         for file_path in files:
             format_result = await self.format_file(file_path)
             result.results.append(format_result)
-            
+
             if format_result.success:
                 result.successful += 1
                 if format_result.changes_made:
@@ -658,11 +655,11 @@ class CodeFormatter:
                     result.unchanged += 1
             else:
                 result.failed += 1
-        
+
         result.duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-        
+
         return result
-    
+
     def get_available_formatters(self) -> list[str]:
         """获取可用的格式化器列表"""
         return [

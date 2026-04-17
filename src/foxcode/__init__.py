@@ -12,27 +12,27 @@ __author__ = "FoxCode"
 
 from foxcode.core.agent import FoxCodeAgent
 from foxcode.core.config import Config, MCPConfig, SkillsConfig
-from foxcode.core.session import Session
-from foxcode.core.mcp import (
+from foxcode.services.mcp import (
     MCPManager,
+    MCPPrompt,
+    MCPResource,
     MCPServerConfig,
     MCPTool,
-    MCPResource,
-    MCPPrompt,
     MCPToolResult,
     mcp_manager,
 )
+from foxcode.core.session import Session
 from foxcode.core.skill import (
     BaseSkill,
-    SkillContext,
-    SkillResult,
     SkillConfig,
-    SkillState,
-    SkillPriority,
-    SkillTrigger,
+    SkillContext,
     SkillManager,
-    skill_manager,
+    SkillPriority,
+    SkillResult,
+    SkillState,
+    SkillTrigger,
     register_builtin_skills,
+    skill_manager,
 )
 
 __all__ = [

@@ -24,8 +24,7 @@ import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -61,27 +60,27 @@ def validate_command_security(command: str, allowed_commands: list[str] | None =
     """
     if not command:
         return False, "命令不能为空"
-    
+
     # 使用默认白名单或自定义白名单
     allowed = allowed_commands or DEFAULT_ALLOWED_COMMANDS
-    
+
     # 获取命令的基本名称（去除路径）
     command_basename = os.path.basename(command)
-    
+
     # 检查命令是否在白名单中
     if command_basename not in allowed:
         logger.warning(f"命令 '{command}' 不在允许的白名单中")
         return False, f"命令 '{command_basename}' 不在允许的白名单中。允许的命令: {', '.join(allowed)}"
-    
+
     # 检查命令是否存在于系统 PATH 中
     command_path = shutil.which(command)
     if command_path is None:
         # 如果是相对路径，检查是否是白名单中的命令
         if command_basename in allowed:
             logger.warning(f"命令 '{command}' 在白名单中但未找到可执行文件")
-            return True, f"命令在白名单中，但未找到可执行文件（将在运行时检查）"
+            return True, "命令在白名单中，但未找到可执行文件（将在运行时检查）"
         return False, f"命令 '{command}' 未找到"
-    
+
     return True, "命令验证通过"
 
 
@@ -99,20 +98,20 @@ def validate_arguments_security(args: list[str]) -> tuple[bool, str]:
     """
     if not args:
         return True, "参数为空"
-    
+
     # 危险模式列表
     dangerous_patterns = [
         "&&", "||", "|", ";", "`", "$(", "${",  # 命令连接和替换
         ">", ">>", "<", "<<",  # 重定向
         "../", "..\\",  # 路径穿越
     ]
-    
+
     for arg in args:
         for pattern in dangerous_patterns:
             if pattern in arg:
                 logger.warning(f"参数 '{arg}' 包含危险模式 '{pattern}'")
                 return False, f"参数包含危险模式: {pattern}"
-    
+
     return True, "参数验证通过"
 
 
@@ -149,7 +148,7 @@ class MCPTool:
     description: str
     input_schema: dict[str, Any]
     server_name: str = ""
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
@@ -167,7 +166,7 @@ class MCPResource:
     description: str = ""
     mime_type: str = "text/plain"
     server_name: str = ""
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "uri": self.uri,
@@ -185,7 +184,7 @@ class MCPPrompt:
     description: str
     arguments: list[dict[str, Any]] = field(default_factory=list)
     server_name: str = ""
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
@@ -199,7 +198,7 @@ class MCPToolResult(BaseModel):
     """MCP 工具执行结果"""
     content: list[dict[str, Any]] = Field(default_factory=list)
     is_error: bool = False
-    
+
     def get_text_content(self) -> str:
         """获取文本内容"""
         texts = []
@@ -207,9 +206,9 @@ class MCPToolResult(BaseModel):
             if item.get("type") == "text":
                 texts.append(item.get("text", ""))
         return "\n".join(texts)
-    
+
     @classmethod
-    def from_text(cls, text: str, is_error: bool = False) -> "MCPToolResult":
+    def from_text(cls, text: str, is_error: bool = False) -> MCPToolResult:
         """从文本创建结果"""
         return cls(
             content=[{"type": "text", "text": text}],
@@ -244,7 +243,7 @@ class MCPServerConfig(BaseModel):
         default=False,
         description="是否跳过安全验证（不推荐，仅用于开发环境）"
     )
-    
+
     @field_validator("command", mode="after")
     @classmethod
     def validate_command(cls, v: str) -> str:
@@ -252,24 +251,24 @@ class MCPServerConfig(BaseModel):
         if not v:
             raise ValueError("命令不能为空")
         return v
-    
+
     @model_validator(mode="after")
-    def validate_security(self) -> "MCPServerConfig":
+    def validate_security(self) -> MCPServerConfig:
         """验证命令和参数的安全性"""
         if self.skip_security_validation:
             logger.warning(f"服务器 '{self.name}' 跳过了安全验证，这存在安全风险")
             return self
-        
+
         # 验证命令
         is_valid, message = validate_command_security(self.command, self.allowed_commands)
         if not is_valid:
             raise ValueError(f"服务器 '{self.name}' 命令验证失败: {message}")
-        
+
         # 验证参数
         is_valid, message = validate_arguments_security(self.args)
         if not is_valid:
             raise ValueError(f"服务器 '{self.name}' 参数验证失败: {message}")
-        
+
         return self
 
 
@@ -279,7 +278,7 @@ class BaseMCPServer(ABC):
     
     定义 MCP 服务器的基本接口
     """
-    
+
     def __init__(self, config: MCPServerConfig):
         self.config = config
         self._tools: list[MCPTool] = []
@@ -287,67 +286,67 @@ class BaseMCPServer(ABC):
         self._prompts: list[MCPPrompt] = []
         self._initialized = False
         self._logger = logging.getLogger(f"foxcode.mcp.{config.name}")
-    
+
     @property
     def name(self) -> str:
         return self.config.name
-    
+
     @property
     def tools(self) -> list[MCPTool]:
         return self._tools
-    
+
     @property
     def resources(self) -> list[MCPResource]:
         return self._resources
-    
+
     @property
     def prompts(self) -> list[MCPPrompt]:
         return self._prompts
-    
+
     @abstractmethod
     async def start(self) -> None:
         """启动服务器"""
         pass
-    
+
     @abstractmethod
     async def stop(self) -> None:
         """停止服务器"""
         pass
-    
+
     @abstractmethod
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
         """调用工具"""
         pass
-    
+
     @abstractmethod
     async def read_resource(self, uri: str) -> str:
         """读取资源"""
         pass
-    
+
     @abstractmethod
     async def get_prompt(self, name: str, arguments: dict[str, Any]) -> str:
         """获取提示模板"""
         pass
-    
+
     @abstractmethod
     async def is_connected(self) -> bool:
         """检查连接状态"""
         pass
-    
+
     def get_tool(self, name: str) -> MCPTool | None:
         """获取工具定义"""
         for tool in self._tools:
             if tool.name == name:
                 return tool
         return None
-    
+
     def get_resource(self, uri: str) -> MCPResource | None:
         """获取资源定义"""
         for resource in self._resources:
             if resource.uri == uri:
                 return resource
         return None
-    
+
     def get_prompt_def(self, name: str) -> MCPPrompt | None:
         """获取提示模板定义"""
         for prompt in self._prompts:
@@ -362,7 +361,7 @@ class StdioMCPServer(BaseMCPServer):
     
     通过标准输入/输出与子进程通信
     """
-    
+
     def __init__(self, config: MCPServerConfig):
         super().__init__(config)
         self._process: subprocess.Popen | None = None
@@ -372,37 +371,37 @@ class StdioMCPServer(BaseMCPServer):
         self._pending_requests: dict[int, asyncio.Future] = {}
         self._reader_task: asyncio.Task | None = None
         self._restart_count = 0
-    
+
     async def start(self) -> None:
         """启动服务器进程"""
         if self._process is not None:
             self._logger.warning(f"Server {self.name} already started")
             return
-        
+
         try:
             # 安全验证：再次检查命令和参数
             if not self.config.skip_security_validation:
                 is_valid, message = validate_command_security(
-                    self.config.command, 
+                    self.config.command,
                     self.config.allowed_commands
                 )
                 if not is_valid:
                     raise RuntimeError(f"命令安全验证失败: {message}")
-                
+
                 is_valid, message = validate_arguments_security(self.config.args)
                 if not is_valid:
                     raise RuntimeError(f"参数安全验证失败: {message}")
-            
+
             # 准备环境变量
             env = dict(sys.environ)
             env.update(self.config.env)
-            
+
             # 构建命令
             cmd = [self.config.command] + self.config.args
-            
+
             self._logger.info(f"Starting MCP server: {self.name}")
             self._logger.debug(f"Command: {' '.join(cmd)}")
-            
+
             # 创建子进程（使用 shell=False 确保安全）
             self._process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -412,31 +411,31 @@ class StdioMCPServer(BaseMCPServer):
                 env=env,
                 cwd=self.config.cwd,
             )
-            
+
             # 设置读写器
             self._reader = self._process.stdout
             self._writer = self._process.stdin
-            
+
             # 启动读取任务
             self._reader_task = asyncio.create_task(self._read_loop())
-            
+
             # 启动 stderr 读取任务（用于日志）
             asyncio.create_task(self._read_stderr())
-            
+
             # 初始化连接
             await self._initialize()
-            
+
             self._logger.info(f"MCP server {self.name} started successfully")
-            
+
         except Exception as e:
             self._logger.error(f"Failed to start MCP server {self.name}: {e}")
             await self._cleanup()
             raise
-    
+
     async def stop(self) -> None:
         """停止服务器进程"""
         self._logger.info(f"Stopping MCP server: {self.name}")
-        
+
         # 取消读取任务
         if self._reader_task:
             self._reader_task.cancel()
@@ -444,12 +443,12 @@ class StdioMCPServer(BaseMCPServer):
                 await self._reader_task
             except asyncio.CancelledError:
                 pass
-        
+
         await self._cleanup()
-        
+
         self._initialized = False
         self._logger.info(f"MCP server {self.name} stopped")
-    
+
     async def _cleanup(self) -> None:
         """清理资源"""
         if self._writer:
@@ -458,7 +457,7 @@ class StdioMCPServer(BaseMCPServer):
                 await self._writer.wait_closed()
             except Exception:
                 pass
-        
+
         if self._process:
             try:
                 self._process.terminate()
@@ -469,11 +468,11 @@ class StdioMCPServer(BaseMCPServer):
                     await self._process.wait()
             except Exception:
                 pass
-        
+
         self._process = None
         self._reader = None
         self._writer = None
-    
+
     async def _initialize(self) -> None:
         """初始化 MCP 连接"""
         # 发送 initialize 请求
@@ -489,24 +488,24 @@ class StdioMCPServer(BaseMCPServer):
                 "version": "0.1.0",
             },
         })
-        
+
         if "error" in result:
             raise RuntimeError(f"Initialize failed: {result['error']}")
-        
+
         # 发送 initialized 通知
         await self._send_notification("notifications/initialized", {})
-        
+
         # 获取工具列表
         await self._load_tools()
-        
+
         # 获取资源列表
         await self._load_resources()
-        
+
         # 获取提示模板列表
         await self._load_prompts()
-        
+
         self._initialized = True
-    
+
     async def _load_tools(self) -> None:
         """加载工具列表"""
         try:
@@ -523,7 +522,7 @@ class StdioMCPServer(BaseMCPServer):
                     self._logger.debug(f"Loaded tool: {tool.name}")
         except Exception as e:
             self._logger.warning(f"Failed to load tools: {e}")
-    
+
     async def _load_resources(self) -> None:
         """加载资源列表"""
         try:
@@ -541,7 +540,7 @@ class StdioMCPServer(BaseMCPServer):
                     self._logger.debug(f"Loaded resource: {resource.uri}")
         except Exception as e:
             self._logger.warning(f"Failed to load resources: {e}")
-    
+
     async def _load_prompts(self) -> None:
         """加载提示模板列表"""
         try:
@@ -558,71 +557,71 @@ class StdioMCPServer(BaseMCPServer):
                     self._logger.debug(f"Loaded prompt: {prompt.name}")
         except Exception as e:
             self._logger.warning(f"Failed to load prompts: {e}")
-    
+
     async def _send_request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """发送请求并等待响应"""
         if not self._writer or not self._reader:
             raise RuntimeError("Server not connected")
-        
+
         self._request_id += 1
         request_id = self._request_id
-        
+
         request = {
             "jsonrpc": "2.0",
             "id": request_id,
             "method": method,
             "params": params,
         }
-        
+
         # 创建 Future 用于等待响应
         future: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending_requests[request_id] = future
-        
+
         try:
             # 发送请求
             message = json.dumps(request) + "\n"
             self._writer.write(message.encode("utf-8"))
             await self._writer.drain()
-            
+
             # 等待响应（超时 60 秒）
             return await asyncio.wait_for(future, timeout=60.0)
-            
+
         except asyncio.TimeoutError:
             self._pending_requests.pop(request_id, None)
             return {"error": {"code": -1, "message": "Request timeout"}}
         except Exception as e:
             self._pending_requests.pop(request_id, None)
             return {"error": {"code": -1, "message": str(e)}}
-    
+
     async def _send_notification(self, method: str, params: dict[str, Any]) -> None:
         """发送通知（不需要响应）"""
         if not self._writer:
             raise RuntimeError("Server not connected")
-        
+
         notification = {
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
         }
-        
+
         message = json.dumps(notification) + "\n"
         self._writer.write(message.encode("utf-8"))
         await self._writer.drain()
-    
+
     async def _read_loop(self) -> None:
         """读取响应循环"""
         if not self._reader:
             return
-        
+
         try:
             while True:
                 line = await self._reader.readline()
                 if not line:
                     break
-                
+
                 try:
                     response = json.loads(line.decode("utf-8").strip())
-                    
+
                     # 处理响应
                     if "id" in response:
                         request_id = response["id"]
@@ -630,46 +629,46 @@ class StdioMCPServer(BaseMCPServer):
                             future = self._pending_requests.pop(request_id)
                             if not future.done():
                                 future.set_result(response)
-                    
+
                     # 处理通知
                     elif "method" in response:
                         await self._handle_notification(response)
-                        
+
                 except json.JSONDecodeError as e:
                     self._logger.warning(f"Invalid JSON response: {e}")
-                    
+
         except asyncio.CancelledError:
             pass
         except Exception as e:
             self._logger.error(f"Read loop error: {e}")
-    
+
     async def _handle_notification(self, notification: dict[str, Any]) -> None:
         """处理服务器通知"""
         method = notification.get("method", "")
         params = notification.get("params", {})
-        
+
         self._logger.debug(f"Received notification: {method}")
-        
+
         # 处理工具列表变更
         if method == "notifications/tools/list_changed":
             self._tools.clear()
             await self._load_tools()
-        
+
         # 处理资源列表变更
         elif method == "notifications/resources/list_changed":
             self._resources.clear()
             await self._load_resources()
-        
+
         # 处理提示模板列表变更
         elif method == "notifications/prompts/list_changed":
             self._prompts.clear()
             await self._load_prompts()
-    
+
     async def _read_stderr(self) -> None:
         """读取 stderr 输出"""
         if not self._process or not self._process.stderr:
             return
-        
+
         try:
             while True:
                 line = await self._process.stderr.readline()
@@ -678,67 +677,67 @@ class StdioMCPServer(BaseMCPServer):
                 self._logger.debug(f"[{self.name} stderr] {line.decode('utf-8').strip()}")
         except Exception:
             pass
-    
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
         """调用工具"""
         if not self._initialized:
             raise RuntimeError("Server not initialized")
-        
+
         result = await self._send_request("tools/call", {
             "name": name,
             "arguments": arguments,
         })
-        
+
         if "error" in result:
             return MCPToolResult.from_text(
                 f"Tool call error: {result['error'].get('message', 'Unknown error')}",
                 is_error=True,
             )
-        
+
         if "result" in result:
             content = result["result"].get("content", [])
             is_error = result["result"].get("isError", False)
             return MCPToolResult(content=content, is_error=is_error)
-        
+
         return MCPToolResult.from_text("Empty response", is_error=True)
-    
+
     async def read_resource(self, uri: str) -> str:
         """读取资源"""
         if not self._initialized:
             raise RuntimeError("Server not initialized")
-        
+
         result = await self._send_request("resources/read", {"uri": uri})
-        
+
         if "error" in result:
             raise RuntimeError(f"Resource read error: {result['error'].get('message', 'Unknown error')}")
-        
+
         if "result" in result and "contents" in result["result"]:
             contents = result["result"]["contents"]
             if isinstance(contents, list) and contents:
                 return contents[0].get("text", "")
-        
+
         return ""
-    
+
     async def get_prompt(self, name: str, arguments: dict[str, Any]) -> str:
         """获取提示模板"""
         if not self._initialized:
             raise RuntimeError("Server not initialized")
-        
+
         result = await self._send_request("prompts/get", {
             "name": name,
             "arguments": arguments,
         })
-        
+
         if "error" in result:
             raise RuntimeError(f"Prompt get error: {result['error'].get('message', 'Unknown error')}")
-        
+
         if "result" in result and "messages" in result["result"]:
             messages = result["result"]["messages"]
             if isinstance(messages, list) and messages:
                 return messages[0].get("content", {}).get("text", "")
-        
+
         return ""
-    
+
     async def is_connected(self) -> bool:
         """检查连接状态"""
         return self._process is not None and self._process.returncode is None
@@ -750,14 +749,14 @@ class MCPManager:
     
     管理多个 MCP 服务器的连接和工具调用
     """
-    
+
     def __init__(self):
         self._servers: dict[str, BaseMCPServer] = {}
         self._tool_to_server: dict[str, str] = {}
         self._resource_to_server: dict[str, str] = {}
         self._prompt_to_server: dict[str, str] = {}
         self._logger = logging.getLogger("foxcode.mcp.manager")
-    
+
     async def add_server(self, config: MCPServerConfig) -> bool:
         """
         添加 MCP 服务器
@@ -771,36 +770,36 @@ class MCPManager:
         if config.name in self._servers:
             self._logger.warning(f"Server {config.name} already exists")
             return False
-        
+
         try:
             server = StdioMCPServer(config)
-            
+
             if config.auto_start:
                 await server.start()
-            
+
             self._servers[config.name] = server
-            
+
             # 更新映射
             self._update_mappings(server)
-            
+
             self._logger.info(f"Added MCP server: {config.name}")
             return True
-            
+
         except Exception as e:
             self._logger.error(f"Failed to add server {config.name}: {e}")
             return False
-    
+
     def _update_mappings(self, server: BaseMCPServer) -> None:
         """更新工具/资源/提示到服务器的映射"""
         for tool in server.tools:
             self._tool_to_server[tool.name] = server.name
-        
+
         for resource in server.resources:
             self._resource_to_server[resource.uri] = server.name
-        
+
         for prompt in server.prompts:
             self._prompt_to_server[prompt.name] = server.name
-    
+
     async def remove_server(self, name: str) -> bool:
         """
         移除 MCP 服务器
@@ -813,32 +812,32 @@ class MCPManager:
         """
         if name not in self._servers:
             return False
-        
+
         server = self._servers.pop(name)
         await server.stop()
-        
+
         # 清理映射
         for tool in server.tools:
             self._tool_to_server.pop(tool.name, None)
-        
+
         for resource in server.resources:
             self._resource_to_server.pop(resource.uri, None)
-        
+
         for prompt in server.prompts:
             self._prompt_to_server.pop(prompt.name, None)
-        
+
         self._logger.info(f"Removed MCP server: {name}")
         return True
-    
+
     async def start_server(self, name: str) -> bool:
         """启动指定服务器"""
         if name not in self._servers:
             return False
-        
+
         server = self._servers[name]
         if await server.is_connected():
             return True
-        
+
         try:
             await server.start()
             self._update_mappings(server)
@@ -846,49 +845,49 @@ class MCPManager:
         except Exception as e:
             self._logger.error(f"Failed to start server {name}: {e}")
             return False
-    
+
     async def stop_server(self, name: str) -> bool:
         """停止指定服务器"""
         if name not in self._servers:
             return False
-        
+
         await self._servers[name].stop()
         return True
-    
+
     async def stop_all(self) -> None:
         """停止所有服务器"""
         for name in list(self._servers.keys()):
             await self.stop_server(name)
-    
+
     def get_server(self, name: str) -> BaseMCPServer | None:
         """获取服务器实例"""
         return self._servers.get(name)
-    
+
     def list_servers(self) -> list[str]:
         """列出所有服务器名称"""
         return list(self._servers.keys())
-    
+
     def list_tools(self) -> list[MCPTool]:
         """列出所有工具"""
         tools = []
         for server in self._servers.values():
             tools.extend(server.tools)
         return tools
-    
+
     def list_resources(self) -> list[MCPResource]:
         """列出所有资源"""
         resources = []
         for server in self._servers.values():
             resources.extend(server.resources)
         return resources
-    
+
     def list_prompts(self) -> list[MCPPrompt]:
         """列出所有提示模板"""
         prompts = []
         for server in self._servers.values():
             prompts.extend(server.prompts)
         return prompts
-    
+
     def get_tool(self, name: str) -> MCPTool | None:
         """获取工具定义"""
         server_name = self._tool_to_server.get(name)
@@ -897,7 +896,7 @@ class MCPManager:
             if server:
                 return server.get_tool(name)
         return None
-    
+
     def get_resource(self, uri: str) -> MCPResource | None:
         """获取资源定义"""
         server_name = self._resource_to_server.get(uri)
@@ -906,7 +905,7 @@ class MCPManager:
             if server:
                 return server.get_resource(uri)
         return None
-    
+
     def get_prompt(self, name: str) -> MCPPrompt | None:
         """获取提示模板定义"""
         server_name = self._prompt_to_server.get(name)
@@ -915,7 +914,7 @@ class MCPManager:
             if server:
                 return server.get_prompt_def(name)
         return None
-    
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
         """
         调用工具
@@ -933,22 +932,22 @@ class MCPManager:
                 f"Tool not found: {name}",
                 is_error=True,
             )
-        
+
         server = self._servers.get(server_name)
         if not server:
             return MCPToolResult.from_text(
                 f"Server not found: {server_name}",
                 is_error=True,
             )
-        
+
         if not await server.is_connected():
             return MCPToolResult.from_text(
                 f"Server {server_name} is not connected",
                 is_error=True,
             )
-        
+
         return await server.call_tool(name, arguments)
-    
+
     async def read_resource(self, uri: str) -> str:
         """
         读取资源
@@ -962,13 +961,13 @@ class MCPManager:
         server_name = self._resource_to_server.get(uri)
         if not server_name:
             raise ValueError(f"Resource not found: {uri}")
-        
+
         server = self._servers.get(server_name)
         if not server:
             raise ValueError(f"Server not found: {server_name}")
-        
+
         return await server.read_resource(uri)
-    
+
     async def get_prompt(self, name: str, arguments: dict[str, Any] = None) -> str:
         """
         获取提示模板
@@ -983,13 +982,13 @@ class MCPManager:
         server_name = self._prompt_to_server.get(name)
         if not server_name:
             raise ValueError(f"Prompt not found: {name}")
-        
+
         server = self._servers.get(server_name)
         if not server:
             raise ValueError(f"Server not found: {server_name}")
-        
+
         return await server.get_prompt(name, arguments or {})
-    
+
     def get_tools_for_prompt(self) -> str:
         """
         获取用于系统提示的工具描述
@@ -1000,15 +999,15 @@ class MCPManager:
         tools = self.list_tools()
         if not tools:
             return ""
-        
+
         lines = ["## MCP Tools (from external servers)"]
         lines.append("")
-        
+
         for tool in tools:
             lines.append(f"### {tool.name}")
             lines.append(f"Server: {tool.server_name}")
             lines.append(f"Description: {tool.description}")
-            
+
             if tool.input_schema.get("properties"):
                 lines.append("Parameters:")
                 for param_name, param_info in tool.input_schema.get("properties", {}).items():
@@ -1016,7 +1015,7 @@ class MCPManager:
                     req_str = " (required)" if required else ""
                     lines.append(f"  - {param_name}{req_str}: {param_info.get('description', '')}")
             lines.append("")
-        
+
         return "\n".join(lines)
 
 

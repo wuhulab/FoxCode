@@ -1,0 +1,54 @@
+"""
+帮助命令
+
+显示可用命令和帮助信息
+"""
+
+import click
+
+from foxcode.core.config import Config
+
+
+def register_command(cli):
+    """注册帮助命令"""
+    @cli.command('help')
+    @click.argument('command', required=False)
+    def help_command(command=None):
+        """显示帮助信息
+        
+        如果指定了命令，则显示该命令的详细帮助信息
+        否则显示所有可用命令的列表
+        """
+        if command:
+            # 显示指定命令的帮助
+            cli.get_command(None, command).get_help(None)
+        else:
+            # 显示所有命令的帮助
+            cli.get_help(None)
+
+
+class HelpCommand:
+    """帮助命令类"""
+
+    def __init__(self, config: Config):
+        self.config = config
+
+    def execute(self, command=None):
+        """执行帮助命令
+        
+        Args:
+            command: 命令名称（可选）
+            
+        Returns:
+            帮助信息
+        """
+        from foxcode.cli import cli
+
+        if command:
+            cmd = cli.get_command(None, command)
+            if cmd:
+                return cmd.get_help(None)
+            else:
+                return f"命令 '{command}' 不存在"
+        else:
+            return cli.get_help(None)

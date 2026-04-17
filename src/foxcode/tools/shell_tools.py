@@ -14,14 +14,13 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from foxcode.core.command_manager import command_manager, CommandStatus
+from foxcode.core.command_manager import CommandStatus, command_manager
 from foxcode.core.sandbox import (
     Sandbox,
     SandboxConfig,
     SandboxMode,
-    SandboxResult,
 )
-from foxcode.core.sensitive_masker import mask_sensitive, mask_sensitive_dict
+from foxcode.core.sensitive_masker import mask_sensitive
 from foxcode.tools.base import (
     BaseTool,
     ToolCategory,
@@ -102,11 +101,11 @@ def _is_sensitive_by_keyword(key: str) -> bool:
         是否敏感
     """
     key_upper = key.upper().replace('-', '_')
-    
+
     for keyword in SENSITIVE_KEYWORDS:
         if keyword in key_upper:
             return True
-    
+
     return False
 
 
@@ -122,20 +121,20 @@ def _is_sensitive_by_value(value: str) -> bool:
     """
     if not value or len(value) < SENSITIVE_VALUE_LENGTH_THRESHOLD:
         return False
-    
+
     if value.startswith(('sk-', 'sk-ant-', 'Bearer ', 'ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_')):
         return True
-    
+
     if value.startswith(('-----BEGIN', 'eyJ', 'AKIA', 'ASIA')):
         return True
-    
+
     import re
     if re.match(r'^[A-Za-z0-9_-]{20,}$', value):
         return True
-    
+
     if re.match(r'^[a-f0-9]{32,}$', value, re.IGNORECASE):
         return True
-    
+
     return False
 
 
@@ -155,33 +154,33 @@ def filter_sensitive_env(env: dict[str, str]) -> dict[str, str]:
         过滤后的环境变量字典
     """
     filtered = {}
-    
+
     for key, value in env.items():
         key_upper = key.upper().replace('-', '_')
-        
+
         is_sensitive = False
         match_reason = ""
-        
+
         for pattern in SENSITIVE_ENV_PATTERNS:
             if pattern in key_upper:
                 is_sensitive = True
                 match_reason = f"匹配模式: {pattern}"
                 break
-        
+
         if not is_sensitive and _is_sensitive_by_keyword(key):
             is_sensitive = True
             match_reason = "关键词匹配"
-        
+
         if not is_sensitive and _is_sensitive_by_value(value):
             is_sensitive = True
             match_reason = "值特征匹配"
-        
+
         if is_sensitive:
             filtered[key] = "***FILTERED***"
             logger.debug(f"过滤敏感环境变量: {key} ({match_reason})")
         else:
             filtered[key] = value
-    
+
     return filtered
 
 
@@ -213,13 +212,13 @@ def decode_output(data: bytes) -> str:
         "cp1252",        # 西欧 Windows
         "latin-1",       # 通用后备
     ]
-    
+
     for encoding in encodings:
         try:
             return data.decode(encoding)
         except (UnicodeDecodeError, LookupError):
             continue
-    
+
     # 所有编码都失败，使用 replace 模式
     return data.decode("utf-8", errors="replace")
 
@@ -227,7 +226,7 @@ def decode_output(data: bytes) -> str:
 @tool
 class ShellExecuteTool(BaseTool):
     """Execute shell command"""
-    
+
     name = "shell_execute"
     description = "Execute command in terminal, supports sync and async modes"
     category = ToolCategory.SHELL
@@ -268,11 +267,11 @@ class ShellExecuteTool(BaseTool):
             default=False,
         ),
     ]
-    
+
     def __init__(self, config: Any = None):
         super().__init__(config)
         self._sandbox: Sandbox | None = None
-    
+
     def _get_sandbox(self) -> Sandbox:
         """
         获取沙箱实例
@@ -295,9 +294,9 @@ class ShellExecuteTool(BaseTool):
             else:
                 # 使用默认配置
                 self._sandbox = Sandbox()
-        
+
         return self._sandbox
-    
+
     def _sanitize_path_env(self, env: dict[str, str], system: str) -> dict[str, str]:
         """
         清理 PATH 环境变量，确保只包含安全路径
@@ -313,7 +312,7 @@ class ShellExecuteTool(BaseTool):
         """
         if "PATH" not in env:
             return env
-        
+
         # 定义安全的 PATH 目录
         if system == "Windows":
             safe_dirs = [
@@ -331,18 +330,18 @@ class ShellExecuteTool(BaseTool):
                 "/sbin",
                 "/bin",
             ]
-        
+
         # 过滤 PATH 中的目录
         current_path = env["PATH"]
         path_dirs = current_path.split(os.pathsep)
-        
+
         # 只保留存在的安全目录
         filtered_dirs = []
         for dir_path in path_dirs:
             dir_path = dir_path.strip()
             if not dir_path:
                 continue
-            
+
             # 检查是否是安全目录
             is_safe = False
             for safe_dir in safe_dirs:
@@ -355,7 +354,7 @@ class ShellExecuteTool(BaseTool):
                         break
                 except Exception:
                     pass
-            
+
             # 如果目录在工作目录下，也认为是安全的
             try:
                 work_dir = Path.cwd()
@@ -364,17 +363,17 @@ class ShellExecuteTool(BaseTool):
                     is_safe = True
             except Exception:
                 pass
-            
+
             if is_safe:
                 filtered_dirs.append(dir_path)
             else:
                 logger.debug(f"从 PATH 中移除不安全目录: {dir_path}")
-        
+
         # 更新 PATH
         env["PATH"] = os.pathsep.join(filtered_dirs)
-        
+
         return env
-    
+
     async def execute(
         self,
         command: str,
@@ -388,18 +387,18 @@ class ShellExecuteTool(BaseTool):
         try:
             # 确定工作目录
             work_dir = Path(cwd).resolve() if cwd else Path.cwd()
-            
+
             if not work_dir.exists():
                 return ToolResult(
                     success=False,
                     output="",
                     error=f"工作目录不存在: {work_dir}",
                 )
-            
+
             # 沙箱安全验证
             sandbox = self._get_sandbox()
             sandbox_result = sandbox.validate_command(command, work_dir)
-            
+
             if not sandbox_result.allowed:
                 logger.warning(
                     f"沙箱拦截命令: {mask_sensitive(command[:100])}{'...' if len(command) > 100 else ''}\n"
@@ -414,12 +413,12 @@ class ShellExecuteTool(BaseTool):
                         "violation_type": sandbox_result.first_violation.violation_type if sandbox_result.first_violation else None,
                     },
                 )
-            
+
             exec_env = filter_sensitive_env(os.environ.copy())
             if env:
                 filtered_user_env = filter_sensitive_env(env)
                 exec_env.update(filtered_user_env)
-            
+
             # 根据系统选择 shell（使用绝对路径，避免 PATH 查找）
             system = platform.system()
             if system == "Windows":
@@ -443,13 +442,13 @@ class ShellExecuteTool(BaseTool):
                 if not Path(bash_path).exists():
                     bash_path = shutil.which("bash") or "/bin/sh"
                 exec_cmd = [bash_path, "-c", command]
-            
+
             # 清理环境变量中的 PATH，确保只包含安全路径
             exec_env = self._sanitize_path_env(exec_env, system)
-            
+
             logger.info(f"执行命令: {mask_sensitive(command)}")
             logger.debug(f"工作目录: {work_dir}, 异步模式: {async_mode}")
-            
+
             # 注册命令
             cmd_info = await command_manager.register_command(
                 command=command,
@@ -457,7 +456,7 @@ class ShellExecuteTool(BaseTool):
                 timeout=timeout,
                 env=env,
             )
-            
+
             # 执行命令
             process = await asyncio.create_subprocess_exec(
                 *exec_cmd,
@@ -466,17 +465,17 @@ class ShellExecuteTool(BaseTool):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            
+
             # 标记命令开始
             await command_manager.start_command(cmd_info, process)
-            
+
             if async_mode:
                 # 异步模式：立即返回命令 ID
                 # 启动后台任务来收集输出
                 asyncio.create_task(
                     self._async_wait_for_command(cmd_info.id, process, timeout)
                 )
-                
+
                 return ToolResult(
                     success=True,
                     output=f"命令已在后台启动\n命令 ID: {cmd_info.id}\n使用 check_command_status 查看状态",
@@ -486,7 +485,7 @@ class ShellExecuteTool(BaseTool):
                         "cwd": str(work_dir),
                     },
                 )
-            
+
             # 同步模式：等待命令完成
             try:
                 stdout, stderr = await asyncio.wait_for(
@@ -502,11 +501,11 @@ class ShellExecuteTool(BaseTool):
                     error=f"命令执行超时（{timeout}秒）",
                     data={"command_id": cmd_info.id},
                 )
-            
+
             # 解码输出
             stdout_str = decode_output(stdout)
             stderr_str = decode_output(stderr)
-            
+
             # 更新命令状态
             await command_manager.complete_command(
                 cmd_info.id,
@@ -514,18 +513,18 @@ class ShellExecuteTool(BaseTool):
                 stdout=stdout_str,
                 stderr=stderr_str,
             )
-            
+
             # 构建输出
             output_parts = []
             if stdout_str.strip():
                 output_parts.append(stdout_str.strip())
             if stderr_str.strip():
                 output_parts.append(f"[stderr]\n{stderr_str.strip()}")
-            
+
             output = "\n".join(output_parts) if output_parts else "(无输出)"
-            
+
             success = process.returncode == 0
-            
+
             return ToolResult(
                 success=success,
                 output=output,
@@ -537,7 +536,7 @@ class ShellExecuteTool(BaseTool):
                     "timeout": timeout,
                 },
             )
-            
+
         except Exception as e:
             logger.error(f"执行命令失败: {e}")
             return ToolResult(
@@ -545,7 +544,7 @@ class ShellExecuteTool(BaseTool):
                 output="",
                 error=str(e),
             )
-    
+
     async def _async_wait_for_command(
         self,
         cmd_id: str,
@@ -565,17 +564,17 @@ class ShellExecuteTool(BaseTool):
                 process.communicate(),
                 timeout=timeout,
             )
-            
+
             stdout_str = decode_output(stdout)
             stderr_str = decode_output(stderr)
-            
+
             await command_manager.complete_command(
                 cmd_id,
                 exit_code=process.returncode or 0,
                 stdout=stdout_str,
                 stderr=stderr_str,
             )
-            
+
         except asyncio.TimeoutError:
             process.kill()
             await command_manager.timeout_command(cmd_id)
@@ -587,7 +586,7 @@ class ShellExecuteTool(BaseTool):
 @tool
 class ShellCheckStatusTool(BaseTool):
     """Check command status"""
-    
+
     name = "check_command_status"
     description = "Check status and output of long-running commands"
     category = ToolCategory.SHELL
@@ -627,7 +626,7 @@ class ShellCheckStatusTool(BaseTool):
             default=0,
         ),
     ]
-    
+
     async def execute(
         self,
         command_id: str,
@@ -639,14 +638,14 @@ class ShellCheckStatusTool(BaseTool):
     ) -> ToolResult:
         """检查命令状态"""
         cmd_info = command_manager.get_command(command_id)
-        
+
         if not cmd_info:
             return ToolResult(
                 success=False,
                 output="",
                 error=f"命令不存在: {command_id}",
             )
-        
+
         # 构建状态信息
         status_emoji = {
             CommandStatus.PENDING: "⏳",
@@ -656,9 +655,9 @@ class ShellCheckStatusTool(BaseTool):
             CommandStatus.STOPPED: "⏹️",
             CommandStatus.TIMEOUT: "⏱️",
         }
-        
+
         emoji = status_emoji.get(cmd_info.status, "❓")
-        
+
         output_lines = [
             f"{emoji} 命令状态: {cmd_info.status.value}",
             f"命令 ID: {cmd_info.id}",
@@ -666,22 +665,22 @@ class ShellCheckStatusTool(BaseTool):
             f"工作目录: {cmd_info.cwd}",
             f"执行时长: {cmd_info.duration:.2f} 秒",
         ]
-        
+
         if cmd_info.exit_code is not None:
             output_lines.append(f"退出码: {cmd_info.exit_code}")
-        
+
         if cmd_info.error:
             output_lines.append(f"错误: {cmd_info.error}")
-        
+
         # 添加输出内容
         if show_output:
             output_lines.append("")
             output_lines.append("─── 输出内容 ───")
-            
+
             combined_output = cmd_info.stdout
             if cmd_info.stderr:
                 combined_output += f"\n[stderr]\n{cmd_info.stderr}"
-            
+
             if combined_output:
                 truncated_output = self._truncate_output(
                     combined_output,
@@ -692,13 +691,13 @@ class ShellCheckStatusTool(BaseTool):
                 output_lines.append(truncated_output)
             else:
                 output_lines.append("(暂无输出)")
-        
+
         return ToolResult(
             success=True,
             output="\n".join(output_lines),
             data=cmd_info.to_dict(),
         )
-    
+
     def _truncate_output(
         self,
         output: str,
@@ -719,10 +718,10 @@ class ShellCheckStatusTool(BaseTool):
             截断后的输出
         """
         total_len = len(output)
-        
+
         if total_len <= char_count:
             return output
-        
+
         if priority == "top":
             # 从开头显示
             start = skip_count
@@ -731,7 +730,7 @@ class ShellCheckStatusTool(BaseTool):
             if end < total_len:
                 result += f"\n... (还有 {total_len - end} 个字符)"
             return result
-        
+
         elif priority == "bottom":
             # 从结尾显示
             end = total_len - skip_count
@@ -740,7 +739,7 @@ class ShellCheckStatusTool(BaseTool):
             if start > 0:
                 result = f"... (跳过 {start} 个字符)\n" + result
             return result
-        
+
         elif priority == "split":
             # 同时显示开头和结尾
             half = char_count // 2
@@ -748,14 +747,14 @@ class ShellCheckStatusTool(BaseTool):
             bottom_part = output[-(char_count - half):]
             middle_count = total_len - char_count
             return f"{top_part}\n... (中间省略 {middle_count} 个字符) ...\n{bottom_part}"
-        
+
         return output[:char_count]
 
 
 @tool
 class ShellStopTool(BaseTool):
     """Stop command execution"""
-    
+
     name = "stop_command"
     description = "Stop a running command"
     category = ToolCategory.SHELL
@@ -768,7 +767,7 @@ class ShellStopTool(BaseTool):
             required=True,
         ),
     ]
-    
+
     async def execute(
         self,
         command_id: str,
@@ -776,31 +775,31 @@ class ShellStopTool(BaseTool):
     ) -> ToolResult:
         """停止命令"""
         cmd_info = command_manager.get_command(command_id)
-        
+
         if not cmd_info:
             return ToolResult(
                 success=False,
                 output="",
                 error=f"命令不存在: {command_id}",
             )
-        
+
         if not cmd_info.is_running:
             return ToolResult(
                 success=True,
                 output=f"命令 {command_id} 当前状态为 {cmd_info.status.value}，无需停止",
                 data=cmd_info.to_dict(),
             )
-        
+
         # 停止命令
         stopped_info = await command_manager.stop_command(command_id)
-        
+
         if stopped_info:
             return ToolResult(
                 success=True,
                 output=f"命令 {command_id} 已停止\n执行时长: {stopped_info.duration:.2f} 秒",
                 data=stopped_info.to_dict(),
             )
-        
+
         return ToolResult(
             success=False,
             output="",
@@ -811,7 +810,7 @@ class ShellStopTool(BaseTool):
 @tool
 class ShellListCommandsTool(BaseTool):
     """List commands"""
-    
+
     name = "list_commands"
     description = "List all commands or commands with specified status"
     category = ToolCategory.SHELL
@@ -831,7 +830,7 @@ class ShellListCommandsTool(BaseTool):
             default=20,
         ),
     ]
-    
+
     async def execute(
         self,
         status: str | None = None,
@@ -850,16 +849,16 @@ class ShellListCommandsTool(BaseTool):
                     output="",
                     error=f"无效的状态: {status}，有效值: pending, running, completed, failed, stopped, timeout",
                 )
-        
+
         commands = command_manager.list_commands(status=filter_status, limit=limit)
-        
+
         if not commands:
             return ToolResult(
                 success=True,
                 output="没有找到匹配的命令",
                 data={"count": 0},
             )
-        
+
         # 格式化输出
         status_emoji = {
             CommandStatus.PENDING: "⏳",
@@ -869,9 +868,9 @@ class ShellListCommandsTool(BaseTool):
             CommandStatus.STOPPED: "⏹️",
             CommandStatus.TIMEOUT: "⏱️",
         }
-        
+
         output_lines = [f"找到 {len(commands)} 个命令:\n"]
-        
+
         for cmd in commands:
             emoji = status_emoji.get(cmd.status, "❓")
             output_lines.append(
@@ -881,7 +880,7 @@ class ShellListCommandsTool(BaseTool):
             )
             output_lines.append(f"   时长: {cmd.duration:.2f}s, 目录: {cmd.cwd}")
             output_lines.append("")
-        
+
         return ToolResult(
             success=True,
             output="\n".join(output_lines),

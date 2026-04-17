@@ -17,7 +17,7 @@ from foxcode.core.config import (
     ToolConfig,
     UIConfig,
 )
-from foxcode.core.message import (
+from foxcode.types.message import (
     CodeContent,
     ContentBlock,
     Conversation,

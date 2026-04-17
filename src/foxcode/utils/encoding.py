@@ -7,7 +7,6 @@ FoxCode 编码检测模块
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,23 +21,23 @@ SUPPORTED_ENCODINGS = [
     "utf-32",
     "utf-32-le",
     "utf-32-be",
-    
+
     # 中文编码
     "gbk",            # 简体中文 Windows
     "gb2312",         # 简体中文
     "gb18030",        # 中文超集
     "big5",           # 繁体中文
     "big5hkscs",      # 繁体中文（香港）
-    
+
     # 日文编码
     "shift_jis",      # 日文
     "cp932",          # 日文 Windows
     "euc-jp",         # 日文
-    
+
     # 韩文编码
     "euc-kr",         # 韩文
     "cp949",          # 韩文 Windows
-    
+
     # 西欧编码
     "iso-8859-1",     # Latin-1
     "iso-8859-2",     # Latin-2
@@ -54,7 +53,7 @@ SUPPORTED_ENCODINGS = [
     "iso-8859-14",    # Latin-8
     "iso-8859-15",    # Latin-9
     "iso-8859-16",    # Latin-10
-    
+
     # Windows 编码
     "cp1250",         # Windows 中欧
     "cp1251",         # Windows Cyrillic
@@ -65,7 +64,7 @@ SUPPORTED_ENCODINGS = [
     "cp1256",         # Windows 阿拉伯
     "cp1257",         # Windows 波罗的海
     "cp1258",         # Windows 越南
-    
+
     # 其他编码
     "koi8-r",         # 俄文
     "koi8-u",         # 乌克兰文
@@ -80,11 +79,11 @@ class EncodingDetector:
     
     智能检测文件编码，支持多种检测策略
     """
-    
+
     def __init__(self):
         """初始化编码检测器"""
         self._chardet_available = self._check_chardet()
-    
+
     def _check_chardet(self) -> bool:
         """检查 chardet 库是否可用"""
         try:
@@ -93,7 +92,7 @@ class EncodingDetector:
         except ImportError:
             logger.debug("chardet 库不可用，将使用内置检测方法")
             return False
-    
+
     def detect(self, data: bytes) -> tuple[str, float]:
         """
         检测字节流的编码
@@ -107,31 +106,31 @@ class EncodingDetector:
         # 空数据
         if not data:
             return ("utf-8", 1.0)
-        
+
         # 1. 检查 BOM（字节顺序标记）
         encoding, confidence = self._check_bom(data)
         if encoding:
             return (encoding, confidence)
-        
+
         # 2. 使用 chardet 库（如果可用）
         if self._chardet_available:
             encoding, confidence = self._detect_with_chardet(data)
             if confidence > 0.9:
                 return (encoding, confidence)
-        
+
         # 3. 尝试常见编码
         encoding, confidence = self._try_common_encodings(data)
         if encoding:
             return (encoding, confidence)
-        
+
         # 4. 使用 chardet 结果（即使置信度较低）
         if self._chardet_available:
             return (encoding, confidence)
-        
+
         # 5. 默认返回 UTF-8
         return ("utf-8", 0.5)
-    
-    def _check_bom(self, data: bytes) -> tuple[Optional[str], float]:
+
+    def _check_bom(self, data: bytes) -> tuple[str | None, float]:
         """
         检查 BOM（字节顺序标记）
         
@@ -149,14 +148,14 @@ class EncodingDetector:
             (b"\xff\xfe", "utf-16-le"),          # UTF-16 LE
             (b"\xfe\xff", "utf-16-be"),          # UTF-16 BE
         ]
-        
+
         for bom, encoding in boms:
             if data.startswith(bom):
                 logger.debug(f"检测到 BOM: {encoding}")
                 return (encoding, 1.0)
-        
+
         return (None, 0.0)
-    
+
     def _detect_with_chardet(self, data: bytes) -> tuple[str, float]:
         """
         使用 chardet 库检测编码
@@ -172,17 +171,17 @@ class EncodingDetector:
             result = chardet.detect(data)
             encoding = result.get("encoding", "utf-8")
             confidence = result.get("confidence", 0.0)
-            
+
             # 规范化编码名称
             encoding = self._normalize_encoding(encoding)
-            
+
             logger.debug(f"chardet 检测结果: {encoding} (置信度: {confidence:.2f})")
             return (encoding, confidence)
         except Exception as e:
             logger.warning(f"chardet 检测失败: {e}")
             return ("utf-8", 0.0)
-    
-    def _try_common_encodings(self, data: bytes) -> tuple[Optional[str], float]:
+
+    def _try_common_encodings(self, data: bytes) -> tuple[str | None, float]:
         """
         尝试常见编码
         
@@ -203,14 +202,14 @@ class EncodingDetector:
             "euc-kr",
             "iso-8859-1",
         ]
-        
+
         for encoding in priority_encodings:
             try:
                 decoded = data.decode(encoding)
                 # 检查解码结果是否合理（没有过多的替换字符）
                 replacement_count = decoded.count("\ufffd")
                 total_chars = len(decoded)
-                
+
                 if total_chars > 0:
                     valid_ratio = 1 - (replacement_count / total_chars)
                     if valid_ratio > 0.95:
@@ -219,9 +218,9 @@ class EncodingDetector:
                         return (encoding, confidence)
             except (UnicodeDecodeError, LookupError):
                 continue
-        
+
         return (None, 0.0)
-    
+
     def _normalize_encoding(self, encoding: str) -> str:
         """
         规范化编码名称
@@ -245,11 +244,11 @@ class EncodingDetector:
             "latin-1": "iso-8859-1",
             "latin1": "iso-8859-1",
         }
-        
+
         encoding_lower = encoding.lower()
         return aliases.get(encoding_lower, encoding_lower)
-    
-    def decode(self, data: bytes, encoding: Optional[str] = None) -> tuple[str, str]:
+
+    def decode(self, data: bytes, encoding: str | None = None) -> tuple[str, str]:
         """
         解码字节数据
         
@@ -262,17 +261,17 @@ class EncodingDetector:
         """
         if not data:
             return ("", "utf-8")
-        
+
         if encoding:
             # 使用指定编码
             try:
                 return (data.decode(encoding), encoding)
             except (UnicodeDecodeError, LookupError):
                 logger.warning(f"指定编码 {encoding} 解码失败，尝试自动检测")
-        
+
         # 自动检测编码
         detected_encoding, confidence = self.detect(data)
-        
+
         try:
             return (data.decode(detected_encoding), detected_encoding)
         except (UnicodeDecodeError, LookupError):
@@ -282,7 +281,7 @@ class EncodingDetector:
                     return (data.decode(fallback_encoding), fallback_encoding)
                 except (UnicodeDecodeError, LookupError):
                     continue
-            
+
             # 所有编码都失败，使用 replace 模式
             return (data.decode("utf-8", errors="replace"), "utf-8")
 
@@ -304,7 +303,7 @@ def detect_encoding(data: bytes) -> tuple[str, float]:
     return encoding_detector.detect(data)
 
 
-def decode_bytes(data: bytes, encoding: Optional[str] = None) -> tuple[str, str]:
+def decode_bytes(data: bytes, encoding: str | None = None) -> tuple[str, str]:
     """
     解码字节数据
     

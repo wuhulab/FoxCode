@@ -15,14 +15,13 @@ from __future__ import annotations
 import ast
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +66,7 @@ class APIEndpoint:
     request_body: dict[str, Any] = field(default_factory=dict)
     responses: dict[str, Any] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
-    
+
     def to_openapi(self) -> dict[str, Any]:
         """转换为 OpenAPI 格式"""
         endpoint = {
@@ -77,10 +76,10 @@ class APIEndpoint:
             "responses": self.responses,
             "tags": self.tags,
         }
-        
+
         if self.request_body:
             endpoint["requestBody"] = self.request_body
-        
+
         return endpoint
 
 
@@ -136,7 +135,7 @@ class DocGenerator:
         >>> result = await generator.generate_api_docs(Path("./src"))
         >>> print(result.content)
     """
-    
+
     def __init__(self, config: DocGeneratorConfig | None = None):
         """
         初始化文档生成器
@@ -146,7 +145,7 @@ class DocGenerator:
         """
         self.config = config or DocGeneratorConfig()
         logger.info("文档自动生成器初始化完成")
-    
+
     async def generate_api_docs(
         self,
         source_path: Path,
@@ -163,54 +162,54 @@ class DocGenerator:
             生成结果
         """
         result = DocGenerationResult(format=format or self.config.default_format)
-        
+
         try:
             # 收集所有 Python 文件
             python_files = list(source_path.rglob("*.py"))
-            
+
             # 解析 API 端点
             endpoints = []
             for py_file in python_files:
                 file_endpoints = self._extract_api_endpoints(py_file)
                 endpoints.extend(file_endpoints)
-            
+
             result.endpoints = endpoints
-            
+
             # 生成文档
             if result.format == DocFormat.OPENAPI:
                 result.content = self._generate_openapi_spec(endpoints)
             else:
                 result.content = self._generate_markdown_docs(endpoints)
-            
+
         except Exception as e:
             result.success = False
             result.error = str(e)
             logger.error(f"生成 API 文档失败: {e}")
-        
+
         return result
-    
+
     def _extract_api_endpoints(self, file_path: Path) -> list[APIEndpoint]:
         """从文件提取 API 端点"""
         endpoints = []
-        
+
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 source = f.read()
-            
+
             tree = ast.parse(source)
-            
+
             # 查找路由装饰器
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     endpoint = self._parse_route_decorator(node)
                     if endpoint:
                         endpoints.append(endpoint)
-                        
+
         except Exception as e:
             logger.debug(f"解析文件失败 {file_path}: {e}")
-        
+
         return endpoints
-    
+
     def _parse_route_decorator(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -220,7 +219,7 @@ class DocGenerator:
             "route", "get", "post", "put", "delete", "patch",
             "api_view", "endpoint",
         ]
-        
+
         for decorator in node.decorator_list:
             # 处理 @app.route('/path') 或 @route('/path')
             if isinstance(decorator, ast.Call):
@@ -231,22 +230,22 @@ class DocGenerator:
                     decorator_name = func.id.lower()
                 else:
                     continue
-                
+
                 if decorator_name in route_decorators:
                     # 提取路径
                     path = ""
                     if decorator.args:
                         if isinstance(decorator.args[0], ast.Constant):
                             path = decorator.args[0].value
-                    
+
                     # 提取方法
                     method = "GET"
                     if decorator_name in ("get", "post", "put", "delete", "patch"):
                         method = decorator_name.upper()
-                    
+
                     # 提取文档字符串
                     docstring = ast.get_docstring(node) or ""
-                    
+
                     return APIEndpoint(
                         path=path,
                         method=method,
@@ -254,9 +253,9 @@ class DocGenerator:
                         description=docstring,
                         tags=["API"],
                     )
-        
+
         return None
-    
+
     def _generate_openapi_spec(self, endpoints: list[APIEndpoint]) -> str:
         """生成 OpenAPI 规范"""
         spec = {
@@ -268,32 +267,32 @@ class DocGenerator:
             },
             "paths": {},
         }
-        
+
         for endpoint in endpoints:
             if endpoint.path not in spec["paths"]:
                 spec["paths"][endpoint.path] = {}
-            
+
             spec["paths"][endpoint.path][endpoint.method.lower()] = endpoint.to_openapi()
-        
+
         return json.dumps(spec, indent=2, ensure_ascii=False)
-    
+
     def _generate_markdown_docs(self, endpoints: list[APIEndpoint]) -> str:
         """生成 Markdown 文档"""
         lines = ["# API Documentation", ""]
         lines.append(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append("")
-        
+
         # 按路径分组
         by_path: dict[str, list[APIEndpoint]] = {}
         for ep in endpoints:
             if ep.path not in by_path:
                 by_path[ep.path] = []
             by_path[ep.path].append(ep)
-        
+
         for path, eps in sorted(by_path.items()):
             lines.append(f"## `{path}`")
             lines.append("")
-            
+
             for ep in eps:
                 lines.append(f"### {ep.method}")
                 lines.append("")
@@ -305,9 +304,9 @@ class DocGenerator:
                     lines.append("")
                 lines.append("---")
                 lines.append("")
-        
+
         return "\n".join(lines)
-    
+
     async def generate_docstring(
         self,
         code: str,
@@ -324,10 +323,10 @@ class DocGenerator:
             添加了注释的代码
         """
         style = style or self.config.doc_style
-        
+
         try:
             tree = ast.parse(code)
-            
+
             # 为每个函数/类添加文档字符串
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -335,17 +334,17 @@ class DocGenerator:
                         docstring = self._generate_function_docstring(node, style)
                         # 插入文档字符串
                         code = self._insert_docstring(code, node, docstring)
-                
+
                 elif isinstance(node, ast.ClassDef):
                     if not ast.get_docstring(node):
                         docstring = self._generate_class_docstring(node, style)
                         code = self._insert_docstring(code, node, docstring)
-            
+
         except SyntaxError:
             pass
-        
+
         return code
-    
+
     def _generate_function_docstring(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -360,12 +359,12 @@ class DocGenerator:
             if arg.annotation:
                 arg_type = ast.unparse(arg.annotation)
             args.append((arg_name, arg_type))
-        
+
         # 提取返回类型
         returns = ""
         if node.returns:
             returns = ast.unparse(node.returns)
-        
+
         if style == DocStyle.GOOGLE:
             return self._format_google_docstring(args, returns)
         elif style == DocStyle.NUMPY:
@@ -374,7 +373,7 @@ class DocGenerator:
             return self._format_sphinx_docstring(args, returns)
         else:
             return self._format_google_docstring(args, returns)
-    
+
     def _format_google_docstring(
         self,
         args: list[tuple[str, str]],
@@ -382,7 +381,7 @@ class DocGenerator:
     ) -> str:
         """格式化 Google 风格文档字符串"""
         lines = ['"""', "函数描述。", ""]
-        
+
         if args:
             lines.append("Args:")
             for arg_name, arg_type in args:
@@ -391,16 +390,16 @@ class DocGenerator:
                 type_str = f" ({arg_type})" if arg_type else ""
                 lines.append(f"    {arg_name}{type_str}: 参数描述。")
             lines.append("")
-        
+
         if returns:
             lines.append("Returns:")
             lines.append(f"    {returns}: 返回值描述。")
             lines.append("")
-        
+
         lines.append('"""')
-        
+
         return "\n".join(lines)
-    
+
     def _format_numpy_docstring(
         self,
         args: list[tuple[str, str]],
@@ -408,7 +407,7 @@ class DocGenerator:
     ) -> str:
         """格式化 NumPy 风格文档字符串"""
         lines = ['"""', "函数描述", ""]
-        
+
         if args:
             lines.append("Parameters")
             lines.append("----------")
@@ -417,20 +416,20 @@ class DocGenerator:
                     continue
                 type_str = f" : {arg_type}" if arg_type else ""
                 lines.append(f"{arg_name}{type_str}")
-                lines.append(f"    参数描述。")
+                lines.append("    参数描述。")
             lines.append("")
-        
+
         if returns:
             lines.append("Returns")
             lines.append("-------")
             lines.append(f"{returns}")
             lines.append("    返回值描述。")
             lines.append("")
-        
+
         lines.append('"""')
-        
+
         return "\n".join(lines)
-    
+
     def _format_sphinx_docstring(
         self,
         args: list[tuple[str, str]],
@@ -438,21 +437,21 @@ class DocGenerator:
     ) -> str:
         """格式化 Sphinx 风格文档字符串"""
         lines = ['"""函数描述。', ""]
-        
+
         for arg_name, arg_type in args:
             if arg_name == "self":
                 continue
             type_str = f" ({arg_type})" if arg_type else ""
             lines.append(f":param{type_str} {arg_name}: 参数描述。")
-        
+
         if returns:
             lines.append(f":rtype: {returns}")
             lines.append(":return: 返回值描述。")
-        
+
         lines.append('"""')
-        
+
         return "\n".join(lines)
-    
+
     def _generate_class_docstring(
         self,
         node: ast.ClassDef,
@@ -460,7 +459,7 @@ class DocGenerator:
     ) -> str:
         """生成类文档字符串"""
         lines = ['"""', f"{node.name} 类。", ""]
-        
+
         # 提取属性
         attributes = []
         for item in node.body:
@@ -471,18 +470,18 @@ class DocGenerator:
                     if item.annotation:
                         attr_type = ast.unparse(item.annotation)
                     attributes.append((attr_name, attr_type))
-        
+
         if attributes:
             lines.append("Attributes:")
             for attr_name, attr_type in attributes:
                 type_str = f" ({attr_type})" if attr_type else ""
                 lines.append(f"    {attr_name}{type_str}: 属性描述。")
             lines.append("")
-        
+
         lines.append('"""')
-        
+
         return "\n".join(lines)
-    
+
     def _insert_docstring(
         self,
         code: str,
@@ -491,24 +490,24 @@ class DocGenerator:
     ) -> str:
         """插入文档字符串"""
         lines = code.split("\n")
-        
+
         # 找到定义行
         def_line = node.lineno - 1
-        
+
         # 找到函数体开始位置
         insert_line = def_line + 1
         indent = len(lines[def_line]) - len(lines[def_line].lstrip())
         indent_str = "    " if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else "    "
-        
+
         # 插入文档字符串
         docstring_lines = docstring.split("\n")
         indented_docstring = [indent_str + line for line in docstring_lines]
-        
+
         for i, line in enumerate(indented_docstring):
             lines.insert(insert_line + i, line)
-        
+
         return "\n".join(lines)
-    
+
     async def generate_readme(
         self,
         project_path: Path,
@@ -523,18 +522,18 @@ class DocGenerator:
             README 内容
         """
         lines = []
-        
+
         # 项目名称
         project_name = project_path.name
         lines.append(f"# {project_name}")
         lines.append("")
-        
+
         # 描述
         lines.append("## 简介")
         lines.append("")
         lines.append(f"{project_name} 是一个 Python 项目。")
         lines.append("")
-        
+
         # 安装
         lines.append("## 安装")
         lines.append("")
@@ -542,7 +541,7 @@ class DocGenerator:
         lines.append("pip install -r requirements.txt")
         lines.append("```")
         lines.append("")
-        
+
         # 使用
         lines.append("## 使用")
         lines.append("")
@@ -552,7 +551,7 @@ class DocGenerator:
         lines.append("# 使用示例")
         lines.append("```")
         lines.append("")
-        
+
         # 项目结构
         lines.append("## 项目结构")
         lines.append("")
@@ -561,7 +560,7 @@ class DocGenerator:
         lines.append(structure)
         lines.append("```")
         lines.append("")
-        
+
         # 依赖
         req_file = project_path / "requirements.txt"
         if req_file.exists():
@@ -569,21 +568,21 @@ class DocGenerator:
             lines.append("")
             lines.append("参见 `requirements.txt` 文件。")
             lines.append("")
-        
+
         # 许可证
         lines.append("## 许可证")
         lines.append("")
         lines.append("MIT License")
         lines.append("")
-        
+
         return "\n".join(lines)
-    
+
     def _get_project_structure(self, project_path: Path, prefix: str = "") -> str:
         """获取项目结构"""
         lines = []
-        
+
         items = sorted(project_path.iterdir(), key=lambda x: (not x.is_dir(), x.name))
-        
+
         for i, item in enumerate(items):
             # 跳过隐藏文件和常见排除目录
             if item.name.startswith(".") or item.name in [
@@ -591,20 +590,20 @@ class DocGenerator:
                 "dist", "build", "*.egg-info",
             ]:
                 continue
-            
+
             is_last = i == len(items) - 1
             current_prefix = "└── " if is_last else "├── "
             next_prefix = "    " if is_last else "│   "
-            
+
             lines.append(f"{prefix}{current_prefix}{item.name}")
-            
+
             if item.is_dir():
                 sub_structure = self._get_project_structure(
                     item, prefix + next_prefix
                 )
                 if sub_structure:
                     lines.append(sub_structure)
-        
+
         return "\n".join(lines)
 
 

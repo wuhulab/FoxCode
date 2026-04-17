@@ -14,19 +14,16 @@ FoxCode 高级调试器集成
 from __future__ import annotations
 
 import ast
-import asyncio
-import bdb
-import json
 import logging
 import pdb
 import sys
 import threading
-import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -45,7 +42,7 @@ FORBIDDEN_NODES = {
 if hasattr(ast, 'Exec'):
     FORBIDDEN_NODES.add(ast.Exec)
 FORBIDDEN_NAMES = {
-    '__import__', 'eval', 'exec', 'compile', 'open', 
+    '__import__', 'eval', 'exec', 'compile', 'open',
     'input', 'breakpoint', 'globals', 'locals',
     'vars', 'dir', 'getattr', 'setattr', 'delattr',
     'hasattr', '__builtins__', '__class__', '__base__',
@@ -68,27 +65,27 @@ def _validate_expression(expression: str) -> bool:
     # 检查长度
     if len(expression) > MAX_EXPRESSION_LENGTH:
         return False
-    
+
     try:
         # 解析表达式为 AST
         tree = ast.parse(expression, mode='eval')
-        
+
         # 遍历 AST 检查危险节点
         for node in ast.walk(tree):
             # 检查禁止的节点类型
             if type(node) in FORBIDDEN_NODES:
                 return False
-            
+
             # 检查属性访问
             if isinstance(node, ast.Attribute):
                 if node.attr.startswith('_'):
                     return False
-            
+
             # 检查名称
             if isinstance(node, ast.Name):
                 if node.id in FORBIDDEN_NAMES:
                     return False
-        
+
         return True
     except SyntaxError:
         return False
@@ -109,7 +106,7 @@ def safe_eval(expression: str, globals_dict: dict[str, Any], locals_dict: dict[s
     # 验证表达式安全性
     if not _validate_expression(expression):
         return None, "表达式包含不安全的操作"
-    
+
     try:
         # 创建受限的全局命名空间
         safe_globals = {
@@ -129,16 +126,16 @@ def safe_eval(expression: str, globals_dict: dict[str, Any], locals_dict: dict[s
                 'zip': zip, 'True': True, 'False': False, 'None': None,
             }
         }
-        
+
         # 合并用户提供的全局变量（过滤危险名称）
         for key, value in globals_dict.items():
             if key not in FORBIDDEN_NAMES and not key.startswith('_'):
                 safe_globals[key] = value
-        
+
         # 执行求值
         result = eval(expression, safe_globals, locals_dict)
         return result, None
-        
+
     except Exception as e:
         return None, f"{type(e).__name__}: {str(e)}"
 
@@ -195,7 +192,7 @@ class Breakpoint:
     hit_count: int = 0
     enabled: bool = True
     temporary: bool = False
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -231,7 +228,7 @@ class StackFrame:
     module_name: str = ""
     code_line: str = ""
     locals: dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -260,8 +257,8 @@ class Variable:
     value: Any
     type: str = ""
     is_expandable: bool = False
-    children: list["Variable"] = field(default_factory=list)
-    
+    children: list[Variable] = field(default_factory=list)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
@@ -287,7 +284,7 @@ class EvaluationResult:
     result: Any = None
     error: str = ""
     type: str = ""
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "expression": self.expression,
@@ -318,7 +315,7 @@ class DebugSession:
     call_stack: list[StackFrame] = field(default_factory=list)
     watches: list[str] = field(default_factory=list)
     started_at: datetime = field(default_factory=datetime.now)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -361,7 +358,7 @@ class AdvancedDebugger:
         >>> await debugger.attach()
         >>> await debugger.continue_execution()
     """
-    
+
     def __init__(self, config: DebuggerConfig | None = None):
         """
         初始化调试器
@@ -377,17 +374,17 @@ class AdvancedDebugger:
         self._tracing = False
         self._stop_event = threading.Event()
         logger.info("高级调试器初始化完成")
-    
+
     def _generate_breakpoint_id(self) -> str:
         """生成断点 ID"""
         self._breakpoint_counter += 1
         return f"bp-{self._breakpoint_counter:04d}"
-    
+
     def _generate_frame_id(self) -> int:
         """生成帧 ID"""
         self._frame_counter += 1
         return self._frame_counter
-    
+
     async def attach(self, process_id: int | None = None) -> bool:
         """
         附加到进程
@@ -401,39 +398,39 @@ class AdvancedDebugger:
         if self._session is not None:
             logger.warning("调试会话已存在")
             return False
-        
+
         # 创建新会话
         session_id = f"debug-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         self._session = DebugSession(id=session_id, state=DebugState.RUNNING)
-        
+
         # 设置跟踪函数
         if self.config.stop_on_entry:
             self._set_trace()
-        
+
         logger.info(f"调试会话已创建: {session_id}")
         return True
-    
+
     def _set_trace(self) -> None:
         """设置跟踪"""
         self._tracing = True
         self._pdb = pdb.Pdb()
         sys.settrace(self._trace_func)
-    
+
     def _trace_func(self, frame, event, arg) -> Callable | None:
         """跟踪函数"""
         if not self._tracing:
             return None
-        
+
         # 检查断点
         if event == "line":
             file_path = frame.f_code.co_filename
             line_number = frame.f_lineno
-            
+
             for bp in (self._session.breakpoints if self._session else []):
-                if (bp.enabled and 
-                    bp.file_path == file_path and 
+                if (bp.enabled and
+                    bp.file_path == file_path and
                     bp.line_number == line_number):
-                    
+
                     # 检查条件
                     if bp.condition:
                         try:
@@ -447,10 +444,10 @@ class AdvancedDebugger:
                         except Exception as e:
                             logger.warning(f"断点条件求值异常: {e}")
                             return self._trace_func
-                    
+
                     # 命中断点
                     bp.hit_count += 1
-                    
+
                     if bp.type == BreakpointType.LOG:
                         # 日志断点
                         print(f"[LOG] {bp.log_message}")
@@ -460,29 +457,29 @@ class AdvancedDebugger:
                         self._update_call_stack(frame)
                         self._stop_event.set()
                         return None
-        
+
         return self._trace_func
-    
+
     def _update_call_stack(self, current_frame) -> None:
         """更新调用栈"""
         if not self._session:
             return
-        
+
         self._session.call_stack = []
         frame = current_frame
         frame_id = 0
-        
+
         while frame and frame_id < self.config.max_stack_frames:
             # 获取代码行
             code_line = ""
             try:
-                with open(frame.f_code.co_filename, "r", encoding="utf-8") as f:
+                with open(frame.f_code.co_filename, encoding="utf-8") as f:
                     lines = f.readlines()
                     if frame.f_lineno <= len(lines):
                         code_line = lines[frame.f_lineno - 1].strip()
             except Exception:
                 pass
-            
+
             stack_frame = StackFrame(
                 id=self._generate_frame_id(),
                 file_path=frame.f_code.co_filename,
@@ -495,7 +492,7 @@ class AdvancedDebugger:
             self._session.call_stack.append(stack_frame)
             frame = frame.f_back
             frame_id += 1
-    
+
     def set_breakpoint(
         self,
         file_path: Path,
@@ -520,7 +517,7 @@ class AdvancedDebugger:
             bp_type = BreakpointType.CONDITIONAL
         elif log_message:
             bp_type = BreakpointType.LOG
-        
+
         bp = Breakpoint(
             id=self._generate_breakpoint_id(),
             file_path=str(file_path),
@@ -529,13 +526,13 @@ class AdvancedDebugger:
             condition=condition or "",
             log_message=log_message or "",
         )
-        
+
         if self._session:
             self._session.breakpoints.append(bp)
-        
+
         logger.debug(f"设置断点: {bp.id} at {file_path}:{line}")
         return bp
-    
+
     def remove_breakpoint(self, breakpoint_id: str) -> bool:
         """
         移除断点
@@ -548,15 +545,15 @@ class AdvancedDebugger:
         """
         if not self._session:
             return False
-        
+
         for i, bp in enumerate(self._session.breakpoints):
             if bp.id == breakpoint_id:
                 self._session.breakpoints.pop(i)
                 logger.debug(f"移除断点: {breakpoint_id}")
                 return True
-        
+
         return False
-    
+
     def list_breakpoints(self) -> list[Breakpoint]:
         """
         列出所有断点
@@ -567,7 +564,7 @@ class AdvancedDebugger:
         if not self._session:
             return []
         return list(self._session.breakpoints)
-    
+
     def enable_breakpoint(self, breakpoint_id: str, enabled: bool = True) -> bool:
         """
         启用/禁用断点
@@ -581,14 +578,14 @@ class AdvancedDebugger:
         """
         if not self._session:
             return False
-        
+
         for bp in self._session.breakpoints:
             if bp.id == breakpoint_id:
                 bp.enabled = enabled
                 return True
-        
+
         return False
-    
+
     async def continue_execution(self) -> StopReason:
         """
         继续执行
@@ -598,16 +595,16 @@ class AdvancedDebugger:
         """
         if not self._session:
             return StopReason.STOPPED
-        
+
         self._session.state = DebugState.RUNNING
         self._stop_event.clear()
-        
+
         # 等待停止事件或超时
         if self._stop_event.wait(timeout=self.config.timeout):
             return StopReason.BREAKPOINT
-        
+
         return StopReason.STOPPED
-    
+
     async def step_over(self) -> StopReason:
         """
         单步跳过
@@ -617,18 +614,18 @@ class AdvancedDebugger:
         """
         if not self._session or not self._pdb:
             return StopReason.STOPPED
-        
+
         self._session.state = DebugState.STEPPING
-        
+
         # 执行单步
         try:
             if self._pdb:
                 self._pdb.set_next(self._get_current_frame())
         except Exception as e:
             logger.error(f"单步执行失败: {e}")
-        
+
         return StopReason.STEP
-    
+
     async def step_into(self) -> StopReason:
         """
         单步进入
@@ -638,17 +635,17 @@ class AdvancedDebugger:
         """
         if not self._session or not self._pdb:
             return StopReason.STOPPED
-        
+
         self._session.state = DebugState.STEPPING
-        
+
         try:
             if self._pdb:
                 self._pdb.set_step()
         except Exception as e:
             logger.error(f"单步执行失败: {e}")
-        
+
         return StopReason.STEP
-    
+
     async def step_out(self) -> StopReason:
         """
         单步跳出
@@ -658,25 +655,25 @@ class AdvancedDebugger:
         """
         if not self._session or not self._pdb:
             return StopReason.STOPPED
-        
+
         self._session.state = DebugState.STEPPING
-        
+
         try:
             if self._pdb:
                 self._pdb.set_return(self._get_current_frame())
         except Exception as e:
             logger.error(f"单步执行失败: {e}")
-        
+
         return StopReason.STEP
-    
+
     def _get_current_frame(self):
         """获取当前帧"""
         if not self._session or not self._session.call_stack:
             return None
-        
+
         # 返回最底层的帧
         return sys._getframe(0)
-    
+
     def get_call_stack(self) -> list[StackFrame]:
         """
         获取调用栈
@@ -687,7 +684,7 @@ class AdvancedDebugger:
         if not self._session:
             return []
         return list(self._session.call_stack)
-    
+
     def get_variables(self, frame_id: int | None = None) -> dict[str, Variable]:
         """
         获取变量
@@ -700,7 +697,7 @@ class AdvancedDebugger:
         """
         if not self._session:
             return {}
-        
+
         frame = None
         if frame_id is not None:
             for f in self._session.call_stack:
@@ -709,10 +706,10 @@ class AdvancedDebugger:
                     break
         else:
             frame = self._session.call_stack[0] if self._session.call_stack else None
-        
+
         if not frame:
             return {}
-        
+
         variables = {}
         for name, value in frame.locals.items():
             var = Variable(
@@ -722,9 +719,9 @@ class AdvancedDebugger:
                 is_expandable=hasattr(value, "__dict__") or isinstance(value, (list, dict, tuple, set)),
             )
             variables[name] = var
-        
+
         return variables
-    
+
     def evaluate_expression(
         self,
         expression: str,
@@ -742,7 +739,7 @@ class AdvancedDebugger:
         """
         if not self._session:
             return EvaluationResult(expression=expression, error="无活动调试会话")
-        
+
         frame = None
         if frame_id is not None:
             for f in self._session.call_stack:
@@ -751,15 +748,15 @@ class AdvancedDebugger:
                     break
         else:
             frame = self._session.call_stack[0] if self._session.call_stack else None
-        
+
         if not frame:
             return EvaluationResult(expression=expression, error="找不到指定的栈帧")
-        
+
         try:
             # 获取帧的全局和局部变量
             globals_dict = {}
             locals_dict = dict(frame.locals)
-            
+
             # 使用安全求值函数
             result, error = safe_eval(expression, globals_dict, locals_dict)
             if error:
@@ -777,7 +774,7 @@ class AdvancedDebugger:
                 expression=expression,
                 error=f"{type(e).__name__}: {str(e)}",
             )
-    
+
     def set_variable(self, name: str, value: str, frame_id: int | None = None) -> bool:
         """
         设置变量值
@@ -792,7 +789,7 @@ class AdvancedDebugger:
         """
         if not self._session:
             return False
-        
+
         frame = None
         if frame_id is not None:
             for f in self._session.call_stack:
@@ -801,10 +798,10 @@ class AdvancedDebugger:
                     break
         else:
             frame = self._session.call_stack[0] if self._session.call_stack else None
-        
+
         if not frame:
             return False
-        
+
         try:
             # 使用安全求值函数
             evaluated, error = safe_eval(value, {}, dict(frame.locals))
@@ -816,7 +813,7 @@ class AdvancedDebugger:
         except Exception as e:
             logger.error(f"设置变量失败: {e}")
             return False
-    
+
     def add_watch(self, expression: str) -> bool:
         """
         添加监视表达式
@@ -829,12 +826,12 @@ class AdvancedDebugger:
         """
         if not self._session:
             return False
-        
+
         if expression not in self._session.watches:
             self._session.watches.append(expression)
-        
+
         return True
-    
+
     def remove_watch(self, expression: str) -> bool:
         """
         移除监视表达式
@@ -847,13 +844,13 @@ class AdvancedDebugger:
         """
         if not self._session:
             return False
-        
+
         try:
             self._session.watches.remove(expression)
             return True
         except ValueError:
             return False
-    
+
     def get_watches(self) -> list[EvaluationResult]:
         """
         获取所有监视表达式的值
@@ -863,9 +860,9 @@ class AdvancedDebugger:
         """
         if not self._session:
             return []
-        
+
         return [self.evaluate_expression(expr) for expr in self._session.watches]
-    
+
     async def detach(self) -> bool:
         """
         分离调试器
@@ -875,18 +872,18 @@ class AdvancedDebugger:
         """
         if not self._session:
             return False
-        
+
         # 停止跟踪
         self._tracing = False
         sys.settrace(None)
-        
+
         self._session.state = DebugState.STOPPED
         self._session = None
         self._pdb = None
-        
+
         logger.info("调试会话已结束")
         return True
-    
+
     def get_state(self) -> DebugState:
         """
         获取调试状态
@@ -897,7 +894,7 @@ class AdvancedDebugger:
         if not self._session:
             return DebugState.IDLE
         return self._session.state
-    
+
     def get_session_info(self) -> dict[str, Any] | None:
         """
         获取会话信息

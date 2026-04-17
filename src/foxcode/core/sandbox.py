@@ -48,12 +48,12 @@ class SandboxResult:
     """沙箱验证结果"""
     allowed: bool               # 是否允许执行
     violations: list[SandboxViolation] = field(default_factory=list)
-    
+
     @property
     def first_violation(self) -> SandboxViolation | None:
         """获取第一个违规"""
         return self.violations[0] if self.violations else None
-    
+
     @property
     def error_message(self) -> str:
         """获取错误信息"""
@@ -69,7 +69,7 @@ class EncodingBypassDetector:
     
     检测各种编码方式绕过安全检查的尝试
     """
-    
+
     ENCODING_PATTERNS = [
         (r'%2e%2e[%2f%5c]', 'URL编码路径穿越'),
         (r'%252e%252e', '双重URL编码路径穿越'),
@@ -83,7 +83,7 @@ class EncodingBypassDetector:
         (r'%uff0e%uff0e', '宽字符编码绕过'),
         (r'\uff0e\uff0e', '全角字符绕过'),
     ]
-    
+
     UNICODE_CONFUSABLES = {
         '.': ['\u002e', '\uff0e', '\u2024', '\ufe52', '\uff61'],
         '/': ['\u002f', '\uff0f', '\u2044', '\u2215', '\u29f8'],
@@ -92,13 +92,13 @@ class EncodingBypassDetector:
         'r': ['\u0072', '\uff52', '\u0280', '\u1d07'],
         'm': ['\u006d', '\uff4d', '\u217f'],
     }
-    
+
     def __init__(self):
         self._compiled_patterns = [
             (re.compile(pattern, re.IGNORECASE), desc)
             for pattern, desc in self.ENCODING_PATTERNS
         ]
-    
+
     def detect_encoding_bypass(self, command: str) -> list[tuple[str, str]]:
         """
         检测编码绕过尝试
@@ -110,11 +110,11 @@ class EncodingBypassDetector:
             检测到的编码绕过列表 [(模式, 描述)]
         """
         detected = []
-        
+
         for pattern, desc in self._compiled_patterns:
             if pattern.search(command):
                 detected.append((pattern.pattern, desc))
-        
+
         try:
             url_decoded = urllib.parse.unquote(command)
             if url_decoded != command:
@@ -123,12 +123,12 @@ class EncodingBypassDetector:
                         detected.append(('url_decode', 'URL解码后包含路径穿越字符'))
         except Exception:
             pass
-        
+
         unicode_issues = self._check_unicode_confusables(command)
         detected.extend(unicode_issues)
-        
+
         return detected
-    
+
     def _check_unicode_confusables(self, command: str) -> list[tuple[str, str]]:
         """
         检查Unicode同形字符
@@ -140,9 +140,9 @@ class EncodingBypassDetector:
             检测到的Unicode问题列表
         """
         issues = []
-        
+
         dangerous_chars = ['.', '/', '\\', 'r', 'm']
-        
+
         for char in dangerous_chars:
             confusables = self.UNICODE_CONFUSABLES.get(char, [])
             for confusable in confusables:
@@ -151,9 +151,9 @@ class EncodingBypassDetector:
                         f'unicode_confusable_{ord(confusable):04x}',
                         f'检测到Unicode同形字符: U+{ord(confusable):04X} (类似 "{char}")'
                     ))
-        
+
         return issues
-    
+
     def normalize_command(self, command: str) -> str:
         """
         标准化命令，解码各种编码
@@ -165,7 +165,7 @@ class EncodingBypassDetector:
             标准化后的命令
         """
         normalized = command
-        
+
         try:
             for _ in range(3):
                 decoded = urllib.parse.unquote(normalized)
@@ -174,12 +174,12 @@ class EncodingBypassDetector:
                 normalized = decoded
         except Exception:
             pass
-        
+
         for char, confusables in self.UNICODE_CONFUSABLES.items():
             for confusable in confusables:
                 if confusable != char:
                     normalized = normalized.replace(confusable, char)
-        
+
         return normalized
 
 
@@ -196,7 +196,7 @@ class SandboxConfig:
         max_command_length: 最大命令长度
         blocked_patterns: 阻止的命令模式（正则表达式）
     """
-    
+
     # Windows 系统危险命令
     WINDOWS_BLOCKED_COMMANDS = [
         "format",
@@ -225,7 +225,7 @@ class SandboxConfig:
         "restart",
         "logoff",
     ]
-    
+
     # Unix/Linux 系统危险命令
     UNIX_BLOCKED_COMMANDS = [
         "rm",
@@ -266,7 +266,7 @@ class SandboxConfig:
         "chroot",
         "jail",
     ]
-    
+
     # 危险命令模式（正则表达式）
     DANGEROUS_PATTERNS = [
         r"rm\s+-rf\s+/",                    # rm -rf /
@@ -325,7 +325,7 @@ class SandboxConfig:
         r"chcon\s+",                        # SELinux 上下文修改
         r"restorecon\s+",                   # SELinux 上下文恢复
     ]
-    
+
     def __init__(
         self,
         enabled: bool = True,
@@ -343,13 +343,13 @@ class SandboxConfig:
         self.allow_path_traversal = allow_path_traversal
         self.max_command_length = max_command_length
         self.blocked_patterns = blocked_patterns or self.DANGEROUS_PATTERNS
-        
+
         # 编译正则表达式
         self._compiled_patterns = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in self.blocked_patterns
         ]
-    
+
     def _get_default_allowed_commands(self) -> list[str]:
         """获取默认白名单命令"""
         return [
@@ -364,7 +364,7 @@ class SandboxConfig:
             "grep", "find", "sed", "awk",
             "touch", "mkdir", "cp", "mv",
         ]
-    
+
     def _get_default_blocked_commands(self) -> list[str]:
         """获取默认黑名单命令"""
         system = platform.system()
@@ -384,12 +384,12 @@ class Sandbox:
     - 执行未授权的命令
     - 编码绕过攻击
     """
-    
+
     def __init__(self, config: SandboxConfig | None = None):
         self.config = config or SandboxConfig()
         self._violation_log: list[SandboxViolation] = []
         self._encoding_detector = EncodingBypassDetector()
-    
+
     def validate_command(
         self,
         command: str,
@@ -406,12 +406,12 @@ class Sandbox:
             SandboxResult: 验证结果
         """
         violations: list[SandboxViolation] = []
-        
+
         if not self.config.enabled:
             return SandboxResult(allowed=True, violations=[])
-        
+
         cwd_str = str(cwd) if cwd else None
-        
+
         if len(command) > self.config.max_command_length:
             violations.append(SandboxViolation(
                 command=command[:100] + "..." if len(command) > 100 else command,
@@ -420,40 +420,40 @@ class Sandbox:
                 cwd=cwd_str,
             ))
             return SandboxResult(allowed=False, violations=violations)
-        
+
         normalized_command = self._encoding_detector.normalize_command(command)
-        
+
         encoding_violations = self._check_encoding_bypass(normalized_command)
         violations.extend(encoding_violations)
-        
+
         if not self.config.allow_path_traversal and cwd:
             traversal_violation = self._check_path_traversal(normalized_command, cwd)
             if traversal_violation:
                 violations.append(traversal_violation)
-        
+
         pattern_violation = self._check_dangerous_patterns(normalized_command)
         if pattern_violation:
             violations.append(pattern_violation)
-        
+
         if self.config.mode == SandboxMode.BLACKLIST:
             blacklist_violation = self._check_blacklist(normalized_command)
             if blacklist_violation:
                 violations.append(blacklist_violation)
-        
+
         elif self.config.mode == SandboxMode.WHITELIST:
             whitelist_violation = self._check_whitelist(normalized_command)
             if whitelist_violation:
                 violations.append(whitelist_violation)
-        
+
         if violations:
             for v in violations:
                 self._log_violation(v)
-        
+
         return SandboxResult(
             allowed=len(violations) == 0,
             violations=violations,
         )
-    
+
     def _check_encoding_bypass(self, command: str) -> list[SandboxViolation]:
         """
         检查编码绕过尝试
@@ -466,7 +466,7 @@ class Sandbox:
         """
         violations = []
         detected = self._encoding_detector.detect_encoding_bypass(command)
-        
+
         for pattern, desc in detected:
             violations.append(SandboxViolation(
                 command=command[:100] + "..." if len(command) > 100 else command,
@@ -474,9 +474,9 @@ class Sandbox:
                 reason=f"检测到编码绕过: {desc}",
                 details={"pattern": pattern, "description": desc},
             ))
-        
+
         return violations
-    
+
     def _check_path_traversal(
         self,
         command: str,
@@ -493,7 +493,7 @@ class Sandbox:
             违规记录，如果没有违规则返回 None
         """
         cwd_path = Path(cwd).resolve()
-        
+
         # 检测路径穿越模式
         traversal_patterns = [
             r"\.\.",                           # ..
@@ -519,7 +519,7 @@ class Sandbox:
             r"%APPDATA%",                      # Windows 应用数据目录
             r"%PROGRAMFILES%",                 # Windows 程序文件目录
         ]
-        
+
         for pattern in traversal_patterns:
             if re.search(pattern, command, re.IGNORECASE):
                 # 检查是否是相对路径穿越
@@ -560,9 +560,9 @@ class Sandbox:
                         cwd=str(cwd_path),
                         details={"pattern": pattern},
                     )
-        
+
         return None
-    
+
     def _check_dangerous_patterns(
         self,
         command: str,
@@ -586,9 +586,9 @@ class Sandbox:
                         "pattern": self.config.blocked_patterns[i],
                     },
                 )
-        
+
         return None
-    
+
     def _check_blacklist(
         self,
         command: str,
@@ -604,10 +604,10 @@ class Sandbox:
         """
         # 提取命令的第一个词（命令名）
         command_name = self._extract_command_name(command)
-        
+
         if not command_name:
             return None
-        
+
         # 检查黑名单
         for blocked in self.config.blocked_commands:
             # 支持通配符匹配
@@ -621,9 +621,9 @@ class Sandbox:
                         "blocked_pattern": blocked,
                     },
                 )
-        
+
         return None
-    
+
     def _check_whitelist(
         self,
         command: str,
@@ -639,20 +639,20 @@ class Sandbox:
         """
         # 提取命令的第一个词（命令名）
         command_name = self._extract_command_name(command)
-        
+
         if not command_name:
             return SandboxViolation(
                 command=command,
                 violation_type="无效命令",
                 reason="无法解析命令名",
             )
-        
+
         # 检查白名单
         for allowed in self.config.allowed_commands:
             # 支持通配符匹配
             if fnmatch.fnmatch(command_name.lower(), allowed.lower()):
                 return None  # 在白名单中，允许执行
-        
+
         # 不在白名单中
         return SandboxViolation(
             command=command,
@@ -663,7 +663,7 @@ class Sandbox:
                 "allowed_commands": self.config.allowed_commands[:10],  # 只显示前10个
             },
         )
-    
+
     def _extract_command_name(self, command: str) -> str | None:
         """
         提取命令名
@@ -676,38 +676,38 @@ class Sandbox:
         """
         # 去除前导空格
         command = command.strip()
-        
+
         if not command:
             return None
-        
+
         # 处理管道和连接符
         for separator in ["|", "&&", "||", ";"]:
             if separator in command:
                 # 取第一个命令
                 command = command.split(separator)[0].strip()
-        
+
         # 处理 Windows 路径
         system = platform.system()
         if system == "Windows":
             # 移除可能的驱动器路径前缀
             if re.match(r"^[a-zA-Z]:", command):
                 command = command[2:]
-        
+
         # 提取第一个词
         parts = command.split()
         if not parts:
             return None
-        
+
         # 获取命令名（去除路径）
         cmd_path = parts[0]
         cmd_name = os.path.basename(cmd_path)
-        
+
         # Windows 下移除扩展名
         if system == "Windows" and "." in cmd_name:
             cmd_name = cmd_name.rsplit(".", 1)[0]
-        
+
         return cmd_name
-    
+
     def _log_violation(self, violation: SandboxViolation) -> None:
         """
         记录安全违规
@@ -716,14 +716,14 @@ class Sandbox:
             violation: 违规记录
         """
         self._violation_log.append(violation)
-        
+
         # 记录日志
         logger.warning(
             f"沙箱安全违规: {violation.violation_type} - {violation.reason}\n"
             f"  命令: {violation.command[:100]}{'...' if len(violation.command) > 100 else ''}\n"
             f"  工作目录: {violation.cwd or '未指定'}"
         )
-    
+
     def get_violation_log(self) -> list[SandboxViolation]:
         """
         获取违规日志
@@ -732,7 +732,7 @@ class Sandbox:
             违规记录列表
         """
         return self._violation_log.copy()
-    
+
     def clear_violation_log(self) -> None:
         """清除违规日志"""
         self._violation_log.clear()

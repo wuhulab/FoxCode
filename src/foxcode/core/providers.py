@@ -10,17 +10,18 @@ import abc
 import asyncio
 import logging
 import time
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from foxcode.core.config import ModelConfig, ModelProvider
-from foxcode.core.message import Conversation, Message
+from foxcode.types.message import Conversation
 
 logger = logging.getLogger(__name__)
 
 
 class ModelResponse:
     """模型响应封装"""
-    
+
     def __init__(
         self,
         content: str,
@@ -34,7 +35,7 @@ class ModelResponse:
         self.output_tokens = output_tokens
         self.finish_reason = finish_reason
         self.tool_calls = tool_calls or []
-    
+
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
@@ -46,16 +47,16 @@ class BaseModelProvider(abc.ABC):
     
     定义所有模型提供者必须实现的接口
     """
-    
+
     def __init__(self, config: ModelConfig):
         self.config = config
         self._client: Any = None
-    
+
     @abc.abstractmethod
     async def initialize(self) -> None:
         """初始化模型客户端"""
         pass
-    
+
     @abc.abstractmethod
     async def chat(
         self,
@@ -73,7 +74,7 @@ class BaseModelProvider(abc.ABC):
             模型响应
         """
         pass
-    
+
     @abc.abstractmethod
     async def stream_chat(
         self,
@@ -91,7 +92,7 @@ class BaseModelProvider(abc.ABC):
             响应文本片段
         """
         pass
-    
+
     @abc.abstractmethod
     def count_tokens(self, text: str) -> int:
         """
@@ -108,12 +109,12 @@ class BaseModelProvider(abc.ABC):
 
 class OpenAIProvider(BaseModelProvider):
     """OpenAI 模型提供者"""
-    
+
     async def initialize(self) -> None:
         """初始化 OpenAI 客户端"""
         try:
             from openai import AsyncOpenAI
-            
+
             api_key = self.config.get_effective_api_key()
             self._client = AsyncOpenAI(
                 api_key=api_key,
@@ -123,7 +124,7 @@ class OpenAIProvider(BaseModelProvider):
             logger.info("OpenAI 客户端初始化成功")
         except ImportError:
             raise ImportError("请安装 openai: pip install openai")
-    
+
     async def chat(
         self,
         conversation: Conversation,
@@ -132,25 +133,25 @@ class OpenAIProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(conversation.get_messages_for_api(include_system=False))
-        
+
         start_time = time.time()
         logger.debug(f"发送请求到 OpenAI: {self.config.model_name}")
-        
+
         response = await self._client.chat.completions.create(
             model=self.config.model_name,
             messages=messages,
             temperature=self.config.temperature,
             max_tokens=self.config.max_tokens,
         )
-        
+
         elapsed = time.time() - start_time
         logger.debug(f"OpenAI 响应时间: {elapsed:.2f}s")
-        
+
         choice = response.choices[0]
         return ModelResponse(
             content=choice.message.content or "",
@@ -158,7 +159,7 @@ class OpenAIProvider(BaseModelProvider):
             output_tokens=response.usage.completion_tokens if response.usage else 0,
             finish_reason=choice.finish_reason or "stop",
         )
-    
+
     async def stream_chat(
         self,
         conversation: Conversation,
@@ -167,12 +168,12 @@ class OpenAIProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(conversation.get_messages_for_api(include_system=False))
-        
+
         stream = await self._client.chat.completions.create(
             model=self.config.model_name,
             messages=messages,
@@ -180,16 +181,16 @@ class OpenAIProvider(BaseModelProvider):
             max_tokens=self.config.max_tokens,
             stream=True,
         )
-        
+
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-    
+
     def count_tokens(self, text: str) -> int:
         """计算 token 数量"""
         try:
             import tiktoken
-            
+
             encoding = tiktoken.encoding_for_model(self.config.model_name)
             return len(encoding.encode(text))
         except Exception:
@@ -199,12 +200,12 @@ class OpenAIProvider(BaseModelProvider):
 
 class AnthropicProvider(BaseModelProvider):
     """Anthropic 模型提供者"""
-    
+
     async def initialize(self) -> None:
         """初始化 Anthropic 客户端"""
         try:
             from anthropic import AsyncAnthropic
-            
+
             api_key = self.config.get_effective_api_key()
             self._client = AsyncAnthropic(
                 api_key=api_key,
@@ -214,7 +215,7 @@ class AnthropicProvider(BaseModelProvider):
             logger.info("Anthropic 客户端初始化成功")
         except ImportError:
             raise ImportError("请安装 anthropic: pip install anthropic")
-    
+
     async def chat(
         self,
         conversation: Conversation,
@@ -223,35 +224,35 @@ class AnthropicProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = conversation.get_messages_for_api(include_system=False)
-        
+
         start_time = time.time()
         logger.debug(f"发送请求到 Anthropic: {self.config.model_name}")
-        
+
         response = await self._client.messages.create(
             model=self.config.model_name,
             max_tokens=self.config.max_tokens,
             system=system_prompt or "",
             messages=messages,
         )
-        
+
         elapsed = time.time() - start_time
         logger.debug(f"Anthropic 响应时间: {elapsed:.2f}s")
-        
+
         # 提取文本内容
         content = ""
         for block in response.content:
             if hasattr(block, "text"):
                 content += block.text
-        
+
         return ModelResponse(
             content=content,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             finish_reason=response.stop_reason or "stop",
         )
-    
+
     async def stream_chat(
         self,
         conversation: Conversation,
@@ -260,9 +261,9 @@ class AnthropicProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = conversation.get_messages_for_api(include_system=False)
-        
+
         async with self._client.messages.stream(
             model=self.config.model_name,
             max_tokens=self.config.max_tokens,
@@ -271,12 +272,12 @@ class AnthropicProvider(BaseModelProvider):
         ) as stream:
             async for text in stream.text_stream:
                 yield text
-    
+
     def count_tokens(self, text: str) -> int:
         """计算 token 数量"""
         try:
             import tiktoken
-            
+
             # Claude 使用类似的 token 计算
             encoding = tiktoken.get_encoding("cl100k_base")
             return len(encoding.encode(text))
@@ -286,18 +287,18 @@ class AnthropicProvider(BaseModelProvider):
 
 class DeepSeekProvider(BaseModelProvider):
     """DeepSeek 模型提供者 (OpenAI 兼容)"""
-    
+
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         # DeepSeek 使用 OpenAI 兼容接口
         if not config.base_url:
             config.base_url = "https://api.deepseek.com/v1"
-    
+
     async def initialize(self) -> None:
         """初始化 DeepSeek 客户端"""
         try:
             from openai import AsyncOpenAI
-            
+
             api_key = self.config.get_effective_api_key()
             self._client = AsyncOpenAI(
                 api_key=api_key,
@@ -307,7 +308,7 @@ class DeepSeekProvider(BaseModelProvider):
             logger.info("DeepSeek 客户端初始化成功")
         except ImportError:
             raise ImportError("请安装 openai: pip install openai")
-    
+
     async def chat(
         self,
         conversation: Conversation,
@@ -316,24 +317,24 @@ class DeepSeekProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(conversation.get_messages_for_api(include_system=False))
-        
+
         start_time = time.time()
-        
+
         response = await self._client.chat.completions.create(
             model=self.config.model_name,
             messages=messages,
             temperature=self.config.temperature,
             max_tokens=self.config.max_tokens,
         )
-        
+
         elapsed = time.time() - start_time
         logger.debug(f"DeepSeek 响应时间: {elapsed:.2f}s")
-        
+
         choice = response.choices[0]
         return ModelResponse(
             content=choice.message.content or "",
@@ -341,7 +342,7 @@ class DeepSeekProvider(BaseModelProvider):
             output_tokens=response.usage.completion_tokens if response.usage else 0,
             finish_reason=choice.finish_reason or "stop",
         )
-    
+
     async def stream_chat(
         self,
         conversation: Conversation,
@@ -350,12 +351,12 @@ class DeepSeekProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(conversation.get_messages_for_api(include_system=False))
-        
+
         stream = await self._client.chat.completions.create(
             model=self.config.model_name,
             messages=messages,
@@ -363,11 +364,11 @@ class DeepSeekProvider(BaseModelProvider):
             max_tokens=self.config.max_tokens,
             stream=True,
         )
-        
+
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-    
+
     def count_tokens(self, text: str) -> int:
         """计算 token 数量"""
         return len(text) // 4
@@ -375,18 +376,18 @@ class DeepSeekProvider(BaseModelProvider):
 
 class StepProvider(BaseModelProvider):
     """StepFun (阶跃星辰) 模型提供者 (OpenAI 兼容)"""
-    
+
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         # StepFun 使用 OpenAI 兼容接口
         if not config.base_url:
             config.base_url = "https://api.stepfun.com/v1"
-    
+
     async def initialize(self) -> None:
         """初始化 StepFun 客户端"""
         try:
             from openai import AsyncOpenAI
-            
+
             api_key = self.config.get_effective_api_key()
             self._client = AsyncOpenAI(
                 api_key=api_key,
@@ -396,7 +397,7 @@ class StepProvider(BaseModelProvider):
             logger.info("StepFun 客户端初始化成功")
         except ImportError:
             raise ImportError("请安装 openai: pip install openai")
-    
+
     async def chat(
         self,
         conversation: Conversation,
@@ -405,24 +406,24 @@ class StepProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(conversation.get_messages_for_api(include_system=False))
-        
+
         start_time = time.time()
-        
+
         response = await self._client.chat.completions.create(
             model=self.config.model_name,
             messages=messages,
             temperature=self.config.temperature,
             max_tokens=self.config.max_tokens,
         )
-        
+
         elapsed = time.time() - start_time
         logger.debug(f"StepFun 响应时间: {elapsed:.2f}s")
-        
+
         choice = response.choices[0]
         return ModelResponse(
             content=choice.message.content or "",
@@ -430,7 +431,7 @@ class StepProvider(BaseModelProvider):
             output_tokens=response.usage.completion_tokens if response.usage else 0,
             finish_reason=choice.finish_reason or "stop",
         )
-    
+
     async def stream_chat(
         self,
         conversation: Conversation,
@@ -439,12 +440,12 @@ class StepProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(conversation.get_messages_for_api(include_system=False))
-        
+
         stream = await self._client.chat.completions.create(
             model=self.config.model_name,
             messages=messages,
@@ -452,11 +453,11 @@ class StepProvider(BaseModelProvider):
             max_tokens=self.config.max_tokens,
             stream=True,
         )
-        
+
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-    
+
     def count_tokens(self, text: str) -> int:
         """计算 token 数量"""
         return len(text) // 4
@@ -464,13 +465,13 @@ class StepProvider(BaseModelProvider):
 
 class LocalModelProvider(BaseModelProvider):
     """本地模型提供者"""
-    
+
     async def initialize(self) -> None:
         """初始化本地模型"""
         try:
             # 尝试加载 llama-cpp-python
             import llama_cpp
-            
+
             model_path = self.config.base_url or "model.gguf"
             self._client = llama_cpp.Llama(
                 model_path=model_path,
@@ -480,7 +481,7 @@ class LocalModelProvider(BaseModelProvider):
             logger.info(f"本地模型加载成功: {model_path}")
         except ImportError:
             raise ImportError("请安装 llama-cpp-python: pip install llama-cpp-python")
-    
+
     async def chat(
         self,
         conversation: Conversation,
@@ -489,12 +490,12 @@ class LocalModelProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(conversation.get_messages_for_api(include_system=False))
-        
+
         # 在线程池中运行同步调用
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -505,7 +506,7 @@ class LocalModelProvider(BaseModelProvider):
                 max_tokens=self.config.max_tokens,
             )
         )
-        
+
         choice = response["choices"][0]
         return ModelResponse(
             content=choice["message"]["content"],
@@ -513,7 +514,7 @@ class LocalModelProvider(BaseModelProvider):
             output_tokens=response["usage"]["completion_tokens"],
             finish_reason=choice.get("finish_reason", "stop"),
         )
-    
+
     async def stream_chat(
         self,
         conversation: Conversation,
@@ -522,12 +523,12 @@ class LocalModelProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(conversation.get_messages_for_api(include_system=False))
-        
+
         for chunk in self._client.create_chat_completion(
             messages=messages,
             temperature=self.config.temperature,
@@ -536,7 +537,7 @@ class LocalModelProvider(BaseModelProvider):
         ):
             if "content" in chunk["choices"][0]["delta"]:
                 yield chunk["choices"][0]["delta"]["content"]
-    
+
     def count_tokens(self, text: str) -> int:
         """计算 token 数量"""
         return len(text) // 4
@@ -559,9 +560,9 @@ def create_model_provider(config: ModelConfig) -> BaseModelProvider:
         ModelProvider.STEP: StepProvider,
         ModelProvider.LOCAL: LocalModelProvider,
     }
-    
+
     provider_class = providers.get(config.provider)
     if not provider_class:
         raise ValueError(f"不支持的模型提供者: {config.provider}")
-    
+
     return provider_class(config)

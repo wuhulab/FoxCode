@@ -6,13 +6,12 @@ FoxCode Playwright 浏览器自动化工具
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from foxcode.tools.base import (
     BaseTool,
@@ -31,7 +30,7 @@ class BrowserSession:
     
     管理单个浏览器实例的生命周期
     """
-    
+
     def __init__(
         self,
         session_id: str,
@@ -61,7 +60,7 @@ class BrowserSession:
         self.viewport_height = viewport_height
         self.default_timeout = default_timeout
         self.navigation_timeout = navigation_timeout
-        
+
         self._playwright = None
         self._browser = None
         self._context = None
@@ -69,27 +68,27 @@ class BrowserSession:
         self._console_logs: list[dict[str, Any]] = []
         self._created_at = datetime.now()
         self._is_closed = False
-    
+
     @property
     def page(self):
         """获取当前页面"""
         return self._page
-    
+
     @property
     def context(self):
         """获取浏览器上下文"""
         return self._context
-    
+
     @property
     def browser(self):
         """获取浏览器实例"""
         return self._browser
-    
+
     @property
     def is_active(self) -> bool:
         """检查会话是否活跃"""
         return self._browser is not None and not self._is_closed
-    
+
     async def start(self) -> dict[str, Any]:
         """
         启动浏览器会话
@@ -100,18 +99,18 @@ class BrowserSession:
         try:
             # 延迟导入 Playwright
             from playwright.async_api import async_playwright
-            
+
             # 启动 Playwright
             self._playwright = await async_playwright().start()
-            
+
             # 选择浏览器类型
             browser_launcher = getattr(self._playwright, self.browser_type, None)
             if browser_launcher is None:
                 raise ValueError(f"不支持的浏览器类型: {self.browser_type}")
-            
+
             # 启动浏览器
             self._browser = await browser_launcher.launch(headless=self.headless)
-            
+
             # 创建浏览器上下文
             self._context = await self._browser.new_context(
                 viewport={
@@ -119,19 +118,19 @@ class BrowserSession:
                     "height": self.viewport_height,
                 },
             )
-            
+
             # 设置默认超时
             self._context.set_default_timeout(self.default_timeout)
             self._context.set_default_navigation_timeout(self.navigation_timeout)
-            
+
             # 创建新页面
             self._page = await self._context.new_page()
-            
+
             # 监听控制台日志
             self._page.on("console", self._on_console_message)
-            
+
             logger.info(f"浏览器会话已启动: {self.session_id} ({self.browser_type})")
-            
+
             return {
                 "session_id": self.session_id,
                 "browser_type": self.browser_type,
@@ -142,12 +141,12 @@ class BrowserSession:
                 },
                 "created_at": self._created_at.isoformat(),
             }
-            
+
         except Exception as e:
             logger.error(f"启动浏览器失败: {e}")
             await self.close()
             raise
-    
+
     def _on_console_message(self, msg) -> None:
         """处理控制台消息"""
         self._console_logs.append({
@@ -155,7 +154,7 @@ class BrowserSession:
             "text": msg.text,
             "timestamp": datetime.now().isoformat(),
         })
-    
+
     def get_console_logs(self, clear: bool = False) -> list[dict[str, Any]]:
         """
         获取控制台日志
@@ -170,14 +169,14 @@ class BrowserSession:
         if clear:
             self._console_logs.clear()
         return logs
-    
+
     async def close(self) -> None:
         """关闭浏览器会话"""
         if self._is_closed:
             return
-        
+
         self._is_closed = True
-        
+
         try:
             if self._page:
                 await self._page.close()
@@ -187,9 +186,9 @@ class BrowserSession:
                 await self._browser.close()
             if self._playwright:
                 await self._playwright.stop()
-            
+
             logger.info(f"浏览器会话已关闭: {self.session_id}")
-            
+
         except Exception as e:
             logger.warning(f"关闭浏览器时出错: {e}")
         finally:
@@ -205,24 +204,24 @@ class PlaywrightSessionManager:
     
     管理多个浏览器会话的生命周期
     """
-    
-    _instance: Optional["PlaywrightSessionManager"] = None
+
+    _instance: PlaywrightSessionManager | None = None
     _sessions: dict[str, BrowserSession] = {}
-    _default_session_id: Optional[str] = None
-    
+    _default_session_id: str | None = None
+
     def __new__(cls):
         """单例模式"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     @classmethod
-    def get_instance(cls) -> "PlaywrightSessionManager":
+    def get_instance(cls) -> PlaywrightSessionManager:
         """获取单例实例"""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
-    
+
     def create_session(
         self,
         browser_type: str = "chromium",
@@ -247,7 +246,7 @@ class PlaywrightSessionManager:
             浏览器会话实例
         """
         session_id = f"session_{uuid.uuid4().hex[:8]}"
-        
+
         session = BrowserSession(
             session_id=session_id,
             browser_type=browser_type,
@@ -257,17 +256,17 @@ class PlaywrightSessionManager:
             default_timeout=default_timeout,
             navigation_timeout=navigation_timeout,
         )
-        
+
         self._sessions[session_id] = session
-        
+
         # 如果是第一个会话，设为默认
         if self._default_session_id is None:
             self._default_session_id = session_id
-        
+
         logger.info(f"创建浏览器会话: {session_id}")
         return session
-    
-    def get_session(self, session_id: Optional[str] = None) -> Optional[BrowserSession]:
+
+    def get_session(self, session_id: str | None = None) -> BrowserSession | None:
         """
         获取浏览器会话
         
@@ -279,13 +278,13 @@ class PlaywrightSessionManager:
         """
         if session_id is None:
             session_id = self._default_session_id
-        
+
         if session_id is None:
             return None
-        
+
         return self._sessions.get(session_id)
-    
-    def get_active_session(self, session_id: Optional[str] = None) -> BrowserSession:
+
+    def get_active_session(self, session_id: str | None = None) -> BrowserSession:
         """
         获取活跃的浏览器会话，如果不存在则抛出异常
         
@@ -299,13 +298,13 @@ class PlaywrightSessionManager:
             ValueError: 如果没有活跃的会话
         """
         session = self.get_session(session_id)
-        
+
         if session is None or not session.is_active:
             raise ValueError("没有活跃的浏览器会话，请先启动浏览器")
-        
+
         return session
-    
-    async def close_session(self, session_id: Optional[str] = None) -> bool:
+
+    async def close_session(self, session_id: str | None = None) -> bool:
         """
         关闭浏览器会话
         
@@ -317,23 +316,23 @@ class PlaywrightSessionManager:
         """
         if session_id is None:
             session_id = self._default_session_id
-        
+
         if session_id is None:
             return False
-        
+
         session = self._sessions.get(session_id)
         if session:
             await session.close()
             del self._sessions[session_id]
-            
+
             # 如果关闭的是默认会话，更新默认会话
             if self._default_session_id == session_id:
                 self._default_session_id = next(iter(self._sessions), None)
-            
+
             return True
-        
+
         return False
-    
+
     async def close_all_sessions(self) -> int:
         """
         关闭所有浏览器会话
@@ -345,10 +344,10 @@ class PlaywrightSessionManager:
         for session_id in list(self._sessions.keys()):
             if await self.close_session(session_id):
                 count += 1
-        
+
         self._default_session_id = None
         return count
-    
+
     def list_sessions(self) -> list[dict[str, Any]]:
         """
         列出所有会话
@@ -366,7 +365,7 @@ class PlaywrightSessionManager:
             }
             for session in self._sessions.values()
         ]
-    
+
     def set_default_session(self, session_id: str) -> bool:
         """
         设置默认会话
@@ -392,7 +391,7 @@ session_manager = PlaywrightSessionManager()
 @tool
 class PlaywrightStartTool(BaseTool):
     """启动 Playwright 浏览器"""
-    
+
     name = "playwright_start"
     description = "Start a new browser instance, returns session ID for subsequent operations"
     category = ToolCategory.WEB
@@ -427,7 +426,7 @@ class PlaywrightStartTool(BaseTool):
             default=720,
         ),
     ]
-    
+
     async def execute(
         self,
         browser_type: str = "chromium",
@@ -445,7 +444,7 @@ class PlaywrightStartTool(BaseTool):
                 headless = headless if headless is not None else pw_config.headless
                 viewport_width = viewport_width or pw_config.viewport_width
                 viewport_height = viewport_height or pw_config.viewport_height
-            
+
             # 创建会话
             session = session_manager.create_session(
                 browser_type=browser_type,
@@ -453,22 +452,22 @@ class PlaywrightStartTool(BaseTool):
                 viewport_width=viewport_width,
                 viewport_height=viewport_height,
             )
-            
+
             # 启动浏览器
             session_info = await session.start()
-            
-            output = f"✅ 浏览器已启动\n"
+
+            output = "✅ 浏览器已启动\n"
             output += f"会话ID: {session.session_id}\n"
             output += f"浏览器类型: {browser_type}\n"
             output += f"无头模式: {headless}\n"
             output += f"视口大小: {viewport_width}x{viewport_height}\n"
-            
+
             return ToolResult(
                 success=True,
                 output=output,
                 data=session_info,
             )
-            
+
         except ImportError:
             return ToolResult(
                 success=False,
@@ -487,7 +486,7 @@ class PlaywrightStartTool(BaseTool):
 @tool
 class PlaywrightCloseTool(BaseTool):
     """关闭 Playwright 浏览器"""
-    
+
     name = "playwright_close"
     description = "Close specified browser session or all sessions"
     category = ToolCategory.WEB
@@ -506,10 +505,10 @@ class PlaywrightCloseTool(BaseTool):
             default=False,
         ),
     ]
-    
+
     async def execute(
         self,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         close_all: bool = False,
         **kwargs: Any,
     ) -> ToolResult:
@@ -522,9 +521,9 @@ class PlaywrightCloseTool(BaseTool):
                     output=f"✅ 已关闭 {count} 个浏览器会话",
                     data={"closed_count": count},
                 )
-            
+
             success = await session_manager.close_session(session_id)
-            
+
             if success:
                 return ToolResult(
                     success=True,
@@ -536,7 +535,7 @@ class PlaywrightCloseTool(BaseTool):
                     output="",
                     error=f"未找到会话: {session_id or '默认会话'}",
                 )
-                
+
         except Exception as e:
             logger.error(f"关闭浏览器失败: {e}")
             return ToolResult(
@@ -549,24 +548,24 @@ class PlaywrightCloseTool(BaseTool):
 @tool
 class PlaywrightListSessionsTool(BaseTool):
     """列出所有浏览器会话"""
-    
+
     name = "playwright_list_sessions"
     description = "List all active browser sessions"
     category = ToolCategory.WEB
     parameters = []
-    
+
     async def execute(self, **kwargs: Any) -> ToolResult:
         """执行列出会话"""
         try:
             sessions = session_manager.list_sessions()
-            
+
             if not sessions:
                 return ToolResult(
                     success=True,
                     output="当前没有活跃的浏览器会话",
                     data={"sessions": []},
                 )
-            
+
             output = f"当前有 {len(sessions)} 个浏览器会话:\n\n"
             for session in sessions:
                 default_mark = " (默认)" if session["is_default"] else ""
@@ -574,13 +573,13 @@ class PlaywrightListSessionsTool(BaseTool):
                 output += f"  浏览器: {session['browser_type']}\n"
                 output += f"  状态: {'活跃' if session['is_active'] else '已关闭'}\n"
                 output += f"  创建时间: {session['created_at']}\n\n"
-            
+
             return ToolResult(
                 success=True,
                 output=output,
                 data={"sessions": sessions},
             )
-            
+
         except Exception as e:
             logger.error(f"列出会话失败: {e}")
             return ToolResult(
@@ -595,7 +594,7 @@ class PlaywrightListSessionsTool(BaseTool):
 @tool
 class PlaywrightNavigateTool(BaseTool):
     """导航到指定URL"""
-    
+
     name = "playwright_navigate"
     description = "Navigate browser to specified URL"
     category = ToolCategory.WEB
@@ -621,11 +620,11 @@ class PlaywrightNavigateTool(BaseTool):
             enum=["load", "domcontentloaded", "networkidle"],
         ),
     ]
-    
+
     async def execute(
         self,
         url: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         wait_until: str = "load",
         **kwargs: Any,
     ) -> ToolResult:
@@ -633,15 +632,15 @@ class PlaywrightNavigateTool(BaseTool):
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             # 导航到URL
             response = await page.goto(url, wait_until=wait_until)
-            
+
             output = f"✅ 已导航到: {url}\n"
             output += f"状态码: {response.status if response else 'N/A'}\n"
             output += f"页面标题: {await page.title()}\n"
             output += f"当前URL: {page.url}\n"
-            
+
             return ToolResult(
                 success=True,
                 output=output,
@@ -652,7 +651,7 @@ class PlaywrightNavigateTool(BaseTool):
                     "title": await page.title(),
                 },
             )
-            
+
         except ValueError as e:
             return ToolResult(
                 success=False,
@@ -671,7 +670,7 @@ class PlaywrightNavigateTool(BaseTool):
 @tool
 class PlaywrightGoBackTool(BaseTool):
     """浏览器后退"""
-    
+
     name = "playwright_go_back"
     description = "Go back to previous page in browser history"
     category = ToolCategory.WEB
@@ -683,25 +682,25 @@ class PlaywrightGoBackTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行后退操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             await page.go_back()
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已后退\n当前URL: {page.url}",
                 data={"url": page.url},
             )
-            
+
         except Exception as e:
             logger.error(f"后退失败: {e}")
             return ToolResult(
@@ -714,7 +713,7 @@ class PlaywrightGoBackTool(BaseTool):
 @tool
 class PlaywrightGoForwardTool(BaseTool):
     """浏览器前进"""
-    
+
     name = "playwright_go_forward"
     description = "Go forward to next page in browser history"
     category = ToolCategory.WEB
@@ -726,25 +725,25 @@ class PlaywrightGoForwardTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行前进操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             await page.go_forward()
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已前进\n当前URL: {page.url}",
                 data={"url": page.url},
             )
-            
+
         except Exception as e:
             logger.error(f"前进失败: {e}")
             return ToolResult(
@@ -759,7 +758,7 @@ class PlaywrightGoForwardTool(BaseTool):
 @tool
 class PlaywrightClickTool(BaseTool):
     """点击页面元素"""
-    
+
     name = "playwright_click"
     description = "Click a specified element on the page"
     category = ToolCategory.WEB
@@ -791,11 +790,11 @@ class PlaywrightClickTool(BaseTool):
             default=False,
         ),
     ]
-    
+
     async def execute(
         self,
         selector: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         timeout: int = 30000,
         force: bool = False,
         **kwargs: Any,
@@ -804,19 +803,19 @@ class PlaywrightClickTool(BaseTool):
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             # 等待元素出现
             await page.wait_for_selector(selector, timeout=timeout)
-            
+
             # 执行点击
             await page.click(selector, force=force)
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已点击元素: {selector}",
                 data={"selector": selector},
             )
-            
+
         except Exception as e:
             logger.error(f"点击失败: {e}")
             return ToolResult(
@@ -829,7 +828,7 @@ class PlaywrightClickTool(BaseTool):
 @tool
 class PlaywrightFillTool(BaseTool):
     """在输入框中填写文本"""
-    
+
     name = "playwright_fill"
     description = "Fill text content in specified input field"
     category = ToolCategory.WEB
@@ -860,12 +859,12 @@ class PlaywrightFillTool(BaseTool):
             default=True,
         ),
     ]
-    
+
     async def execute(
         self,
         selector: str,
         text: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         clear_first: bool = True,
         **kwargs: Any,
     ) -> ToolResult:
@@ -873,18 +872,18 @@ class PlaywrightFillTool(BaseTool):
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             if clear_first:
                 await page.fill(selector, text)
             else:
                 await page.type(selector, text)
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已填写文本到: {selector}\n内容: {text[:50]}{'...' if len(text) > 50 else ''}",
                 data={"selector": selector, "text": text},
             )
-            
+
         except Exception as e:
             logger.error(f"填写失败: {e}")
             return ToolResult(
@@ -897,7 +896,7 @@ class PlaywrightFillTool(BaseTool):
 @tool
 class PlaywrightSelectTool(BaseTool):
     """选择下拉框选项"""
-    
+
     name = "playwright_select"
     description = "Select specified option in dropdown select box"
     category = ToolCategory.WEB
@@ -921,27 +920,27 @@ class PlaywrightSelectTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         selector: str,
         value: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行选择操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             await page.select_option(selector, value)
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已选择选项: {value}",
                 data={"selector": selector, "value": value},
             )
-            
+
         except Exception as e:
             logger.error(f"选择失败: {e}")
             return ToolResult(
@@ -954,7 +953,7 @@ class PlaywrightSelectTool(BaseTool):
 @tool
 class PlaywrightHoverTool(BaseTool):
     """悬停在元素上"""
-    
+
     name = "playwright_hover"
     description = "Hover mouse over specified element"
     category = ToolCategory.WEB
@@ -972,26 +971,26 @@ class PlaywrightHoverTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         selector: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行悬停操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             await page.hover(selector)
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已悬停在元素上: {selector}",
                 data={"selector": selector},
             )
-            
+
         except Exception as e:
             logger.error(f"悬停失败: {e}")
             return ToolResult(
@@ -1004,7 +1003,7 @@ class PlaywrightHoverTool(BaseTool):
 @tool
 class PlaywrightPressKeyTool(BaseTool):
     """按下键盘按键"""
-    
+
     name = "playwright_press_key"
     description = "Simulate keyboard key press on page"
     category = ToolCategory.WEB
@@ -1028,30 +1027,30 @@ class PlaywrightPressKeyTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         key: str,
-        session_id: Optional[str] = None,
-        selector: Optional[str] = None,
+        session_id: str | None = None,
+        selector: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行按键操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             if selector:
                 await page.press(selector, key)
             else:
                 await page.keyboard.press(key)
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已按下按键: {key}",
                 data={"key": key, "selector": selector},
             )
-            
+
         except Exception as e:
             logger.error(f"按键失败: {e}")
             return ToolResult(
@@ -1066,7 +1065,7 @@ class PlaywrightPressKeyTool(BaseTool):
 @tool
 class PlaywrightScreenshotTool(BaseTool):
     """页面截图"""
-    
+
     name = "playwright_screenshot"
     description = "Take screenshot of current page or specified element"
     category = ToolCategory.WEB
@@ -1097,12 +1096,12 @@ class PlaywrightScreenshotTool(BaseTool):
             default=False,
         ),
     ]
-    
+
     async def execute(
         self,
-        path: Optional[str] = None,
-        selector: Optional[str] = None,
-        session_id: Optional[str] = None,
+        path: str | None = None,
+        selector: str | None = None,
+        session_id: str | None = None,
         full_page: bool = False,
         **kwargs: Any,
     ) -> ToolResult:
@@ -1110,14 +1109,14 @@ class PlaywrightScreenshotTool(BaseTool):
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             # 确定保存路径
             if path is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 screenshot_dir = Path(".foxcode/screenshots")
                 screenshot_dir.mkdir(parents=True, exist_ok=True)
                 path = str(screenshot_dir / f"screenshot_{timestamp}.png")
-            
+
             # 执行截图
             if selector:
                 element = await page.query_selector(selector)
@@ -1134,18 +1133,18 @@ class PlaywrightScreenshotTool(BaseTool):
                     path=path,
                     full_page=full_page,
                 )
-            
+
             # 如果指定了路径且不是整页截图，需要手动保存
             if selector and path:
                 with open(path, "wb") as f:
                     f.write(screenshot_bytes)
-            
+
             # 转换为 base64
             screenshot_base64 = base64.b64encode(screenshot_bytes).decode()
-            
+
             output = f"✅ 截图已保存: {path}\n"
             output += f"文件大小: {len(screenshot_bytes)} 字节\n"
-            
+
             return ToolResult(
                 success=True,
                 output=output,
@@ -1155,7 +1154,7 @@ class PlaywrightScreenshotTool(BaseTool):
                     "base64": screenshot_base64[:100] + "...",  # 只返回前100字符
                 },
             )
-            
+
         except Exception as e:
             logger.error(f"截图失败: {e}")
             return ToolResult(
@@ -1168,7 +1167,7 @@ class PlaywrightScreenshotTool(BaseTool):
 @tool
 class PlaywrightGetVisibleTextTool(BaseTool):
     """获取页面可见文本"""
-    
+
     name = "playwright_get_visible_text"
     description = "Get visible text content from current page or specified element"
     category = ToolCategory.WEB
@@ -1186,18 +1185,18 @@ class PlaywrightGetVisibleTextTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
-        selector: Optional[str] = None,
-        session_id: Optional[str] = None,
+        selector: str | None = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行获取文本操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             if selector:
                 element = await page.query_selector(selector)
                 if element:
@@ -1210,12 +1209,12 @@ class PlaywrightGetVisibleTextTool(BaseTool):
                     )
             else:
                 text = await page.inner_text("body")
-            
+
             # 限制输出长度
             max_length = 5000
             truncated = len(text) > max_length
             display_text = text[:max_length] + "..." if truncated else text
-            
+
             return ToolResult(
                 success=True,
                 output=f"页面文本内容:\n\n{display_text}",
@@ -1225,7 +1224,7 @@ class PlaywrightGetVisibleTextTool(BaseTool):
                     "truncated": truncated,
                 },
             )
-            
+
         except Exception as e:
             logger.error(f"获取文本失败: {e}")
             return ToolResult(
@@ -1238,7 +1237,7 @@ class PlaywrightGetVisibleTextTool(BaseTool):
 @tool
 class PlaywrightGetVisibleHtmlTool(BaseTool):
     """获取页面HTML"""
-    
+
     name = "playwright_get_visible_html"
     description = "获取当前页面或指定元素的HTML内容"
     category = ToolCategory.WEB
@@ -1256,18 +1255,18 @@ class PlaywrightGetVisibleHtmlTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
-        selector: Optional[str] = None,
-        session_id: Optional[str] = None,
+        selector: str | None = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行获取HTML操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             if selector:
                 element = await page.query_selector(selector)
                 if element:
@@ -1280,12 +1279,12 @@ class PlaywrightGetVisibleHtmlTool(BaseTool):
                     )
             else:
                 html = await page.content()
-            
+
             # 限制输出长度
             max_length = 10000
             truncated = len(html) > max_length
             display_html = html[:max_length] + "..." if truncated else html
-            
+
             return ToolResult(
                 success=True,
                 output=f"页面HTML内容:\n\n```html\n{display_html}\n```",
@@ -1295,7 +1294,7 @@ class PlaywrightGetVisibleHtmlTool(BaseTool):
                     "truncated": truncated,
                 },
             )
-            
+
         except Exception as e:
             logger.error(f"获取HTML失败: {e}")
             return ToolResult(
@@ -1308,7 +1307,7 @@ class PlaywrightGetVisibleHtmlTool(BaseTool):
 @tool
 class PlaywrightGetTool(BaseTool):
     """获取元素属性或内容"""
-    
+
     name = "playwright_get"
     description = "Get specified element's attribute value or content"
     category = ToolCategory.WEB
@@ -1332,19 +1331,19 @@ class PlaywrightGetTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         selector: str,
-        attribute: Optional[str] = None,
-        session_id: Optional[str] = None,
+        attribute: str | None = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行获取属性操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             element = await page.query_selector(selector)
             if not element:
                 return ToolResult(
@@ -1352,7 +1351,7 @@ class PlaywrightGetTool(BaseTool):
                     output="",
                     error=f"未找到元素: {selector}",
                 )
-            
+
             if attribute:
                 value = await element.get_attribute(attribute)
                 return ToolResult(
@@ -1364,7 +1363,7 @@ class PlaywrightGetTool(BaseTool):
                 # 获取所有属性
                 text = await element.inner_text()
                 tag = await element.evaluate("el => el.tagName")
-                
+
                 return ToolResult(
                     success=True,
                     output=f"元素信息:\n标签: {tag}\n文本: {text}",
@@ -1373,7 +1372,7 @@ class PlaywrightGetTool(BaseTool):
                         "text": text,
                     },
                 )
-            
+
         except Exception as e:
             logger.error(f"获取属性失败: {e}")
             return ToolResult(
@@ -1388,7 +1387,7 @@ class PlaywrightGetTool(BaseTool):
 @tool
 class PlaywrightExpectResponseTool(BaseTool):
     """等待响应"""
-    
+
     name = "playwright_expect_response"
     description = "Wait for specific HTTP response"
     category = ToolCategory.WEB
@@ -1413,11 +1412,11 @@ class PlaywrightExpectResponseTool(BaseTool):
             default=30000,
         ),
     ]
-    
+
     async def execute(
         self,
         url_pattern: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         timeout: int = 30000,
         **kwargs: Any,
     ) -> ToolResult:
@@ -1425,13 +1424,13 @@ class PlaywrightExpectResponseTool(BaseTool):
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             response = await page.wait_for_response(url_pattern, timeout=timeout)
-            
-            output = f"✅ 收到响应\n"
+
+            output = "✅ 收到响应\n"
             output += f"URL: {response.url}\n"
             output += f"状态码: {response.status}\n"
-            
+
             return ToolResult(
                 success=True,
                 output=output,
@@ -1440,7 +1439,7 @@ class PlaywrightExpectResponseTool(BaseTool):
                     "status": response.status,
                 },
             )
-            
+
         except Exception as e:
             logger.error(f"等待响应失败: {e}")
             return ToolResult(
@@ -1453,7 +1452,7 @@ class PlaywrightExpectResponseTool(BaseTool):
 @tool
 class PlaywrightAssertResponseTool(BaseTool):
     """断言响应状态"""
-    
+
     name = "playwright_assert_response"
     description = "Assert HTTP response status code or content"
     category = ToolCategory.WEB
@@ -1477,24 +1476,24 @@ class PlaywrightAssertResponseTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         url_pattern: str,
-        expected_status: Optional[int] = None,
-        session_id: Optional[str] = None,
+        expected_status: int | None = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行断言操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             response = await page.wait_for_response(url_pattern)
-            
+
             assertions_passed = []
             assertions_failed = []
-            
+
             if expected_status:
                 if response.status == expected_status:
                     assertions_passed.append(f"状态码等于 {expected_status}")
@@ -1502,28 +1501,28 @@ class PlaywrightAssertResponseTool(BaseTool):
                     assertions_failed.append(
                         f"状态码不匹配: 期望 {expected_status}, 实际 {response.status}"
                     )
-            
+
             if assertions_failed:
                 return ToolResult(
                     success=False,
-                    output=f"❌ 断言失败:\n" + "\n".join(assertions_failed),
+                    output="❌ 断言失败:\n" + "\n".join(assertions_failed),
                     data={
                         "passed": assertions_passed,
                         "failed": assertions_failed,
                         "actual_status": response.status,
                     },
                 )
-            
+
             return ToolResult(
                 success=True,
-                output=f"✅ 断言通过:\n" + "\n".join(assertions_passed) if assertions_passed else "✅ 响应已收到",
+                output="✅ 断言通过:\n" + "\n".join(assertions_passed) if assertions_passed else "✅ 响应已收到",
                 data={
                     "passed": assertions_passed,
                     "url": response.url,
                     "status": response.status,
                 },
             )
-            
+
         except Exception as e:
             logger.error(f"断言失败: {e}")
             return ToolResult(
@@ -1536,7 +1535,7 @@ class PlaywrightAssertResponseTool(BaseTool):
 @tool
 class PlaywrightEvaluateTool(BaseTool):
     """执行JavaScript"""
-    
+
     name = "playwright_evaluate"
     description = "Execute JavaScript code in the page"
     category = ToolCategory.WEB
@@ -1554,26 +1553,26 @@ class PlaywrightEvaluateTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         script: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行JavaScript代码"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             result = await page.evaluate(script)
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ JavaScript 执行成功\n返回值: {result}",
                 data={"result": result},
             )
-            
+
         except Exception as e:
             logger.error(f"执行JavaScript失败: {e}")
             return ToolResult(
@@ -1588,7 +1587,7 @@ class PlaywrightEvaluateTool(BaseTool):
 @tool
 class PlaywrightResizeTool(BaseTool):
     """调整视口大小"""
-    
+
     name = "playwright_resize"
     description = "Resize browser viewport dimensions"
     category = ToolCategory.WEB
@@ -1612,27 +1611,27 @@ class PlaywrightResizeTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         width: int,
         height: int,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行调整视口操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             await page.set_viewport_size({"width": width, "height": height})
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 视口已调整为: {width}x{height}",
                 data={"width": width, "height": height},
             )
-            
+
         except Exception as e:
             logger.error(f"调整视口失败: {e}")
             return ToolResult(
@@ -1645,7 +1644,7 @@ class PlaywrightResizeTool(BaseTool):
 @tool
 class PlaywrightUploadFileTool(BaseTool):
     """上传文件"""
-    
+
     name = "playwright_upload_file"
     description = "Upload file to file input element"
     category = ToolCategory.WEB
@@ -1669,19 +1668,19 @@ class PlaywrightUploadFileTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         selector: str,
         file_path: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行文件上传操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             # 检查文件是否存在
             file = Path(file_path)
             if not file.exists():
@@ -1690,15 +1689,15 @@ class PlaywrightUploadFileTool(BaseTool):
                     output="",
                     error=f"文件不存在: {file_path}",
                 )
-            
+
             await page.set_input_files(selector, str(file.absolute()))
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 文件已上传: {file_path}",
                 data={"selector": selector, "file_path": file_path},
             )
-            
+
         except Exception as e:
             logger.error(f"上传文件失败: {e}")
             return ToolResult(
@@ -1711,7 +1710,7 @@ class PlaywrightUploadFileTool(BaseTool):
 @tool
 class PlaywrightDragTool(BaseTool):
     """拖拽元素"""
-    
+
     name = "playwright_drag"
     description = "Drag one element to another location"
     category = ToolCategory.WEB
@@ -1735,44 +1734,44 @@ class PlaywrightDragTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         source_selector: str,
         target_selector: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行拖拽操作"""
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             source = await page.query_selector(source_selector)
             target = await page.query_selector(target_selector)
-            
+
             if not source:
                 return ToolResult(
                     success=False,
                     output="",
                     error=f"未找到源元素: {source_selector}",
                 )
-            
+
             if not target:
                 return ToolResult(
                     success=False,
                     output="",
                     error=f"未找到目标元素: {target_selector}",
                 )
-            
+
             await source.drag_to(target)
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已将元素从 {source_selector} 拖拽到 {target_selector}",
                 data={"source": source_selector, "target": target_selector},
             )
-            
+
         except Exception as e:
             logger.error(f"拖拽失败: {e}")
             return ToolResult(
@@ -1785,7 +1784,7 @@ class PlaywrightDragTool(BaseTool):
 @tool
 class PlaywrightClickAndSwitchTabTool(BaseTool):
     """点击并切换标签页"""
-    
+
     name = "playwright_click_and_switch_tab"
     description = "Click link to open new tab and switch to it"
     category = ToolCategory.WEB
@@ -1803,11 +1802,11 @@ class PlaywrightClickAndSwitchTabTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         selector: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行点击并切换标签页操作"""
@@ -1815,22 +1814,22 @@ class PlaywrightClickAndSwitchTabTool(BaseTool):
             session = session_manager.get_active_session(session_id)
             context = session.context
             page = session.page
-            
+
             # 监听新页面事件
             async with context.expect_page() as new_page_info:
                 await page.click(selector)
-            
+
             new_page = await new_page_info.value
-            
+
             # 更新会话的当前页面
             session._page = new_page
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 已打开新标签页并切换\n当前URL: {new_page.url}",
                 data={"url": new_page.url},
             )
-            
+
         except Exception as e:
             logger.error(f"切换标签页失败: {e}")
             return ToolResult(
@@ -1843,7 +1842,7 @@ class PlaywrightClickAndSwitchTabTool(BaseTool):
 @tool
 class PlaywrightSaveAsPdfTool(BaseTool):
     """保存为PDF"""
-    
+
     name = "playwright_save_as_pdf"
     description = "Save current page as PDF file"
     category = ToolCategory.WEB
@@ -1869,11 +1868,11 @@ class PlaywrightSaveAsPdfTool(BaseTool):
             enum=["A4", "A3", "Letter", "Legal", "Tabloid"],
         ),
     ]
-    
+
     async def execute(
         self,
         path: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         format: str = "A4",
         **kwargs: Any,
     ) -> ToolResult:
@@ -1881,15 +1880,15 @@ class PlaywrightSaveAsPdfTool(BaseTool):
         try:
             session = session_manager.get_active_session(session_id)
             page = session.page
-            
+
             await page.pdf(path=path, format=format)
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ 页面已保存为PDF: {path}",
                 data={"path": path, "format": format},
             )
-            
+
         except Exception as e:
             logger.error(f"保存PDF失败: {e}")
             return ToolResult(
@@ -1904,7 +1903,7 @@ class PlaywrightSaveAsPdfTool(BaseTool):
 @tool
 class PlaywrightCustomUserAgentTool(BaseTool):
     """设置自定义User-Agent"""
-    
+
     name = "playwright_custom_user_agent"
     description = "Set custom User-Agent string for browser"
     category = ToolCategory.WEB
@@ -1922,21 +1921,21 @@ class PlaywrightCustomUserAgentTool(BaseTool):
             required=False,
         ),
     ]
-    
+
     async def execute(
         self,
         user_agent: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """执行设置User-Agent操作"""
         try:
             session = session_manager.get_active_session(session_id)
-            
+
             # 需要创建新的上下文来设置User-Agent
             old_context = session._context
             old_page = session._page
-            
+
             # 创建新上下文
             session._context = await session._browser.new_context(
                 user_agent=user_agent,
@@ -1945,22 +1944,22 @@ class PlaywrightCustomUserAgentTool(BaseTool):
                     "height": session.viewport_height,
                 },
             )
-            
+
             # 创建新页面
             session._page = await session._context.new_page()
-            
+
             # 关闭旧的上下文
             if old_page:
                 await old_page.close()
             if old_context:
                 await old_context.close()
-            
+
             return ToolResult(
                 success=True,
                 output=f"✅ User-Agent 已设置为: {user_agent}",
                 data={"user_agent": user_agent},
             )
-            
+
         except Exception as e:
             logger.error(f"设置User-Agent失败: {e}")
             return ToolResult(
@@ -1973,7 +1972,7 @@ class PlaywrightCustomUserAgentTool(BaseTool):
 @tool
 class PlaywrightConsoleLogsTool(BaseTool):
     """获取控制台日志"""
-    
+
     name = "playwright_console_logs"
     description = "Get browser console log output"
     category = ToolCategory.WEB
@@ -1999,10 +1998,10 @@ class PlaywrightConsoleLogsTool(BaseTool):
             enum=["all", "log", "warn", "error", "info"],
         ),
     ]
-    
+
     async def execute(
         self,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         clear: bool = False,
         filter_type: str = "all",
         **kwargs: Any,
@@ -2010,31 +2009,31 @@ class PlaywrightConsoleLogsTool(BaseTool):
         """执行获取控制台日志操作"""
         try:
             session = session_manager.get_active_session(session_id)
-            
+
             logs = session.get_console_logs(clear=clear)
-            
+
             # 过滤日志类型
             if filter_type != "all":
                 logs = [log for log in logs if log["type"] == filter_type]
-            
+
             if not logs:
                 return ToolResult(
                     success=True,
                     output="控制台暂无日志",
                     data={"logs": []},
                 )
-            
+
             # 格式化输出
             output_lines = [f"控制台日志 (共 {len(logs)} 条):\n"]
             for log in logs[-50:]:  # 只显示最近50条
                 output_lines.append(f"[{log['type'].upper()}] {log['text']}")
-            
+
             return ToolResult(
                 success=True,
                 output="\n".join(output_lines),
                 data={"logs": logs, "count": len(logs)},
             )
-            
+
         except Exception as e:
             logger.error(f"获取控制台日志失败: {e}")
             return ToolResult(

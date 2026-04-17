@@ -19,11 +19,12 @@ import os
 import threading
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import psutil
 
@@ -53,15 +54,15 @@ class PerformanceMetrics:
     memory_usage_mb: float = 0.0
     cpu_percent: float = 0.0
     consecutive_errors: int = 0
-    last_error: Optional[str] = None
-    last_error_time: Optional[datetime] = None
+    last_error: str | None = None
+    last_error_time: datetime | None = None
     start_time: datetime = field(default_factory=datetime.now)
-    
+
     @property
     def uptime_seconds(self) -> float:
         """获取运行时间（秒）"""
         return (datetime.now() - self.start_time).total_seconds()
-    
+
     @property
     def success_rate(self) -> float:
         """获取成功率"""
@@ -75,10 +76,10 @@ class RequestRecord:
     """请求记录"""
     request_id: str
     start_time: float
-    end_time: Optional[float] = None
-    response_time_ms: Optional[float] = None
+    end_time: float | None = None
+    response_time_ms: float | None = None
     success: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ProcessWatchdog:
@@ -93,7 +94,7 @@ class ProcessWatchdog:
     - 检测异常情况并触发回调
     - 支持自动恢复机制
     """
-    
+
     def __init__(
         self,
         check_interval: float = 30.0,
@@ -102,7 +103,7 @@ class ProcessWatchdog:
         max_consecutive_errors: int = 5,
         metrics_history_size: int = 100,
         enable_auto_recovery: bool = True,
-        health_check_port: Optional[int] = None,
+        health_check_port: int | None = None,
     ):
         """
         初始化进程看门狗
@@ -123,34 +124,34 @@ class ProcessWatchdog:
         self.metrics_history_size = metrics_history_size
         self.enable_auto_recovery = enable_auto_recovery
         self.health_check_port = health_check_port
-        
+
         self._is_running = False
-        self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_task: asyncio.Task | None = None
         self._request_counter = 0
         self._pending_requests: dict[str, RequestRecord] = {}
         self._metrics_history: list[PerformanceMetrics] = []
         self._current_metrics = PerformanceMetrics()
-        
+
         self._process = psutil.Process(os.getpid())
-        
-        self._on_memory_warning: Optional[Callable[[float], None]] = None
-        self._on_cpu_warning: Optional[Callable[[float], None]] = None
-        self._on_error_threshold_reached: Optional[Callable[[int], None]] = None
-        self._on_auto_recovery_triggered: Optional[Callable[[], None]] = None
-        
+
+        self._on_memory_warning: Callable[[float], None] | None = None
+        self._on_cpu_warning: Callable[[float], None] | None = None
+        self._on_error_threshold_reached: Callable[[int], None] | None = None
+        self._on_auto_recovery_triggered: Callable[[], None] | None = None
+
         self._lock = threading.Lock()
-    
+
     @property
     def is_running(self) -> bool:
         """检查看门狗是否正在运行"""
         return self._is_running
-    
+
     def set_callbacks(
         self,
-        on_memory_warning: Optional[Callable[[float], None]] = None,
-        on_cpu_warning: Optional[Callable[[float], None]] = None,
-        on_error_threshold_reached: Optional[Callable[[int], None]] = None,
-        on_auto_recovery_triggered: Optional[Callable[[], None]] = None,
+        on_memory_warning: Callable[[float], None] | None = None,
+        on_cpu_warning: Callable[[float], None] | None = None,
+        on_error_threshold_reached: Callable[[int], None] | None = None,
+        on_auto_recovery_triggered: Callable[[], None] | None = None,
     ) -> None:
         """
         设置事件回调函数
@@ -165,9 +166,9 @@ class ProcessWatchdog:
         self._on_cpu_warning = on_cpu_warning
         self._on_error_threshold_reached = on_error_threshold_reached
         self._on_auto_recovery_triggered = on_auto_recovery_triggered
-        
+
         logger.debug("看门狗回调函数已设置")
-    
+
     async def start(self) -> None:
         """
         启动看门狗监控
@@ -177,16 +178,16 @@ class ProcessWatchdog:
         if self._is_running:
             logger.warning("看门狗已在运行")
             return
-        
+
         self._is_running = True
         self._monitor_task = asyncio.create_task(self._monitor_loop())
-        
+
         logger.info(
             f"进程看门狗已启动 (检查间隔: {self.check_interval}s, "
             f"内存阈值: {self.memory_threshold_mb}MB, "
             f"CPU 阈值: {self.cpu_threshold_percent}%)"
         )
-    
+
     async def stop(self) -> None:
         """
         停止看门狗监控
@@ -195,9 +196,9 @@ class ProcessWatchdog:
         """
         if not self._is_running:
             return
-        
+
         self._is_running = False
-        
+
         if self._monitor_task:
             self._monitor_task.cancel()
             try:
@@ -205,9 +206,9 @@ class ProcessWatchdog:
             except asyncio.CancelledError:
                 pass
             self._monitor_task = None
-        
+
         logger.info("进程看门狗已停止")
-    
+
     def record_request_start(self) -> str:
         """
         记录请求开始
@@ -218,16 +219,16 @@ class ProcessWatchdog:
         with self._lock:
             self._request_counter += 1
             request_id = f"req_{self._request_counter}_{time.time_ns()}"
-            
+
             self._pending_requests[request_id] = RequestRecord(
                 request_id=request_id,
                 start_time=time.time()
             )
-            
+
             self._current_metrics.total_requests += 1
-            
+
             return request_id
-    
+
     def record_request_success(
         self,
         request_id: str,
@@ -244,27 +245,27 @@ class ProcessWatchdog:
             if request_id not in self._pending_requests:
                 logger.warning(f"未找到请求记录: {request_id}")
                 return
-            
+
             record = self._pending_requests.pop(request_id)
             record.end_time = time.time()
             record.response_time_ms = response_time_ms
             record.success = True
-            
+
             metrics = self._current_metrics
             metrics.successful_requests += 1
             metrics.consecutive_errors = 0
-            
+
             if response_time_ms < metrics.min_response_time_ms:
                 metrics.min_response_time_ms = response_time_ms
             if response_time_ms > metrics.max_response_time_ms:
                 metrics.max_response_time_ms = response_time_ms
-            
+
             total = metrics.successful_requests + metrics.failed_requests
             if total > 0:
                 metrics.avg_response_time_ms = (
                     (metrics.avg_response_time_ms * (total - 1) + response_time_ms) / total
                 )
-    
+
     def record_request_failure(
         self,
         request_id: str,
@@ -283,27 +284,27 @@ class ProcessWatchdog:
             if request_id not in self._pending_requests:
                 logger.warning(f"未找到请求记录: {request_id}")
                 return
-            
+
             record = self._pending_requests.pop(request_id)
             record.end_time = time.time()
             record.response_time_ms = response_time_ms
             record.success = False
             record.error = str(error)
-            
+
             metrics = self._current_metrics
             metrics.failed_requests += 1
             metrics.consecutive_errors += 1
             metrics.last_error = str(error)
             metrics.last_error_time = datetime.now()
-            
+
             logger.warning(
                 f"请求失败 [{request_id}]: {error} "
                 f"(连续错误: {metrics.consecutive_errors}/{self.max_consecutive_errors})"
             )
-            
+
             if metrics.consecutive_errors >= self.max_consecutive_errors:
                 self._handle_error_threshold(metrics.consecutive_errors)
-    
+
     def get_current_metrics(self) -> PerformanceMetrics:
         """
         获取当前性能指标
@@ -327,7 +328,7 @@ class ProcessWatchdog:
                 last_error_time=self._current_metrics.last_error_time,
                 start_time=self._current_metrics.start_time,
             )
-    
+
     def get_health_status(self) -> dict[str, Any]:
         """
         获取健康状态报告
@@ -336,7 +337,7 @@ class ProcessWatchdog:
             健康状态字典
         """
         metrics = self.get_current_metrics()
-        
+
         if metrics.consecutive_errors >= self.max_consecutive_errors:
             status = HealthStatus.CRITICAL
         elif (
@@ -347,13 +348,13 @@ class ProcessWatchdog:
             status = HealthStatus.WARNING
         else:
             status = HealthStatus.HEALTHY
-        
+
         uptime = metrics.uptime_seconds
         hours = int(uptime // 3600)
         minutes = int((uptime % 3600) // 60)
         seconds = int(uptime % 60)
         uptime_str = f"{hours}h {minutes}m {seconds}s"
-        
+
         return {
             "status": status.value,
             "uptime": uptime_str,
@@ -375,7 +376,7 @@ class ProcessWatchdog:
                 "max_errors": self.max_consecutive_errors,
             },
         }
-    
+
     def export_metrics_to_file(self, file_path: Path) -> None:
         """
         导出性能指标到文件
@@ -385,7 +386,7 @@ class ProcessWatchdog:
         """
         try:
             metrics = self.get_current_metrics()
-            
+
             data = {
                 "timestamp": datetime.now().isoformat(),
                 "metrics": {
@@ -404,51 +405,51 @@ class ProcessWatchdog:
                 "last_error": metrics.last_error,
                 "last_error_time": metrics.last_error_time.isoformat() if metrics.last_error_time else None,
             }
-            
+
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            
+
             logger.info(f"性能指标已导出到: {file_path}")
-            
+
         except Exception as e:
             logger.error(f"导出性能指标失败: {e}")
-    
+
     def _update_resource_metrics(self) -> None:
         """更新资源使用指标"""
         try:
             memory_info = self._process.memory_info()
             self._current_metrics.memory_usage_mb = memory_info.rss / (1024 * 1024)
-            
+
             self._current_metrics.cpu_percent = self._process.cpu_percent(interval=0.1)
-            
+
         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
             logger.warning(f"无法获取进程资源信息: {e}")
-    
+
     async def _monitor_loop(self) -> None:
         """监控循环"""
         while self._is_running:
             try:
                 await self._check_health()
-                
+
                 self._save_metrics_snapshot()
-                
+
                 await asyncio.sleep(self.check_interval)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"监控循环错误: {e}\n{traceback.format_exc()}")
                 await asyncio.sleep(5)
-    
+
     async def _check_health(self) -> None:
         """检查健康状态"""
         with self._lock:
             self._update_resource_metrics()
-            
+
             metrics = self._current_metrics
-            
+
             if metrics.memory_usage_mb > self.memory_threshold_mb:
                 logger.warning(
                     f"内存使用超限: {metrics.memory_usage_mb:.1f}MB > {self.memory_threshold_mb}MB"
@@ -458,7 +459,7 @@ class ProcessWatchdog:
                         self._on_memory_warning(metrics.memory_usage_mb)
                     except Exception as e:
                         logger.error(f"内存警告回调失败: {e}")
-            
+
             if metrics.cpu_percent > self.cpu_threshold_percent:
                 logger.warning(
                     f"CPU 使用超限: {metrics.cpu_percent:.1f}% > {self.cpu_threshold_percent}%"
@@ -468,7 +469,7 @@ class ProcessWatchdog:
                         self._on_cpu_warning(metrics.cpu_percent)
                     except Exception as e:
                         logger.error(f"CPU 警告回调失败: {e}")
-    
+
     def _handle_error_threshold(self, error_count: int) -> None:
         """
         处理错误达限
@@ -477,30 +478,30 @@ class ProcessWatchdog:
             error_count: 连续错误次数
         """
         logger.critical(f"连续错误次数达到上限: {error_count}")
-        
+
         if self._on_error_threshold_reached:
             try:
                 self._on_error_threshold_reached(error_count)
             except Exception as e:
                 logger.error(f"错误达限回调失败: {e}")
-        
+
         if self.enable_auto_recovery and self._on_auto_recovery_triggered:
             logger.info("触发自动恢复机制...")
             try:
                 self._on_auto_recovery_triggered()
             except Exception as e:
                 logger.error(f"自动恢复回调失败: {e}")
-    
+
     def _save_metrics_snapshot(self) -> None:
         """保存指标快照"""
         snapshot = self.get_current_metrics()
         self._metrics_history.append(snapshot)
-        
+
         while len(self._metrics_history) > self.metrics_history_size:
             self._metrics_history.pop(0)
 
 
-_watchdog_instance: Optional[ProcessWatchdog] = None
+_watchdog_instance: ProcessWatchdog | None = None
 
 
 def init_watchdog(
@@ -510,7 +511,7 @@ def init_watchdog(
     max_consecutive_errors: int = 5,
     metrics_history_size: int = 100,
     enable_auto_recovery: bool = True,
-    health_check_port: Optional[int] = None,
+    health_check_port: int | None = None,
 ) -> ProcessWatchdog:
     """
     初始化全局看门狗实例
@@ -528,11 +529,11 @@ def init_watchdog(
         看门狗实例
     """
     global _watchdog_instance
-    
+
     if _watchdog_instance is not None:
         logger.warning("看门狗实例已存在，返回现有实例")
         return _watchdog_instance
-    
+
     _watchdog_instance = ProcessWatchdog(
         check_interval=check_interval,
         memory_threshold_mb=memory_threshold_mb,
@@ -542,13 +543,13 @@ def init_watchdog(
         enable_auto_recovery=enable_auto_recovery,
         health_check_port=health_check_port,
     )
-    
+
     logger.info("全局看门狗实例已创建")
-    
+
     return _watchdog_instance
 
 
-def get_watchdog() -> Optional[ProcessWatchdog]:
+def get_watchdog() -> ProcessWatchdog | None:
     """
     获取全局看门狗实例
     

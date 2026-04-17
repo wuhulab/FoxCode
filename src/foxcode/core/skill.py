@@ -13,17 +13,15 @@ Skill 是一种封装好的能力，可以被 Agent 在特定场景下调用
 
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import inspect
-import json
 import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -67,7 +65,7 @@ class SkillContext:
     working_dir: Path = field(default_factory=Path.cwd)  # 工作目录
     config: dict[str, Any] = field(default_factory=dict)  # 配置
     metadata: dict[str, Any] = field(default_factory=dict)  # 元数据
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "user_input": self.user_input,
@@ -86,19 +84,19 @@ class SkillResult(BaseModel):
     should_continue: bool = Field(default=True, description="是否继续正常对话流程")
     modified_input: str | None = Field(default=None, description="修改后的用户输入")
     metadata: dict[str, Any] = Field(default_factory=dict, description="元数据")
-    
+
     @classmethod
-    def ok(cls, output: str = "", **kwargs) -> "SkillResult":
+    def ok(cls, output: str = "", **kwargs) -> SkillResult:
         """创建成功结果"""
         return cls(success=True, output=output, **kwargs)
-    
+
     @classmethod
-    def fail(cls, error: str, output: str = "") -> "SkillResult":
+    def fail(cls, error: str, output: str = "") -> SkillResult:
         """创建失败结果"""
         return cls(success=False, error=error, output=output)
-    
+
     @classmethod
-    def redirect(cls, modified_input: str, output: str = "") -> "SkillResult":
+    def redirect(cls, modified_input: str, output: str = "") -> SkillResult:
         """创建重定向结果（修改用户输入后继续）"""
         return cls(
             success=True,
@@ -130,7 +128,7 @@ class BaseSkill(ABC):
     
     所有技能必须继承此类并实现相应方法
     """
-    
+
     # 子类必须定义的类属性
     name: str = "base_skill"
     description: str = "基础技能"
@@ -140,7 +138,7 @@ class BaseSkill(ABC):
     keywords: list[str] = []
     patterns: list[str] = []
     dependencies: list[str] = []
-    
+
     def __init__(self, config: dict[str, Any] | None = None):
         """
         初始化技能
@@ -152,26 +150,26 @@ class BaseSkill(ABC):
         self._state = SkillState.IDLE
         self._logger = logging.getLogger(f"foxcode.skill.{self.name}")
         self._compiled_patterns: list[re.Pattern] = []
-        
+
         # 编译正则模式
         for pattern in self.patterns:
             try:
                 self._compiled_patterns.append(re.compile(pattern, re.IGNORECASE))
             except re.error as e:
                 self._logger.warning(f"Invalid pattern '{pattern}': {e}")
-    
+
     @property
     def state(self) -> SkillState:
         return self._state
-    
+
     @property
     def config(self) -> dict[str, Any]:
         return self._config
-    
+
     def get_config(self, key: str, default: Any = None) -> Any:
         """获取配置值"""
         return self._config.get(key, default)
-    
+
     def get_info(self) -> SkillConfig:
         """获取技能信息"""
         return SkillConfig(
@@ -184,7 +182,7 @@ class BaseSkill(ABC):
             patterns=self.patterns,
             dependencies=self.dependencies,
         )
-    
+
     def can_trigger(self, context: SkillContext) -> bool:
         """
         检查是否可以触发技能
@@ -197,32 +195,32 @@ class BaseSkill(ABC):
         """
         if self._state == SkillState.DISABLED:
             return False
-        
+
         if self.trigger == SkillTrigger.MANUAL:
             return False
-        
+
         user_input = context.user_input.lower()
-        
+
         # 关键词触发
         if self.trigger == SkillTrigger.KEYWORD:
             for keyword in self.keywords:
                 if keyword.lower() in user_input:
                     return True
             return False
-        
+
         # 正则模式触发
         if self.trigger == SkillTrigger.PATTERN:
             for pattern in self._compiled_patterns:
                 if pattern.search(user_input):
                     return True
             return False
-        
+
         # 自动触发（子类可重写）
         if self.trigger == SkillTrigger.AUTO:
             return self._auto_trigger_check(context)
-        
+
         return False
-    
+
     def _auto_trigger_check(self, context: SkillContext) -> bool:
         """
         自动触发检查（子类可重写）
@@ -234,7 +232,7 @@ class BaseSkill(ABC):
             是否应该触发
         """
         return False
-    
+
     async def initialize(self) -> None:
         """
         初始化技能（子类可重写）
@@ -243,7 +241,7 @@ class BaseSkill(ABC):
         """
         self._state = SkillState.IDLE
         self._logger.debug(f"Skill {self.name} initialized")
-    
+
     async def cleanup(self) -> None:
         """
         清理技能资源（子类可重写）
@@ -252,7 +250,7 @@ class BaseSkill(ABC):
         """
         self._state = SkillState.IDLE
         self._logger.debug(f"Skill {self.name} cleaned up")
-    
+
     @abstractmethod
     async def execute(self, context: SkillContext) -> SkillResult:
         """
@@ -265,7 +263,7 @@ class BaseSkill(ABC):
             执行结果
         """
         pass
-    
+
     def get_prompt_injection(self) -> str | None:
         """
         获取要注入到系统提示的内容（子类可重写）
@@ -274,7 +272,7 @@ class BaseSkill(ABC):
             要注入的提示内容，None 表示不注入
         """
         return None
-    
+
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         """
         获取技能提供的工具定义（子类可重写）
@@ -291,12 +289,12 @@ class SkillManager:
     
     管理所有注册的技能，处理技能发现、加载和执行
     """
-    
+
     def __init__(self):
         self._skills: dict[str, BaseSkill] = {}
         self._skill_configs: dict[str, dict[str, Any]] = {}
         self._logger = logging.getLogger("foxcode.skill.manager")
-    
+
     def register(self, skill: BaseSkill, config: dict[str, Any] | None = None) -> bool:
         """
         注册技能
@@ -311,17 +309,17 @@ class SkillManager:
         if skill.name in self._skills:
             self._logger.warning(f"Skill {skill.name} already registered")
             return False
-        
+
         # 应用配置
         if config:
             skill._config = {**skill._config, **config}
-        
+
         self._skills[skill.name] = skill
         self._skill_configs[skill.name] = config or {}
-        
+
         self._logger.info(f"Registered skill: {skill.name}")
         return True
-    
+
     def unregister(self, name: str) -> bool:
         """
         注销技能
@@ -334,28 +332,28 @@ class SkillManager:
         """
         if name not in self._skills:
             return False
-        
+
         skill = self._skills.pop(name)
         self._skill_configs.pop(name, None)
-        
+
         self._logger.info(f"Unregistered skill: {name}")
         return True
-    
+
     def get_skill(self, name: str) -> BaseSkill | None:
         """获取技能实例"""
         return self._skills.get(name)
-    
+
     def list_skills(self) -> list[SkillConfig]:
         """列出所有技能信息"""
         return [skill.get_info() for skill in self._skills.values()]
-    
+
     def list_enabled_skills(self) -> list[BaseSkill]:
         """列出所有启用的技能"""
         return [
             skill for skill in self._skills.values()
             if skill.state != SkillState.DISABLED
         ]
-    
+
     async def initialize_all(self) -> None:
         """初始化所有技能"""
         for skill in self._skills.values():
@@ -364,7 +362,7 @@ class SkillManager:
             except Exception as e:
                 self._logger.error(f"Failed to initialize skill {skill.name}: {e}")
                 skill._state = SkillState.ERROR
-    
+
     async def cleanup_all(self) -> None:
         """清理所有技能"""
         for skill in self._skills.values():
@@ -372,7 +370,7 @@ class SkillManager:
                 await skill.cleanup()
             except Exception as e:
                 self._logger.error(f"Failed to cleanup skill {skill.name}: {e}")
-    
+
     def find_triggered_skills(self, context: SkillContext) -> list[BaseSkill]:
         """
         查找所有被触发的技能
@@ -387,7 +385,7 @@ class SkillManager:
         for skill in self._skills.values():
             if skill.can_trigger(context):
                 triggered.append(skill)
-        
+
         # 按优先级排序
         priority_order = {
             SkillPriority.CRITICAL: 0,
@@ -396,9 +394,9 @@ class SkillManager:
             SkillPriority.LOW: 3,
         }
         triggered.sort(key=lambda s: priority_order.get(s.priority, 2))
-        
+
         return triggered
-    
+
     async def execute_skill(self, name: str, context: SkillContext) -> SkillResult:
         """
         执行指定技能
@@ -413,21 +411,21 @@ class SkillManager:
         skill = self._skills.get(name)
         if not skill:
             return SkillResult.fail(f"Skill not found: {name}")
-        
+
         if skill.state == SkillState.DISABLED:
             return SkillResult.fail(f"Skill {name} is disabled")
-        
+
         try:
             skill._state = SkillState.ACTIVE
             result = await skill.execute(context)
             skill._state = SkillState.IDLE
             return result
-            
+
         except Exception as e:
             skill._state = SkillState.ERROR
             self._logger.error(f"Skill {name} execution failed: {e}")
             return SkillResult.fail(str(e))
-    
+
     async def execute_triggered_skills(self, context: SkillContext) -> list[tuple[str, SkillResult]]:
         """
         执行所有被触发的技能
@@ -440,17 +438,17 @@ class SkillManager:
         """
         results = []
         triggered = self.find_triggered_skills(context)
-        
+
         for skill in triggered:
             result = await self.execute_skill(skill.name, context)
             results.append((skill.name, result))
-            
+
             # 如果技能返回不继续，停止执行后续技能
             if not result.should_continue:
                 break
-        
+
         return results
-    
+
     def get_prompt_injections(self) -> str:
         """
         获取所有技能的提示注入
@@ -462,41 +460,41 @@ class SkillManager:
         """
         if not self._skills:
             return ""
-        
+
         lines = []
         lines.append("## Available Skills")
         lines.append("")
-        
+
         # 在开头列出所有可用的 skills 文件名
         lines.append("**可用的 Skills (使用 Skill 工具调用):**")
         lines.append("")
-        
+
         for skill in self._skills.values():
             status = "✅" if skill.state != SkillState.DISABLED else "❌"
             desc = skill.description[:60] if skill.description else "无描述"
             lines.append(f"- {status} `{skill.name}`: {desc}")
-        
+
         lines.append("")
         lines.append("**调用方式:** 使用 Skill 工具，传入 skill 名称即可激活对应的技能。")
         lines.append("**示例:** `Skill(name=\"error-solver\")` 将激活错误解决技能。")
         lines.append("")
-        
+
         # 添加每个 skill 的详细提示
         injections = []
         for skill in self._skills.values():
             injection = skill.get_prompt_injection()
             if injection:
                 injections.append(f"### {skill.name}\n{injection}")
-        
+
         if injections:
             lines.append("---")
             lines.append("")
             lines.append("## Skills 详细说明")
             lines.append("")
             lines.append("\n\n".join(injections))
-        
+
         return "\n".join(lines)
-    
+
     def get_skill_names(self) -> list[str]:
         """
         获取所有已注册的 skill 名称列表
@@ -505,7 +503,7 @@ class SkillManager:
             skill 名称列表
         """
         return list(self._skills.keys())
-    
+
     def get_enabled_skill_names(self) -> list[str]:
         """
         获取所有启用的 skill 名称列表
@@ -517,7 +515,7 @@ class SkillManager:
             name for name, skill in self._skills.items()
             if skill.state != SkillState.DISABLED
         ]
-    
+
     def get_all_tool_definitions(self) -> list[dict[str, Any]]:
         """
         获取所有技能提供的工具定义
@@ -529,7 +527,7 @@ class SkillManager:
         for skill in self._skills.values():
             tools.extend(skill.get_tool_definitions())
         return tools
-    
+
     async def load_from_directory(self, directory: Path) -> int:
         """
         从目录加载技能
@@ -545,9 +543,9 @@ class SkillManager:
         if not directory.exists():
             self._logger.warning(f"Skill directory not found: {directory}")
             return 0
-        
+
         loaded = 0
-        
+
         # 加载 Python skill 文件
         for skill_file in directory.glob("**/skill.py"):
             try:
@@ -556,7 +554,7 @@ class SkillManager:
                     loaded += 1
             except Exception as e:
                 self._logger.error(f"Failed to load skill from {skill_file}: {e}")
-        
+
         # 加载 Markdown skill 文件 (.foxcode/skills/**/*.md)
         for skill_file in directory.glob("**/*.md"):
             try:
@@ -565,9 +563,9 @@ class SkillManager:
                     loaded += 1
             except Exception as e:
                 self._logger.error(f"Failed to load skill from markdown {skill_file}: {e}")
-        
+
         return loaded
-    
+
     def _load_skill_from_markdown(self, file_path: Path) -> BaseSkill | None:
         """
         从 Markdown 文件加载技能
@@ -585,17 +583,17 @@ class SkillManager:
         """
         try:
             content = file_path.read_text(encoding="utf-8")
-            
+
             # 提取名称
             name = file_path.stem
-            
+
             # 尝试从第一行标题提取名称
             lines = content.split("\n")
             for line in lines[:5]:
                 if line.startswith("# "):
                     name = line[2:].strip()
                     break
-            
+
             # 提取描述（第一个非标题非空行）
             description = ""
             for line in lines[1:10]:
@@ -603,36 +601,36 @@ class SkillManager:
                 if line and not line.startswith("#"):
                     description = line[:200]
                     break
-            
+
             # 创建动态 skill 类
             class MarkdownSkill(BaseSkill):
                 pass
-            
+
             MarkdownSkill.name = name.lower().replace(" ", "-").replace("_", "-")
             MarkdownSkill.description = description or f"Skill from {file_path.name}"
             MarkdownSkill.version = "1.0.0"
             MarkdownSkill.priority = SkillPriority.NORMAL
             MarkdownSkill.trigger = SkillTrigger.MANUAL
-            
+
             # 存储原始内容
             MarkdownSkill._markdown_content = content
             MarkdownSkill._markdown_file = file_path
-            
+
             def get_prompt_injection(self) -> str | None:
                 return self._markdown_content
-            
+
             async def execute(self, context: SkillContext) -> SkillResult:
                 return SkillResult.ok(f"Skill '{self.name}' activated from {self._markdown_file}")
-            
+
             MarkdownSkill.get_prompt_injection = get_prompt_injection
             MarkdownSkill.execute = execute
-            
+
             return MarkdownSkill()
-            
+
         except Exception as e:
             self._logger.error(f"Failed to parse markdown skill {file_path}: {e}")
             return None
-    
+
     async def _load_skill_from_file(self, file_path: Path) -> BaseSkill | None:
         """
         从文件加载技能
@@ -647,10 +645,10 @@ class SkillManager:
         spec = importlib.util.spec_from_file_location("skill_module", file_path)
         if not spec or not spec.loader:
             return None
-        
+
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        
+
         # 查找 BaseSkill 的子类
         for name in dir(module):
             obj = getattr(module, name)
@@ -660,9 +658,9 @@ class SkillManager:
                 and obj is not BaseSkill
             ):
                 return obj()
-        
+
         return None
-    
+
     def enable_skill(self, name: str) -> bool:
         """启用技能"""
         skill = self._skills.get(name)
@@ -670,7 +668,7 @@ class SkillManager:
             skill._state = SkillState.IDLE
             return True
         return False
-    
+
     def disable_skill(self, name: str) -> bool:
         """禁用技能"""
         skill = self._skills.get(name)
@@ -690,14 +688,14 @@ class ErrorSolverSkill(BaseSkill):
     
     分析和修复编程错误，支持多种编程语言
     """
-    
+
     name = "error-solver"
     description = "分析和修复编程错误，支持多种编程语言"
     version = "1.0.0"
     priority = SkillPriority.HIGH
     trigger = SkillTrigger.KEYWORD
     keywords = ["error", "错误", "bug", "fix", "修复", "debug", "调试", "exception", "异常"]
-    
+
     def get_prompt_injection(self) -> str | None:
         return """
 当用户遇到错误时，请按以下步骤处理：
@@ -724,14 +722,14 @@ class SkillCreatorSkill(BaseSkill):
     
     用于创建新的技能
     """
-    
+
     name = "skill-creator"
     description = "创建新的技能，支持生成技能模板和配置"
     version = "1.0.0"
     priority = SkillPriority.NORMAL
     trigger = SkillTrigger.KEYWORD
     keywords = ["create skill", "创建技能", "new skill", "新建技能"]
-    
+
     def get_prompt_injection(self) -> str | None:
         return """
 当用户想要创建新技能时，请帮助用户：
@@ -767,14 +765,14 @@ class CodeReviewSkill(BaseSkill):
     
     提供代码审查和质量检查功能
     """
-    
+
     name = "code-review"
     description = "代码审查和质量检查"
     version = "1.0.0"
     priority = SkillPriority.NORMAL
     trigger = SkillTrigger.KEYWORD
     keywords = ["review", "审查", "code review", "代码审查", "check code", "检查代码"]
-    
+
     def get_prompt_injection(self) -> str | None:
         return """
 当用户请求代码审查时，请检查以下方面：
@@ -798,14 +796,14 @@ class DocumentationSkill(BaseSkill):
     
     自动生成代码文档
     """
-    
+
     name = "documentation"
     description = "生成代码文档和注释"
     version = "1.0.0"
     priority = SkillPriority.LOW
     trigger = SkillTrigger.KEYWORD
     keywords = ["document", "文档", "docstring", "注释", "comment", "generate docs"]
-    
+
     def get_prompt_injection(self) -> str | None:
         return """
 当用户需要生成文档时，请：
@@ -830,14 +828,14 @@ class RefactoringSkill(BaseSkill):
     
     提供代码重构建议和实现
     """
-    
+
     name = "refactoring"
     description = "代码重构和优化"
     version = "1.0.0"
     priority = SkillPriority.NORMAL
     trigger = SkillTrigger.KEYWORD
     keywords = ["refactor", "重构", "optimize", "优化", "clean code", "整洁代码"]
-    
+
     def get_prompt_injection(self) -> str | None:
         return """
 当用户请求重构时，请考虑：
@@ -861,14 +859,14 @@ class TestingSkill(BaseSkill):
     
     生成和运行测试用例
     """
-    
+
     name = "testing"
     description = "生成和运行测试用例"
     version = "1.0.0"
     priority = SkillPriority.NORMAL
     trigger = SkillTrigger.KEYWORD
     keywords = ["test", "测试", "unit test", "单元测试", "pytest", "jest"]
-    
+
     def get_prompt_injection(self) -> str | None:
         return """
 当用户需要测试时，请：
@@ -901,8 +899,8 @@ def register_builtin_skills() -> None:
         RefactoringSkill(),
         TestingSkill(),
     ]
-    
+
     for skill in builtin_skills:
         skill_manager.register(skill)
-    
+
     logger.info(f"Registered {len(builtin_skills)} builtin skills")

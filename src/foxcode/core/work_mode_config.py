@@ -48,18 +48,18 @@ class WorkModeConfig(BaseModel):
         default=WorkModeStatus.ENABLED,
         description="Work模式状态"
     )
-    
+
     # 执行模式
     execution_mode: AgentExecutionMode = Field(
         default=AgentExecutionMode.SINGLE_AGENT,
         description="Agent执行模式"
     )
-    
+
     # 任务配置
     long_work_mode: bool = Field(default=True, description="是否启用长期工作模式")
     report_interval: int = Field(default=1, ge=1, description="报告间隔（每个流程完成后）")
     max_concurrent_tasks: int = Field(default=3, ge=1, le=10, description="最大并发任务数")
-    
+
     # 目标子文件夹配置
     target_subfolders: list[str] = Field(
         default_factory=list,
@@ -69,16 +69,16 @@ class WorkModeConfig(BaseModel):
         default=True,
         description="是否自动检测子文件夹"
     )
-    
+
     # 记录保存配置
     save_records: bool = Field(default=True, description="是否保存任务记录")
     records_dir: str = Field(default=".foxcode/work_records", description="记录保存目录")
     max_records: int = Field(default=100, ge=1, description="最大保存记录数")
-    
+
     def is_enabled(self) -> bool:
         """检查Work模式是否启用"""
         return self.enabled and self.status == WorkModeStatus.ENABLED
-    
+
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         return {

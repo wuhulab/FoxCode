@@ -13,15 +13,12 @@ FoxCode 智能任务规划器
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -102,7 +99,7 @@ class SubTask:
     notes: str = ""
     artifacts: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         return {
@@ -124,9 +121,9 @@ class SubTask:
             "artifacts": self.artifacts,
             "metadata": self.metadata,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SubTask":
+    def from_dict(cls, data: dict[str, Any]) -> SubTask:
         """从字典创建"""
         data["task_type"] = TaskType(data["task_type"])
         data["priority"] = TaskPriority(data["priority"])
@@ -137,16 +134,16 @@ class SubTask:
         if data.get("completed_at"):
             data["completed_at"] = datetime.fromisoformat(data["completed_at"])
         return cls(**data)
-    
+
     def is_ready(self, completed_ids: set[str]) -> bool:
         """检查任务是否准备就绪"""
         return all(dep_id in completed_ids for dep_id in self.dependencies)
-    
+
     def start(self) -> None:
         """开始任务"""
         self.status = TaskStatus.IN_PROGRESS
         self.started_at = datetime.now()
-    
+
     def complete(self, notes: str = "") -> None:
         """完成任务"""
         self.status = TaskStatus.COMPLETED
@@ -155,7 +152,7 @@ class SubTask:
             self.actual_effort = int((self.completed_at - self.started_at).total_seconds() / 60)
         if notes:
             self.notes = notes
-    
+
     def fail(self, reason: str = "") -> None:
         """标记任务失败"""
         self.status = TaskStatus.FAILED
@@ -176,39 +173,39 @@ class DependencyGraph:
     nodes: list[str] = field(default_factory=list)
     edges: list[tuple[str, str]] = field(default_factory=list)
     levels: list[list[str]] = field(default_factory=list)
-    
+
     def get_dependencies(self, task_id: str) -> list[str]:
         """获取任务的所有依赖"""
         return [from_id for from_id, to_id in self.edges if to_id == task_id]
-    
+
     def get_dependents(self, task_id: str) -> list[str]:
         """获取依赖此任务的所有任务"""
         return [to_id for from_id, to_id in self.edges if from_id == task_id]
-    
+
     def has_cycle(self) -> bool:
         """检查是否存在循环依赖"""
         visited = set()
         rec_stack = set()
-        
+
         def dfs(node: str) -> bool:
             visited.add(node)
             rec_stack.add(node)
-            
+
             for dependent in self.get_dependents(node):
                 if dependent not in visited:
                     if dfs(dependent):
                         return True
                 elif dependent in rec_stack:
                     return True
-            
+
             rec_stack.remove(node)
             return False
-        
+
         for node in self.nodes:
             if node not in visited:
                 if dfs(node):
                     return True
-        
+
         return False
 
 
@@ -229,12 +226,12 @@ class EffortEstimate:
     most_likely_minutes: int = 0
     confidence: float = 0.7
     factors: list[str] = field(default_factory=list)
-    
+
     @property
     def expected_minutes(self) -> float:
         """期望值（使用 PERT 公式）"""
         return (self.min_minutes + 4 * self.most_likely_minutes + self.max_minutes) / 6
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "min_minutes": self.min_minutes,
@@ -267,14 +264,14 @@ class TaskPlan:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def get_task(self, task_id: str) -> SubTask | None:
         """获取任务"""
         for task in self.tasks:
             if task.id == task_id:
                 return task
         return None
-    
+
     def get_completed_ids(self) -> set[str]:
         """获取已完成任务的 ID 集合"""
         return {t.id for t in self.tasks if t.status == TaskStatus.COMPLETED}
@@ -311,7 +308,7 @@ class ProgressReport:
     estimated_remaining_time: int = 0
     current_task: SubTask | None = None
     blockers: list[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "total_tasks": self.total_tasks,
@@ -359,7 +356,7 @@ class IntelligentTaskPlanner:
         >>> graph = planner.analyze_dependencies(tasks)
         >>> sorted_tasks = planner.prioritize_tasks(tasks)
     """
-    
+
     # 任务分解模板
     DECOMPOSITION_TEMPLATES = {
         "认证系统": [
@@ -410,7 +407,7 @@ class IntelligentTaskPlanner:
             ("编写部署文档", TaskType.DOCUMENTATION, TaskPriority.LOW),
         ],
     }
-    
+
     # 关键词到任务类型的映射
     KEYWORD_TYPE_MAP = {
         "设计": TaskType.DESIGN,
@@ -426,7 +423,7 @@ class IntelligentTaskPlanner:
         "研究": TaskType.RESEARCH,
         "审查": TaskType.REVIEW,
     }
-    
+
     # 关键词到优先级的映射
     KEYWORD_PRIORITY_MAP = {
         "关键": TaskPriority.CRITICAL,
@@ -439,7 +436,7 @@ class IntelligentTaskPlanner:
         "可选": TaskPriority.LOW,
         "低": TaskPriority.LOW,
     }
-    
+
     def __init__(self, config: TaskPlannerConfig | None = None):
         """
         初始化任务规划器
@@ -449,13 +446,13 @@ class IntelligentTaskPlanner:
         """
         self.config = config or TaskPlannerConfig()
         self._task_counter = 0
-        logger.info(f"智能任务规划器初始化完成")
-    
+        logger.info("智能任务规划器初始化完成")
+
     def _generate_task_id(self) -> str:
         """生成任务 ID"""
         self._task_counter += 1
         return f"task-{self._task_counter:03d}"
-    
+
     async def decompose_task(self, description: str) -> list[SubTask]:
         """
         分解任务
@@ -469,10 +466,10 @@ class IntelligentTaskPlanner:
             子任务列表
         """
         tasks = []
-        
+
         # 检测任务类型并应用模板
         matched_template = self._match_template(description)
-        
+
         if matched_template:
             # 使用模板生成任务
             for i, (title, task_type, priority) in enumerate(matched_template):
@@ -491,51 +488,51 @@ class IntelligentTaskPlanner:
         else:
             # 基于关键词分析分解
             tasks = self._decompose_by_keywords(description)
-        
+
         # 限制子任务数量
         if len(tasks) > self.config.max_subtasks:
             tasks = tasks[:self.config.max_subtasks]
             logger.warning(f"子任务数量超过限制，已截断为 {self.config.max_subtasks}")
-        
+
         logger.info(f"任务分解完成，生成 {len(tasks)} 个子任务")
         return tasks
-    
+
     def _match_template(self, description: str) -> list[tuple] | None:
         """匹配任务模板"""
         desc_lower = description.lower()
-        
+
         for keyword, template in self.DECOMPOSITION_TEMPLATES.items():
             if keyword in desc_lower or keyword in description:
                 return template
-        
+
         return None
-    
+
     def _decompose_by_keywords(self, description: str) -> list[SubTask]:
         """基于关键词分解任务"""
         tasks = []
-        
+
         # 按句子分割
         sentences = re.split(r'[，,。.；;]\s*', description)
-        
+
         for i, sentence in enumerate(sentences):
             sentence = sentence.strip()
             if not sentence or len(sentence) < 3:
                 continue
-            
+
             # 检测任务类型
             task_type = TaskType.CODING
             for keyword, t_type in self.KEYWORD_TYPE_MAP.items():
                 if keyword in sentence:
                     task_type = t_type
                     break
-            
+
             # 检测优先级
             priority = TaskPriority.NORMAL
             for keyword, p in self.KEYWORD_PRIORITY_MAP.items():
                 if keyword in sentence:
                     priority = p
                     break
-            
+
             task = SubTask(
                 id=f"{self._generate_task_id()}-{i+1:02d}",
                 title=sentence[:100],  # 限制标题长度
@@ -545,7 +542,7 @@ class IntelligentTaskPlanner:
                 estimated_effort=self._estimate_from_type(task_type),
             )
             tasks.append(task)
-        
+
         # 如果没有分解出任务，创建一个默认任务
         if not tasks:
             tasks.append(SubTask(
@@ -554,9 +551,9 @@ class IntelligentTaskPlanner:
                 description=description,
                 estimated_effort=int(self.config.default_effort_hours * 60),
             ))
-        
+
         return tasks
-    
+
     def _estimate_from_type(self, task_type: TaskType) -> int:
         """根据任务类型估算工作量"""
         estimates = {
@@ -572,7 +569,7 @@ class IntelligentTaskPlanner:
             TaskType.CONFIGURATION: 30, # 30 分钟
         }
         return estimates.get(task_type, 60)
-    
+
     def analyze_dependencies(self, tasks: list[SubTask]) -> DependencyGraph:
         """
         分析任务依赖关系
@@ -585,25 +582,25 @@ class IntelligentTaskPlanner:
         """
         graph = DependencyGraph()
         graph.nodes = [t.id for t in tasks]
-        
+
         # 收集显式依赖
         for task in tasks:
             for dep_id in task.dependencies:
                 graph.edges.append((dep_id, task.id))
-        
+
         # 自动检测隐式依赖
         if self.config.detect_dependencies:
             graph = self._detect_implicit_dependencies(tasks, graph)
-        
+
         # 计算拓扑层级
         graph.levels = self._topological_sort(tasks, graph)
-        
+
         # 检查循环依赖
         if graph.has_cycle():
             logger.warning("检测到循环依赖，可能导致任务阻塞")
-        
+
         return graph
-    
+
     def _detect_implicit_dependencies(
         self,
         tasks: list[SubTask],
@@ -623,23 +620,23 @@ class IntelligentTaskPlanner:
             TaskType.CONFIGURATION: 1,
             TaskType.DEPLOYMENT: 4,
         }
-        
+
         # 按类型顺序添加隐式依赖
         for i, task in enumerate(tasks):
             task_order = type_order.get(task.task_type, 1)
-            
+
             for j, prev_task in enumerate(tasks[:i]):
                 prev_order = type_order.get(prev_task.task_type, 1)
-                
+
                 # 如果前一个任务的类型顺序小于当前任务，添加依赖
                 if prev_order < task_order and prev_task.id not in task.dependencies:
                     # 检查是否已经存在依赖关系
                     if not any(e[0] == prev_task.id and e[1] == task.id for e in graph.edges):
                         graph.edges.append((prev_task.id, task.id))
                         task.dependencies.append(prev_task.id)
-        
+
         return graph
-    
+
     def _topological_sort(
         self,
         tasks: list[SubTask],
@@ -650,15 +647,15 @@ class IntelligentTaskPlanner:
         in_degree = {t.id: 0 for t in tasks}
         for from_id, to_id in graph.edges:
             in_degree[to_id] += 1
-        
+
         # 按层级分组
         levels = []
         remaining = set(in_degree.keys())
-        
+
         while remaining:
             # 找出入度为 0 的节点
             level = [node for node in remaining if in_degree[node] == 0]
-            
+
             if not level:
                 # 存在循环依赖，按优先级选择
                 remaining_tasks = [t for t in tasks if t.id in remaining]
@@ -666,18 +663,18 @@ class IntelligentTaskPlanner:
                     {"critical": 0, "high": 1, "normal": 2, "low": 3}.get(t.priority.value, 2)
                 ))
                 level = [remaining_tasks[0].id]
-            
+
             levels.append(level)
-            
+
             # 移除当前层节点，更新入度
             for node in level:
                 remaining.remove(node)
                 for from_id, to_id in graph.edges:
                     if from_id == node:
                         in_degree[to_id] -= 1
-        
+
         return levels
-    
+
     def prioritize_tasks(self, tasks: list[SubTask]) -> list[SubTask]:
         """
         任务优先级排序
@@ -697,7 +694,7 @@ class IntelligentTaskPlanner:
                 TaskPriority.NORMAL: 2,
                 TaskPriority.LOW: 3,
             }
-            
+
             # 状态权重（已完成的排后面）
             status_weights = {
                 TaskStatus.PENDING: 0,
@@ -708,15 +705,15 @@ class IntelligentTaskPlanner:
                 TaskStatus.FAILED: 1,
                 TaskStatus.SKIPPED: 2,
             }
-            
+
             return (
                 status_weights.get(task.status, 0),
                 priority_weights.get(task.priority, 2),
                 len(task.dependencies),  # 依赖少的优先
             )
-        
+
         return sorted(tasks, key=priority_score)
-    
+
     def estimate_effort(self, task: SubTask) -> EffortEstimate:
         """
         估算任务工作量
@@ -728,18 +725,18 @@ class IntelligentTaskPlanner:
             工作量估算
         """
         base_effort = self._estimate_from_type(task.task_type)
-        
+
         # 根据描述长度调整
         desc_factor = min(len(task.description) / 200, 2.0)
-        
+
         # 根据依赖数量调整
         dep_factor = 1 + len(task.dependencies) * 0.1
-        
+
         # 计算估算范围
         most_likely = int(base_effort * desc_factor * dep_factor)
         min_minutes = int(most_likely * 0.5)
         max_minutes = int(most_likely * 2.0)
-        
+
         # 影响因素
         factors = []
         if desc_factor > 1.2:
@@ -748,7 +745,7 @@ class IntelligentTaskPlanner:
             factors.append("存在依赖")
         if task.task_type == TaskType.RESEARCH:
             factors.append("不确定性高")
-        
+
         return EffortEstimate(
             min_minutes=min_minutes,
             max_minutes=max_minutes,
@@ -756,7 +753,7 @@ class IntelligentTaskPlanner:
             confidence=0.7 if not factors else 0.5,
             factors=factors,
         )
-    
+
     def track_progress(self, plan: TaskPlan) -> ProgressReport:
         """
         追踪进度
@@ -768,38 +765,38 @@ class IntelligentTaskPlanner:
             进度报告
         """
         tasks = plan.tasks
-        
+
         # 统计各状态任务数量
         status_counts = {}
         for status in TaskStatus:
             status_counts[status] = sum(1 for t in tasks if t.status == status)
-        
+
         # 计算工作量
         total_estimated = sum(t.estimated_effort for t in tasks)
         total_actual = sum(t.actual_effort for t in tasks)
-        
+
         # 计算进度百分比
         completed = status_counts[TaskStatus.COMPLETED]
         total = len(tasks)
         progress = (completed / total * 100) if total > 0 else 0
-        
+
         # 估算剩余时间
         remaining_tasks = [t for t in tasks if t.status not in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)]
         remaining_effort = sum(t.estimated_effort for t in remaining_tasks)
-        
+
         # 获取当前任务
         current_task = None
         for task in tasks:
             if task.status == TaskStatus.IN_PROGRESS:
                 current_task = task
                 break
-        
+
         # 获取阻塞项
         blockers = []
         for task in tasks:
             if task.status == TaskStatus.BLOCKED:
                 blockers.append(f"{task.id}: {task.title}")
-        
+
         return ProgressReport(
             total_tasks=total,
             completed_tasks=completed,
@@ -814,7 +811,7 @@ class IntelligentTaskPlanner:
             current_task=current_task,
             blockers=blockers,
         )
-    
+
     def suggest_next_task(self, plan: TaskPlan) -> SubTask | None:
         """
         建议下一个任务
@@ -826,25 +823,25 @@ class IntelligentTaskPlanner:
             建议的任务，如果没有则返回 None
         """
         completed_ids = plan.get_completed_ids()
-        
+
         # 找出准备就绪的任务
         ready_tasks = []
         for task in plan.tasks:
             if task.status == TaskStatus.PENDING and task.is_ready(completed_ids):
                 ready_tasks.append(task)
-        
+
         if not ready_tasks:
             # 检查是否有进行中的任务
             for task in plan.tasks:
                 if task.status == TaskStatus.IN_PROGRESS:
                     return task
             return None
-        
+
         # 按优先级排序
         ready_tasks = self.prioritize_tasks(ready_tasks)
-        
+
         return ready_tasks[0] if ready_tasks else None
-    
+
     def identify_parallel_tasks(self, tasks: list[SubTask]) -> list[list[SubTask]]:
         """
         识别可并行执行的任务
@@ -857,18 +854,18 @@ class IntelligentTaskPlanner:
         """
         if not self.config.parallel_execution:
             return [[t] for t in tasks]
-        
+
         graph = self.analyze_dependencies(tasks)
-        
+
         # 按拓扑层级分组
         parallel_groups = []
         for level in graph.levels:
             group = [t for t in tasks if t.id in level]
             if group:
                 parallel_groups.append(group)
-        
+
         return parallel_groups
-    
+
     def create_plan(
         self,
         title: str,
@@ -887,7 +884,7 @@ class IntelligentTaskPlanner:
             任务计划
         """
         plan_id = f"plan-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
+
         return TaskPlan(
             id=plan_id,
             title=title,

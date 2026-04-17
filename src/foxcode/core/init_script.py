@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +87,7 @@ class InitScriptGenerator:
     
     自动检测项目依赖和环境需求，生成跨平台兼容的初始化脚本
     """
-    
+
     def __init__(self, working_dir: Path):
         """
         初始化脚本生成器
@@ -98,14 +97,14 @@ class InitScriptGenerator:
         """
         self.working_dir = Path(working_dir)
         self._environment: ProjectEnvironment | None = None
-    
+
     @property
     def environment(self) -> ProjectEnvironment:
         """获取项目环境信息（延迟检测）"""
         if self._environment is None:
             self._environment = self.detect_environment()
         return self._environment
-    
+
     def detect_environment(self) -> ProjectEnvironment:
         """
         检测项目环境和依赖
@@ -116,71 +115,71 @@ class InitScriptGenerator:
         env = ProjectEnvironment(
             project_name=self.working_dir.name,
         )
-        
+
         # 检测 Python 项目
         if self._detect_python_project(env):
             env.project_type = ProjectType.PYTHON
-        
+
         # 检测 Node.js 项目
         if self._detect_nodejs_project(env):
             if env.project_type == ProjectType.PYTHON:
                 env.project_type = ProjectType.MIXED
             else:
                 env.project_type = ProjectType.NODEJS
-        
+
         # 检测 Go 项目
         if self._detect_go_project(env):
             if env.project_type in (ProjectType.PYTHON, ProjectType.NODEJS):
                 env.project_type = ProjectType.MIXED
             else:
                 env.project_type = ProjectType.GO
-        
+
         # 检测 Rust 项目
         if self._detect_rust_project(env):
             if env.project_type in (ProjectType.PYTHON, ProjectType.NODEJS, ProjectType.GO):
                 env.project_type = ProjectType.MIXED
             else:
                 env.project_type = ProjectType.RUST
-        
+
         # 检测 Java 项目
         if self._detect_java_project(env):
             if env.project_type != ProjectType.UNKNOWN:
                 env.project_type = ProjectType.MIXED
             else:
                 env.project_type = ProjectType.JAVA
-        
+
         logger.info(f"检测到项目类型: {env.project_type.value}")
         return env
-    
+
     def _detect_python_project(self, env: ProjectEnvironment) -> bool:
         """检测 Python 项目"""
         found = False
-        
+
         # 检测 requirements.txt
         requirements_file = self.working_dir / "requirements.txt"
         if requirements_file.exists():
             found = True
             deps = self._parse_requirements_txt(requirements_file)
             env.dependencies.extend(deps)
-        
+
         # 检测 pyproject.toml
         pyproject_file = self.working_dir / "pyproject.toml"
         if pyproject_file.exists():
             found = True
             deps = self._parse_pyproject_toml(pyproject_file)
             env.dependencies.extend(deps)
-        
+
         # 检测 setup.py
         setup_file = self.working_dir / "setup.py"
         if setup_file.exists():
             found = True
-        
+
         # 检测 Pipfile
         pipfile = self.working_dir / "Pipfile"
         if pipfile.exists():
             found = True
             env.required_tools.append("pipenv")
-        
+
         # 检测 .python-version
         python_version_file = self.working_dir / ".python-version"
         if python_version_file.exists():
@@ -188,30 +187,30 @@ class InitScriptGenerator:
                 env.python_version = python_version_file.read_text().strip()
             except Exception:
                 pass
-        
+
         return found
-    
+
     def _detect_nodejs_project(self, env: ProjectEnvironment) -> bool:
         """检测 Node.js 项目"""
         found = False
-        
+
         # 检测 package.json
         package_json = self.working_dir / "package.json"
         if package_json.exists():
             found = True
             deps = self._parse_package_json(package_json)
             env.dependencies.extend(deps)
-        
+
         # 检测 yarn.lock
         yarn_lock = self.working_dir / "yarn.lock"
         if yarn_lock.exists():
             env.required_tools.append("yarn")
-        
+
         # 检测 pnpm-lock.yaml
         pnpm_lock = self.working_dir / "pnpm-lock.yaml"
         if pnpm_lock.exists():
             env.required_tools.append("pnpm")
-        
+
         # 检测 .nvmrc
         nvmrc = self.working_dir / ".nvmrc"
         if nvmrc.exists():
@@ -219,9 +218,9 @@ class InitScriptGenerator:
                 env.node_version = nvmrc.read_text().strip()
             except Exception:
                 pass
-        
+
         return found
-    
+
     def _detect_go_project(self, env: ProjectEnvironment) -> bool:
         """检测 Go 项目"""
         go_mod = self.working_dir / "go.mod"
@@ -229,7 +228,7 @@ class InitScriptGenerator:
             env.required_tools.append("go")
             return True
         return False
-    
+
     def _detect_rust_project(self, env: ProjectEnvironment) -> bool:
         """检测 Rust 项目"""
         cargo_toml = self.working_dir / "Cargo.toml"
@@ -237,21 +236,21 @@ class InitScriptGenerator:
             env.required_tools.append("cargo")
             return True
         return False
-    
+
     def _detect_java_project(self, env: ProjectEnvironment) -> bool:
         """检测 Java 项目"""
         pom_xml = self.working_dir / "pom.xml"
         if pom_xml.exists():
             env.required_tools.append("maven")
             return True
-        
+
         build_gradle = self.working_dir / "build.gradle"
         if build_gradle.exists():
             env.required_tools.append("gradle")
             return True
-        
+
         return False
-    
+
     def _parse_requirements_txt(self, file_path: Path) -> list[ProjectDependency]:
         """解析 requirements.txt 文件"""
         deps = []
@@ -261,7 +260,7 @@ class InitScriptGenerator:
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                
+
                 # 解析依赖名称和版本
                 match = re.match(r"^([a-zA-Z0-9_-]+)\s*([<>=!]+.+)?", line)
                 if match:
@@ -273,9 +272,9 @@ class InitScriptGenerator:
                     deps.append(dep)
         except Exception as e:
             logger.warning(f"解析 requirements.txt 失败: {e}")
-        
+
         return deps
-    
+
     def _parse_pyproject_toml(self, file_path: Path) -> list[ProjectDependency]:
         """解析 pyproject.toml 文件"""
         deps = []
@@ -284,10 +283,10 @@ class InitScriptGenerator:
                 import tomllib
             else:
                 import tomli as tomllib
-            
+
             with open(file_path, "rb") as f:
                 data = tomllib.load(f)
-            
+
             # 解析 project.dependencies
             project = data.get("project", {})
             for dep_str in project.get("dependencies", []):
@@ -299,7 +298,7 @@ class InitScriptGenerator:
                         dep_type=DependencyType.PIP,
                     )
                     deps.append(dep)
-            
+
             # 解析开发依赖
             optional_deps = project.get("optional-dependencies", {})
             for group_deps in optional_deps.values():
@@ -315,18 +314,18 @@ class InitScriptGenerator:
                         deps.append(dep)
         except Exception as e:
             logger.warning(f"解析 pyproject.toml 失败: {e}")
-        
+
         return deps
-    
+
     def _parse_package_json(self, file_path: Path) -> list[ProjectDependency]:
         """解析 package.json 文件"""
         deps = []
         try:
             import json
-            
-            with open(file_path, "r", encoding="utf-8") as f:
+
+            with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
-            
+
             # 解析 dependencies
             for name, version in data.get("dependencies", {}).items():
                 dep = ProjectDependency(
@@ -335,7 +334,7 @@ class InitScriptGenerator:
                     dep_type=DependencyType.NPM,
                 )
                 deps.append(dep)
-            
+
             # 解析 devDependencies
             for name, version in data.get("devDependencies", {}).items():
                 dep = ProjectDependency(
@@ -347,9 +346,9 @@ class InitScriptGenerator:
                 deps.append(dep)
         except Exception as e:
             logger.warning(f"解析 package.json 失败: {e}")
-        
+
         return deps
-    
+
     def generate_init_script(self, output_dir: Path | None = None) -> dict[str, Path]:
         """
         生成初始化脚本
@@ -362,29 +361,29 @@ class InitScriptGenerator:
         """
         output_dir = output_dir or self.working_dir / ".foxcode"
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         scripts = {}
-        
+
         # 生成 Unix 脚本 (init.sh)
         unix_script = self._generate_unix_script()
         unix_path = output_dir / "init.sh"
         unix_path.write_text(unix_script, encoding="utf-8")
         scripts["unix"] = unix_path
         logger.info(f"已生成 Unix 初始化脚本: {unix_path}")
-        
+
         # 生成 Windows 脚本 (init.bat)
         windows_script = self._generate_windows_script()
         windows_path = output_dir / "init.bat"
         windows_path.write_text(windows_script, encoding="utf-8")
         scripts["windows"] = windows_path
         logger.info(f"已生成 Windows 初始化脚本: {windows_path}")
-        
+
         return scripts
-    
+
     def _generate_unix_script(self) -> str:
         """生成 Unix 初始化脚本内容"""
         env = self.environment
-        
+
         lines = [
             "#!/bin/bash",
             "# FoxCode 项目初始化脚本",
@@ -397,7 +396,7 @@ class InitScriptGenerator:
             "echo '========================'",
             "",
         ]
-        
+
         # 检测必需工具
         if env.required_tools:
             lines.append("# 检测必需工具")
@@ -408,40 +407,40 @@ class InitScriptGenerator:
                 lines.append("    exit 1")
                 lines.append("fi")
             lines.append("")
-        
+
         # Python 项目初始化
         if env.project_type in (ProjectType.PYTHON, ProjectType.MIXED):
             lines.extend(self._generate_python_init_unix())
-        
+
         # Node.js 项目初始化
         if env.project_type in (ProjectType.NODEJS, ProjectType.MIXED):
             lines.extend(self._generate_nodejs_init_unix())
-        
+
         # Go 项目初始化
         if env.project_type == ProjectType.GO:
             lines.extend(self._generate_go_init_unix())
-        
+
         # Rust 项目初始化
         if env.project_type == ProjectType.RUST:
             lines.extend(self._generate_rust_init_unix())
-        
+
         # Java 项目初始化
         if env.project_type == ProjectType.JAVA:
             lines.extend(self._generate_java_init_unix())
-        
+
         lines.extend([
             "",
             "echo ''",
             "echo '✅ 项目初始化完成！'",
             "echo ''",
         ])
-        
+
         return "\n".join(lines)
-    
+
     def _generate_windows_script(self) -> str:
         """生成 Windows 初始化脚本内容"""
         env = self.environment
-        
+
         lines = [
             "@echo off",
             "REM FoxCode 项目初始化脚本",
@@ -452,7 +451,7 @@ class InitScriptGenerator:
             "echo ========================",
             "",
         ]
-        
+
         # 检测必需工具
         if env.required_tools:
             lines.append("REM 检测必需工具")
@@ -464,36 +463,36 @@ class InitScriptGenerator:
                 lines.append("    exit /b 1")
                 lines.append(")")
             lines.append("")
-        
+
         # Python 项目初始化
         if env.project_type in (ProjectType.PYTHON, ProjectType.MIXED):
             lines.extend(self._generate_python_init_windows())
-        
+
         # Node.js 项目初始化
         if env.project_type in (ProjectType.NODEJS, ProjectType.MIXED):
             lines.extend(self._generate_nodejs_init_windows())
-        
+
         # Go 项目初始化
         if env.project_type == ProjectType.GO:
             lines.extend(self._generate_go_init_windows())
-        
+
         # Rust 项目初始化
         if env.project_type == ProjectType.RUST:
             lines.extend(self._generate_rust_init_windows())
-        
+
         # Java 项目初始化
         if env.project_type == ProjectType.JAVA:
             lines.extend(self._generate_java_init_windows())
-        
+
         lines.extend([
             "",
             "echo.",
             "echo ✅ 项目初始化完成！",
             "echo.",
         ])
-        
+
         return "\n".join(lines)
-    
+
     def _generate_python_init_unix(self) -> list[str]:
         """生成 Python 项目初始化命令（Unix）"""
         lines = [
@@ -502,9 +501,9 @@ class InitScriptGenerator:
             "echo ''",
             "echo '📦 初始化 Python 环境...'",
         ]
-        
+
         env = self.environment
-        
+
         # 创建虚拟环境
         lines.append("if [ ! -d 'venv' ]; then")
         if env.python_version:
@@ -514,7 +513,7 @@ class InitScriptGenerator:
         lines.append("fi")
         lines.append("source venv/bin/activate")
         lines.append("")
-        
+
         # 安装依赖
         if any(d.dep_type == DependencyType.PIP for d in env.dependencies):
             lines.append("echo '安装 Python 依赖...'")
@@ -523,9 +522,9 @@ class InitScriptGenerator:
                 lines.append("pip install -r requirements.txt")
             elif (self.working_dir / "pyproject.toml").exists():
                 lines.append("pip install -e .")
-        
+
         return lines
-    
+
     def _generate_python_init_windows(self) -> list[str]:
         """生成 Python 项目初始化命令（Windows）"""
         lines = [
@@ -534,14 +533,14 @@ class InitScriptGenerator:
             "echo.",
             "echo 📦 初始化 Python 环境...",
         ]
-        
+
         # 创建虚拟环境
         lines.append("if not exist venv (")
         lines.append("    python -m venv venv")
         lines.append(")")
         lines.append("call venv\\Scripts\\activate.bat")
         lines.append("")
-        
+
         # 安装依赖
         if any(d.dep_type == DependencyType.PIP for d in self.environment.dependencies):
             lines.append("echo 安装 Python 依赖...")
@@ -550,9 +549,9 @@ class InitScriptGenerator:
                 lines.append("pip install -r requirements.txt")
             elif (self.working_dir / "pyproject.toml").exists():
                 lines.append("pip install -e .")
-        
+
         return lines
-    
+
     def _generate_nodejs_init_unix(self) -> list[str]:
         """生成 Node.js 项目初始化命令（Unix）"""
         lines = [
@@ -561,7 +560,7 @@ class InitScriptGenerator:
             "echo ''",
             "echo '📦 初始化 Node.js 环境...'",
         ]
-        
+
         # 检测包管理器
         if "yarn" in self.environment.required_tools:
             lines.append("yarn install")
@@ -569,9 +568,9 @@ class InitScriptGenerator:
             lines.append("pnpm install")
         else:
             lines.append("npm install")
-        
+
         return lines
-    
+
     def _generate_nodejs_init_windows(self) -> list[str]:
         """生成 Node.js 项目初始化命令（Windows）"""
         lines = [
@@ -580,7 +579,7 @@ class InitScriptGenerator:
             "echo.",
             "echo 📦 初始化 Node.js 环境...",
         ]
-        
+
         # 检测包管理器
         if "yarn" in self.environment.required_tools:
             lines.append("yarn install")
@@ -588,9 +587,9 @@ class InitScriptGenerator:
             lines.append("pnpm install")
         else:
             lines.append("npm install")
-        
+
         return lines
-    
+
     def _generate_go_init_unix(self) -> list[str]:
         """生成 Go 项目初始化命令（Unix）"""
         return [
@@ -600,7 +599,7 @@ class InitScriptGenerator:
             "echo '📦 初始化 Go 环境...'",
             "go mod download",
         ]
-    
+
     def _generate_go_init_windows(self) -> list[str]:
         """生成 Go 项目初始化命令（Windows）"""
         return [
@@ -610,7 +609,7 @@ class InitScriptGenerator:
             "echo 📦 初始化 Go 环境...",
             "go mod download",
         ]
-    
+
     def _generate_rust_init_unix(self) -> list[str]:
         """生成 Rust 项目初始化命令（Unix）"""
         return [
@@ -620,7 +619,7 @@ class InitScriptGenerator:
             "echo '📦 初始化 Rust 环境...'",
             "cargo build",
         ]
-    
+
     def _generate_rust_init_windows(self) -> list[str]:
         """生成 Rust 项目初始化命令（Windows）"""
         return [
@@ -630,7 +629,7 @@ class InitScriptGenerator:
             "echo 📦 初始化 Rust 环境...",
             "cargo build",
         ]
-    
+
     def _generate_java_init_unix(self) -> list[str]:
         """生成 Java 项目初始化命令（Unix）"""
         lines = [
@@ -639,14 +638,14 @@ class InitScriptGenerator:
             "echo ''",
             "echo '📦 初始化 Java 环境...'",
         ]
-        
+
         if "maven" in self.environment.required_tools:
             lines.append("mvn dependency:resolve")
         elif "gradle" in self.environment.required_tools:
             lines.append("gradle build")
-        
+
         return lines
-    
+
     def _generate_java_init_windows(self) -> list[str]:
         """生成 Java 项目初始化命令（Windows）"""
         lines = [
@@ -655,14 +654,14 @@ class InitScriptGenerator:
             "echo.",
             "echo 📦 初始化 Java 环境...",
         ]
-        
+
         if "maven" in self.environment.required_tools:
             lines.append("mvn dependency:resolve")
         elif "gradle" in self.environment.required_tools:
             lines.append("gradle build")
-        
+
         return lines
-    
+
     def validate_script(self, script_path: Path) -> tuple[bool, str]:
         """
         验证脚本是否可执行
@@ -675,29 +674,29 @@ class InitScriptGenerator:
         """
         if not script_path.exists():
             return False, f"脚本文件不存在: {script_path}"
-        
+
         try:
             content = script_path.read_text(encoding="utf-8")
-            
+
             # 检查脚本是否为空
             if not content.strip():
                 return False, "脚本文件为空"
-            
+
             # 检查 Unix 脚本的 shebang
             if script_path.suffix == ".sh":
                 if not content.startswith("#!/bin/bash"):
                     return False, "Unix 脚本缺少正确的 shebang"
-            
+
             # 检查 Windows 脚本的格式
             if script_path.suffix == ".bat":
                 if not content.startswith("@echo off"):
                     return False, "Windows 脚本缺少 @echo off"
-            
+
             return True, "脚本验证通过"
-            
+
         except Exception as e:
             return False, f"验证脚本失败: {e}"
-    
+
     async def async_generate_init_script(self, output_dir: Path | None = None) -> dict[str, Path]:
         """
         异步生成初始化脚本

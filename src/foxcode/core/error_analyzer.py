@@ -14,9 +14,7 @@ FoxCode 智能错误分析器
 from __future__ import annotations
 
 import ast
-import json
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -78,7 +76,7 @@ class StackFrame:
     module_name: str = ""
     code_line: str = ""
     locals: dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "file_path": self.file_path,
@@ -119,7 +117,7 @@ class ErrorReport:
     context: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "error_type": self.error_type,
@@ -174,7 +172,7 @@ class FixSuggestion:
     confidence: float = 0.7
     priority: int = 1
     references: list[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "title": self.title,
@@ -238,7 +236,7 @@ class ErrorAnalyzer:
         >>> report = analyzer.analyze_traceback(traceback_str)
         >>> suggestions = analyzer.suggest_fix(report, code_context)
     """
-    
+
     # Python 错误类型到类别的映射
     PYTHON_ERROR_CATEGORIES = {
         "SyntaxError": ErrorCategory.SYNTAX,
@@ -266,7 +264,7 @@ class ErrorAnalyzer:
         "AssertionError": ErrorCategory.LOGIC,
         "NotImplementedError": ErrorCategory.LOGIC,
     }
-    
+
     # 错误类型到严重程度的映射
     ERROR_SEVERITY_MAP = {
         "SyntaxError": ErrorSeverity.CRITICAL,
@@ -288,7 +286,7 @@ class ErrorAnalyzer:
         "AssertionError": ErrorSeverity.MEDIUM,
         "Warning": ErrorSeverity.WARNING,
     }
-    
+
     # 常见错误模式及其修复建议
     ERROR_FIXES = {
         "NameError": {
@@ -388,7 +386,7 @@ class ErrorAnalyzer:
             ],
         },
     }
-    
+
     # 预防性检测规则
     PREVENTION_RULES = {
         "python": [
@@ -442,7 +440,7 @@ class ErrorAnalyzer:
             },
         ],
     }
-    
+
     def __init__(self, config: ErrorAnalyzerConfig | None = None):
         """
         初始化错误分析器
@@ -452,7 +450,7 @@ class ErrorAnalyzer:
         """
         self.config = config or ErrorAnalyzerConfig()
         logger.info("智能错误分析器初始化完成")
-    
+
     def analyze_traceback(self, traceback_str: str) -> ErrorReport:
         """
         分析错误堆栈
@@ -465,22 +463,22 @@ class ErrorAnalyzer:
         """
         # 解析错误类型和消息
         error_type, error_message = self._parse_error_header(traceback_str)
-        
+
         # 解析堆栈帧
         stack_frames = self._parse_stack_frames(traceback_str)
-        
+
         # 分类错误
         category = self._categorize_error(error_type)
         severity = self._assess_severity(error_type, error_message)
-        
+
         # 定位根因
         root_cause, file_path, line_number = self._locate_root_cause(
             stack_frames, error_type, error_message
         )
-        
+
         # 获取上下文
         context = self._get_context(file_path, line_number) if file_path else ""
-        
+
         return ErrorReport(
             error_type=error_type,
             error_message=error_message,
@@ -496,11 +494,11 @@ class ErrorAnalyzer:
                 "stack_depth": len(stack_frames),
             }
         )
-    
+
     def _parse_error_header(self, traceback_str: str) -> tuple[str, str]:
         """解析错误类型和消息"""
         lines = traceback_str.strip().split("\n")
-        
+
         # 最后一行通常包含错误类型和消息
         for line in reversed(lines):
             line = line.strip()
@@ -511,61 +509,61 @@ class ErrorAnalyzer:
                     error_type = parts[0].strip()
                     error_message = parts[1].strip()
                     return error_type, error_message
-        
+
         return "UnknownError", traceback_str[:200]
-    
+
     def _parse_stack_frames(self, traceback_str: str) -> list[StackFrame]:
         """解析堆栈帧"""
         frames = []
-        
+
         # Python 堆栈帧格式:
         # File "path/to/file.py", line X, in function_name
         #     code_line
-        
+
         pattern = r'File "([^"]+)", line (\d+), in (\w+)'
-        
+
         lines = traceback_str.split("\n")
         i = 0
-        
+
         while i < len(lines):
             match = re.search(pattern, lines[i])
             if match:
                 file_path = match.group(1)
                 line_number = int(match.group(2))
                 function_name = match.group(3)
-                
+
                 # 获取下一行的代码
                 code_line = ""
                 if i + 1 < len(lines):
                     code_line = lines[i + 1].strip()
-                
+
                 frames.append(StackFrame(
                     file_path=file_path,
                     line_number=line_number,
                     function_name=function_name,
                     code_line=code_line,
                 ))
-            
+
             i += 1
-        
+
         return frames
-    
+
     def _categorize_error(self, error_type: str) -> ErrorCategory:
         """分类错误"""
         return self.PYTHON_ERROR_CATEGORIES.get(error_type, ErrorCategory.UNKNOWN)
-    
+
     def _assess_severity(self, error_type: str, error_message: str) -> ErrorSeverity:
         """评估错误严重程度"""
         severity = self.ERROR_SEVERITY_MAP.get(error_type, ErrorSeverity.MEDIUM)
-        
+
         # 根据消息内容调整严重程度
         critical_keywords = ["security", "authentication", "permission", "critical"]
         for keyword in critical_keywords:
             if keyword in error_message.lower():
                 return ErrorSeverity.CRITICAL
-        
+
         return severity
-    
+
     def _locate_root_cause(
         self,
         stack_frames: list[StackFrame],
@@ -580,7 +578,7 @@ class ErrorAnalyzer:
         """
         if not stack_frames:
             return error_message, "", 0
-        
+
         # 通常第一个用户代码帧是根因位置
         for frame in stack_frames:
             # 跳过标准库和第三方库
@@ -589,35 +587,35 @@ class ErrorAnalyzer:
             ]):
                 root_cause = f"在 {frame.file_path}:{frame.line_number} 的 {frame.function_name} 函数中发生错误"
                 return root_cause, frame.file_path, frame.line_number
-        
+
         # 如果没有找到用户代码，返回第一个帧
         frame = stack_frames[0]
         return f"在 {frame.file_path}:{frame.line_number} 发生错误", frame.file_path, frame.line_number
-    
+
     def _get_context(self, file_path: str, line_number: int, context_lines: int = 5) -> str:
         """获取代码上下文"""
         try:
             path = Path(file_path)
             if not path.exists():
                 return ""
-            
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+
+            with open(path, encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
-            
+
             start = max(0, line_number - context_lines - 1)
             end = min(len(lines), line_number + context_lines)
-            
+
             context_parts = []
             for i in range(start, end):
                 prefix = ">>> " if i == line_number - 1 else "    "
                 context_parts.append(f"{prefix}{i + 1}: {lines[i].rstrip()}")
-            
+
             return "\n".join(context_parts)
-            
+
         except Exception as e:
             logger.debug(f"获取上下文失败: {e}")
             return ""
-    
+
     def classify_error(self, error: Exception) -> ErrorClassification:
         """
         分类错误
@@ -631,22 +629,22 @@ class ErrorAnalyzer:
         error_type = type(error).__name__
         category = self._categorize_error(error_type)
         severity = self._assess_severity(error_type, str(error))
-        
+
         # 获取常见原因
         common_causes = []
         if error_type in self.ERROR_FIXES:
             common_causes = self.ERROR_FIXES[error_type].get("fixes", [])
-        
+
         # 判断是否可恢复
         is_recoverable = severity not in (ErrorSeverity.CRITICAL,)
-        
+
         return ErrorClassification(
             category=category,
             severity=severity,
             is_recoverable=is_recoverable,
             common_causes=common_causes,
         )
-    
+
     def suggest_fix(
         self,
         error_report: ErrorReport,
@@ -665,11 +663,11 @@ class ErrorAnalyzer:
         suggestions = []
         error_type = error_report.error_type
         error_message = error_report.error_message
-        
+
         # 基于错误类型获取修复建议
         if error_type in self.ERROR_FIXES:
             fix_info = self.ERROR_FIXES[error_type]
-            
+
             # 匹配错误模式
             for pattern, desc_template in fix_info.get("patterns", []):
                 match = re.search(pattern, error_message)
@@ -680,7 +678,7 @@ class ErrorAnalyzer:
                         for i, group in enumerate(match.groups()):
                             description = description.replace(f"{{var{i+1}}}", group)
                             description = description.replace("{var}", group)
-                    
+
                     suggestions.append(FixSuggestion(
                         title=f"修复 {error_type}",
                         description=description,
@@ -688,7 +686,7 @@ class ErrorAnalyzer:
                         priority=1,
                     ))
                     break
-            
+
             # 添加通用修复建议
             for i, fix in enumerate(fix_info.get("fixes", [])):
                 suggestions.append(FixSuggestion(
@@ -697,7 +695,7 @@ class ErrorAnalyzer:
                     confidence=0.6,
                     priority=i + 2,
                 ))
-        
+
         # 如果有代码上下文，尝试生成代码修复
         if code_context and error_report.file_path and error_report.line_number:
             code_fix = self._generate_code_fix(error_report, code_context)
@@ -709,9 +707,9 @@ class ErrorAnalyzer:
                     confidence=0.5,
                     priority=0,
                 ))
-        
+
         return suggestions
-    
+
     def _generate_code_fix(
         self,
         error_report: ErrorReport,
@@ -719,7 +717,7 @@ class ErrorAnalyzer:
     ) -> str:
         """生成代码修复"""
         error_type = error_report.error_type
-        
+
         # 基于错误类型生成修复
         if error_type == "KeyError":
             # 提取键名
@@ -727,22 +725,22 @@ class ErrorAnalyzer:
             if match:
                 key = match.group(1)
                 return f"# 使用 .get() 方法安全获取值\nvalue = dict.get('{key}', default_value)"
-        
+
         elif error_type == "AttributeError":
             match = re.search(r"'(\w+)' object has no attribute '(\w+)'", error_report.error_message)
             if match:
                 obj_type, attr = match.groups()
                 return f"# 检查属性是否存在\nif hasattr(obj, '{attr}'):\n    obj.{attr}()\nelse:\n    # 处理属性不存在的情况\n    pass"
-        
+
         elif error_type == "IndexError":
-            return f"# 添加边界检查\nif 0 <= index < len(lst):\n    value = lst[index]\nelse:\n    # 处理索引越界\n    pass"
-        
+            return "# 添加边界检查\nif 0 <= index < len(lst):\n    value = lst[index]\nelse:\n    # 处理索引越界\n    pass"
+
         elif error_type == "TypeError":
             if "not callable" in error_report.error_message:
-                return f"# 检查对象是否可调用\nif callable(obj):\n    obj()\nelse:\n    # 处理不可调用的情况\n    pass"
-        
+                return "# 检查对象是否可调用\nif callable(obj):\n    obj()\nelse:\n    # 处理不可调用的情况\n    pass"
+
         return ""
-    
+
     def detect_potential_errors(
         self,
         code: str,
@@ -760,12 +758,12 @@ class ErrorAnalyzer:
         """
         if not self.config.enable_prevention:
             return []
-        
+
         potential_errors = []
-        
+
         # 获取检测规则
         rules = self.PREVENTION_RULES.get(language, [])
-        
+
         lines = code.split("\n")
         for i, line in enumerate(lines):
             for rule in rules:
@@ -779,18 +777,18 @@ class ErrorAnalyzer:
                         code_snippet=line.strip(),
                         suggestion=rule["suggestion"],
                     ))
-        
+
         # Python 语法检查
         if language == "python":
             syntax_errors = self._check_python_syntax(code)
             potential_errors.extend(syntax_errors)
-        
+
         return potential_errors
-    
+
     def _check_python_syntax(self, code: str) -> list[PotentialError]:
         """检查 Python 语法"""
         errors = []
-        
+
         try:
             ast.parse(code)
         except SyntaxError as e:
@@ -803,9 +801,9 @@ class ErrorAnalyzer:
                 code_snippet=e.text or "",
                 suggestion="修复语法错误",
             ))
-        
+
         return errors
-    
+
     def get_error_statistics(self, errors: list[ErrorReport]) -> dict[str, Any]:
         """
         获取错误统计信息
@@ -818,24 +816,24 @@ class ErrorAnalyzer:
         """
         if not errors:
             return {"total": 0}
-        
+
         # 按类别统计
         category_counts = {}
         for error in errors:
             cat = error.category.value
             category_counts[cat] = category_counts.get(cat, 0) + 1
-        
+
         # 按严重程度统计
         severity_counts = {}
         for error in errors:
             sev = error.severity.value
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
-        
+
         # 按错误类型统计
         type_counts = {}
         for error in errors:
             type_counts[error.error_type] = type_counts.get(error.error_type, 0) + 1
-        
+
         return {
             "total": len(errors),
             "by_category": category_counts,

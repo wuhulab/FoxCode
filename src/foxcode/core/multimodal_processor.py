@@ -15,9 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import re
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -85,7 +83,7 @@ class ImageAnalysis:
     colors: list[str] = field(default_factory=list)
     layout: dict[str, Any] = field(default_factory=dict)
     suggestions: list[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "image_type": self.image_type.value,
@@ -116,7 +114,7 @@ class DiagramResult:
     code: str = ""
     svg: str = ""
     description: str = ""
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "diagram_type": self.diagram_type.value,
@@ -144,7 +142,7 @@ class ChartResult:
     code: str = ""
     data: dict[str, Any] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "chart_type": self.chart_type.value,
@@ -172,7 +170,7 @@ class UICodeSuggestion:
     components: list[str] = field(default_factory=list)
     styles: str = ""
     explanation: str = ""
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "framework": self.framework,
@@ -212,7 +210,7 @@ class MultimodalProcessor:
         >>> analysis = await processor.analyze_image(Path("screenshot.png"))
         >>> diagram = processor.generate_architecture_diagram(structure)
     """
-    
+
     def __init__(self, config: MultimodalConfig | None = None):
         """
         初始化处理器
@@ -222,7 +220,7 @@ class MultimodalProcessor:
         """
         self.config = config or MultimodalConfig()
         logger.info("多模态处理器初始化完成")
-    
+
     async def analyze_image(
         self,
         image_path: Path | None = None,
@@ -241,24 +239,24 @@ class MultimodalProcessor:
             图像分析结果
         """
         analysis = ImageAnalysis()
-        
+
         try:
             # 获取图像数据
             if image_path and image_path.exists():
                 with open(image_path, "rb") as f:
                     image_data = f.read()
-            
+
             if image_data:
                 image_base64 = base64.b64encode(image_data).decode("utf-8")
-            
+
             if not image_base64:
                 analysis.description = "无法获取图像数据"
                 return analysis
-            
+
             # 尝试使用多模态模型分析
             try:
                 import openai
-                
+
                 client = openai.OpenAI()
                 response = client.chat.completions.create(
                     model="gpt-4o",
@@ -281,10 +279,10 @@ class MultimodalProcessor:
                     ],
                     max_tokens=1000,
                 )
-                
+
                 analysis.description = response.choices[0].message.content or ""
                 analysis.image_type = self._classify_image_type(analysis.description)
-                
+
             except ImportError:
                 # 没有安装 openai，使用简单分析
                 analysis.description = "多模态模型不可用，无法分析图像"
@@ -292,17 +290,17 @@ class MultimodalProcessor:
             except Exception as e:
                 logger.error(f"图像分析失败: {e}")
                 analysis.description = f"分析失败: {str(e)}"
-            
+
         except Exception as e:
             logger.error(f"图像分析失败: {e}")
             analysis.description = str(e)
-        
+
         return analysis
-    
+
     def _classify_image_type(self, description: str) -> ImageType:
         """根据描述分类图像类型"""
         desc_lower = description.lower()
-        
+
         if "code" in desc_lower or "代码" in desc_lower:
             return ImageType.CODE
         elif "error" in desc_lower or "错误" in desc_lower:
@@ -317,7 +315,7 @@ class MultimodalProcessor:
             return ImageType.SCREENSHOT
         else:
             return ImageType.UNKNOWN
-    
+
     def generate_architecture_diagram(
         self,
         structure: dict[str, Any],
@@ -339,17 +337,17 @@ class MultimodalProcessor:
             diagram_type=diagram_type,
             format=format,
         )
-        
+
         if format == "mermaid":
             result.code = self._generate_mermaid_diagram(structure, diagram_type)
         elif format == "plantuml":
             result.code = self._generate_plantuml_diagram(structure, diagram_type)
         else:
             result.code = self._generate_mermaid_diagram(structure, diagram_type)
-        
+
         result.description = f"生成的 {diagram_type.value} 图"
         return result
-    
+
     def _generate_mermaid_diagram(
         self,
         structure: dict[str, Any],
@@ -357,30 +355,30 @@ class MultimodalProcessor:
     ) -> str:
         """生成 Mermaid 图表代码"""
         lines = []
-        
+
         if diagram_type == DiagramType.FLOWCHART:
             lines.append("flowchart TD")
             self._add_flowchart_nodes(lines, structure, "")
-        
+
         elif diagram_type == DiagramType.SEQUENCE:
             lines.append("sequenceDiagram")
             self._add_sequence_participants(lines, structure)
             self._add_sequence_messages(lines, structure)
-        
+
         elif diagram_type == DiagramType.CLASS:
             lines.append("classDiagram")
             self._add_class_definitions(lines, structure)
-        
+
         elif diagram_type == DiagramType.ARCHITECTURE:
             lines.append("flowchart TB")
             self._add_architecture_nodes(lines, structure)
-        
+
         else:
             lines.append("flowchart TD")
             lines.append("    A[开始] --> B[结束]")
-        
+
         return "\n".join(lines)
-    
+
     def _add_flowchart_nodes(
         self,
         lines: list[str],
@@ -390,29 +388,29 @@ class MultimodalProcessor:
         """添加流程图节点"""
         nodes = structure.get("nodes", [])
         edges = structure.get("edges", [])
-        
+
         for node in nodes:
             node_id = node.get("id", "")
             node_label = node.get("label", node_id)
             node_type = node.get("type", "rect")
-            
+
             if node_type == "diamond":
                 lines.append(f"    {node_id}{{{node_label}}}")
             elif node_type == "circle":
                 lines.append(f"    {node_id}(({node_label}))")
             else:
                 lines.append(f"    {node_id}[{node_label}]")
-        
+
         for edge in edges:
             from_id = edge.get("from", "")
             to_id = edge.get("to", "")
             label = edge.get("label", "")
-            
+
             if label:
                 lines.append(f"    {from_id} -->|{label}| {to_id}")
             else:
                 lines.append(f"    {from_id} --> {to_id}")
-    
+
     def _add_sequence_participants(
         self,
         lines: list[str],
@@ -424,7 +422,7 @@ class MultimodalProcessor:
             name = p.get("name", "")
             alias = p.get("alias", name)
             lines.append(f"    participant {alias} as {name}")
-    
+
     def _add_sequence_messages(
         self,
         lines: list[str],
@@ -437,14 +435,14 @@ class MultimodalProcessor:
             to_p = msg.get("to", "")
             content = msg.get("content", "")
             msg_type = msg.get("type", "sync")
-            
+
             if msg_type == "async":
                 lines.append(f"    {from_p}--)>>{to_p}: {content}")
             elif msg_type == "return":
                 lines.append(f"    {to_p}-->>{from_p}: {content}")
             else:
                 lines.append(f"    {from_p}->>{to_p}: {content}")
-    
+
     def _add_class_definitions(
         self,
         lines: list[str],
@@ -456,21 +454,21 @@ class MultimodalProcessor:
             name = cls.get("name", "")
             attributes = cls.get("attributes", [])
             methods = cls.get("methods", [])
-            
+
             lines.append(f"    class {name} {{")
             for attr in attributes:
                 lines.append(f"        {attr}")
             for method in methods:
                 lines.append(f"        {method}")
             lines.append("    }")
-        
+
         # 添加继承关系
         inheritance = structure.get("inheritance", [])
         for rel in inheritance:
             parent = rel.get("parent", "")
             child = rel.get("child", "")
             lines.append(f"    {parent} <|-- {child}")
-    
+
     def _add_architecture_nodes(
         self,
         lines: list[str],
@@ -479,36 +477,36 @@ class MultimodalProcessor:
         """添加架构图节点"""
         components = structure.get("components", [])
         connections = structure.get("connections", [])
-        
+
         for comp in components:
             comp_id = comp.get("id", "")
             comp_name = comp.get("name", "")
             comp_type = comp.get("type", "service")
-            
+
             # 使用子图表示不同层级
             if comp_type == "frontend":
-                lines.append(f"    subgraph frontend [前端]")
+                lines.append("    subgraph frontend [前端]")
                 lines.append(f"        {comp_id}[{comp_name}]")
                 lines.append("    end")
             elif comp_type == "backend":
-                lines.append(f"    subgraph backend [后端]")
+                lines.append("    subgraph backend [后端]")
                 lines.append(f"        {comp_id}[{comp_name}]")
                 lines.append("    end")
             elif comp_type == "database":
                 lines.append(f"    {comp_id}[({comp_name})]")
             else:
                 lines.append(f"    {comp_id}[{comp_name}]")
-        
+
         for conn in connections:
             from_id = conn.get("from", "")
             to_id = conn.get("to", "")
             label = conn.get("label", "")
-            
+
             if label:
                 lines.append(f"    {from_id} -->|{label}| {to_id}")
             else:
                 lines.append(f"    {from_id} --> {to_id}")
-    
+
     def _generate_plantuml_diagram(
         self,
         structure: dict[str, Any],
@@ -516,20 +514,20 @@ class MultimodalProcessor:
     ) -> str:
         """生成 PlantUML 图表代码"""
         lines = ["@startuml"]
-        
+
         if diagram_type == DiagramType.SEQUENCE:
             participants = structure.get("participants", [])
             for p in participants:
                 name = p.get("name", "")
                 lines.append(f"participant {name}")
-            
+
             messages = structure.get("messages", [])
             for msg in messages:
                 from_p = msg.get("from", "")
                 to_p = msg.get("to", "")
                 content = msg.get("content", "")
                 lines.append(f"{from_p} -> {to_p}: {content}")
-        
+
         elif diagram_type == DiagramType.CLASS:
             classes = structure.get("classes", [])
             for cls in classes:
@@ -540,15 +538,15 @@ class MultimodalProcessor:
                 for method in cls.get("methods", []):
                     lines.append(f"  {method}")
                 lines.append("}")
-        
+
         else:
             lines.append("node A")
             lines.append("node B")
             lines.append("A --> B")
-        
+
         lines.append("@enduml")
         return "\n".join(lines)
-    
+
     def generate_chart(
         self,
         data: dict[str, Any],
@@ -574,7 +572,7 @@ class MultimodalProcessor:
             data=data,
             options=options or {},
         )
-        
+
         if library == "chart.js":
             result.code = self._generate_chartjs_code(data, chart_type, options)
         elif library == "echarts":
@@ -583,9 +581,9 @@ class MultimodalProcessor:
             result.code = self._generate_matplotlib_code(data, chart_type, options)
         else:
             result.code = self._generate_chartjs_code(data, chart_type, options)
-        
+
         return result
-    
+
     def _generate_chartjs_code(
         self,
         data: dict[str, Any],
@@ -595,7 +593,7 @@ class MultimodalProcessor:
         """生成 Chart.js 代码"""
         labels = data.get("labels", [])
         datasets = data.get("datasets", [])
-        
+
         chart_type_map = {
             ChartType.LINE: "line",
             ChartType.BAR: "bar",
@@ -603,9 +601,9 @@ class MultimodalProcessor:
             ChartType.SCATTER: "scatter",
             ChartType.AREA: "line",
         }
-        
+
         js_chart_type = chart_type_map.get(chart_type, "bar")
-        
+
         code = f"""const ctx = document.getElementById('myChart').getContext('2d');
 const chart = new Chart(ctx, {{
     type: '{js_chart_type}',
@@ -617,7 +615,7 @@ const chart = new Chart(ctx, {{
 }});
 """
         return code
-    
+
     def _generate_echarts_code(
         self,
         data: dict[str, Any],
@@ -642,7 +640,7 @@ const option = {{
 chart.setOption(option);
 """
         return code
-    
+
     def _generate_matplotlib_code(
         self,
         data: dict[str, Any],
@@ -665,7 +663,7 @@ plt.savefig('chart.png')
 plt.show()
 """
         return code
-    
+
     def generate_ui_code(
         self,
         analysis: ImageAnalysis,
@@ -682,7 +680,7 @@ plt.show()
             UI 代码建议
         """
         suggestion = UICodeSuggestion(framework=framework)
-        
+
         if framework == "react":
             suggestion.code = self._generate_react_code(analysis)
             suggestion.components = self._extract_react_components(analysis)
@@ -692,16 +690,16 @@ plt.show()
         elif framework == "html":
             suggestion.code = self._generate_html_code(analysis)
             suggestion.components = []
-        
+
         suggestion.styles = self._generate_css_code(analysis)
         suggestion.explanation = f"基于图像分析生成的 {framework} 代码"
-        
+
         return suggestion
-    
+
     def _generate_react_code(self, analysis: ImageAnalysis) -> str:
         """生成 React 代码"""
         components = analysis.ui_components
-        
+
         code = """import React from 'react';
 import './styles.css';
 
@@ -709,17 +707,17 @@ const Component = () => {
     return (
         <div className="container">
 """
-        
+
         for comp in components[:5]:  # 限制组件数量
             comp_type = comp.get("type", "div")
             comp_class = comp.get("class", "")
             comp_content = comp.get("content", "")
-            
+
             code += f"""            <{comp_type} className="{comp_class}">
                 {comp_content}
             </{comp_type}>
 """
-        
+
         code += """        </div>
     );
 };
@@ -727,25 +725,25 @@ const Component = () => {
 export default Component;
 """
         return code
-    
+
     def _generate_vue_code(self, analysis: ImageAnalysis) -> str:
         """生成 Vue 代码"""
         components = analysis.ui_components
-        
+
         code = """<template>
     <div class="container">
 """
-        
+
         for comp in components[:5]:
             comp_type = comp.get("type", "div")
             comp_class = comp.get("class", "")
             comp_content = comp.get("content", "")
-            
+
             code += f"""        <{comp_type} class="{comp_class}">
             {comp_content}
         </{comp_type}>
 """
-        
+
         code += """    </div>
 </template>
 
@@ -756,11 +754,11 @@ export default {
 </script>
 """
         return code
-    
+
     def _generate_html_code(self, analysis: ImageAnalysis) -> str:
         """生成 HTML 代码"""
         components = analysis.ui_components
-        
+
         code = """<!DOCTYPE html>
 <html>
 <head>
@@ -769,28 +767,28 @@ export default {
 <body>
     <div class="container">
 """
-        
+
         for comp in components[:5]:
             comp_type = comp.get("type", "div")
             comp_class = comp.get("class", "")
             comp_content = comp.get("content", "")
-            
+
             code += f"""        <{comp_type} class="{comp_class}">
             {comp_content}
         </{comp_type}>
 """
-        
+
         code += """    </div>
 </body>
 </html>
 """
         return code
-    
+
     def _generate_css_code(self, analysis: ImageAnalysis) -> str:
         """生成 CSS 代码"""
         colors = analysis.colors[:5]
         layout = analysis.layout
-        
+
         css = """.container {
     display: flex;
     flex-direction: column;
@@ -798,20 +796,20 @@ export default {
 }
 
 """
-        
+
         for i, color in enumerate(colors):
             css += f""".color-{i+1} {{
     background-color: {color};
 }}
 
 """
-        
+
         return css
-    
+
     def _extract_react_components(self, analysis: ImageAnalysis) -> list[str]:
         """提取 React 组件列表"""
         return [comp.get("type", "div") for comp in analysis.ui_components]
-    
+
     def _extract_vue_components(self, analysis: ImageAnalysis) -> list[str]:
         """提取 Vue 组件列表"""
         return [comp.get("type", "div") for comp in analysis.ui_components]

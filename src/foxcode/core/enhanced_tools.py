@@ -11,22 +11,19 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .semantic_index import SemanticCodeIndex, SemanticIndexConfig
-from .knowledge_base import KnowledgeBase, KnowledgeBaseConfig, Knowledge, KnowledgeCategory
-from .context_compressor import ContextCompressor, CompressorConfig
-from .task_planner import IntelligentTaskPlanner, TaskPlannerConfig
-from .project_analyzer import ProjectAnalyzer, ProjectAnalyzerConfig
-from .error_analyzer import ErrorAnalyzer, ErrorAnalyzerConfig
-from .advanced_debugger import AdvancedDebugger, DebuggerConfig
+from .advanced_debugger import AdvancedDebugger
+from .code_formatter import CodeFormatter
+from .dependency_resolver import DependencyConfig, DependencyResolver
+from .doc_generator import DocGenerator
+from .error_analyzer import ErrorAnalyzer
+from .git_advanced_ops import GitAdvancedOps
+from .multimodal_processor import MultimodalProcessor
 from .performance_analyzer import PerformanceAnalyzer, PerformanceConfig
-from .security_scanner import SecurityScanner, SecurityConfig
-from .code_formatter import CodeFormatter, FormatterConfig
-from .refactoring_suggester import RefactoringSuggester, RefactoringConfig
-from .dependency_resolver import DependencyResolver, DependencyConfig
+from .project_analyzer import ProjectAnalyzer
+from .refactoring_suggester import RefactoringSuggester
+from .security_scanner import SecurityConfig, SecurityScanner
+from .semantic_index import SemanticCodeIndex, SemanticIndexConfig
 from .test_generator import TestGenerator, TestGeneratorConfig
-from .doc_generator import DocGenerator, DocGeneratorConfig
-from .git_advanced_ops import GitAdvancedOps, GitConfig
-from .multimodal_processor import MultimodalProcessor, MultimodalConfig
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +46,12 @@ async def search_semantic(
     """
     config = SemanticIndexConfig()
     index = SemanticCodeIndex(config)
-    
+
     if project_path:
         await index.index_directory(Path(project_path))
-    
+
     results = await index.search(query, top_k)
-    
+
     return {
         "success": True,
         "query": query,
@@ -87,7 +84,7 @@ async def analyze_project(
     """
     analyzer = ProjectAnalyzer()
     report = await analyzer.analyze(Path(project_path))
-    
+
     return {
         "success": True,
         "project_path": project_path,
@@ -123,7 +120,7 @@ def analyze_error(
     analyzer = ErrorAnalyzer()
     report = analyzer.analyze_traceback(error_traceback)
     suggestions = analyzer.suggest_fix(report, code_context or "")
-    
+
     return {
         "success": True,
         "error_type": report.error_type,
@@ -151,7 +148,7 @@ async def debug_attach(
     """
     debugger = AdvancedDebugger()
     success = await debugger.attach(process_id)
-    
+
     return {
         "success": success,
         "session_info": debugger.get_session_info(),
@@ -175,7 +172,7 @@ async def profile_code(
     config = PerformanceConfig(enable_memory_profiling=enable_memory)
     analyzer = PerformanceAnalyzer(config)
     result = await analyzer.profile_code(code)
-    
+
     return {
         "success": result.status.value == "completed",
         "total_time": result.total_time,
@@ -203,7 +200,7 @@ async def scan_security(
     config = SecurityConfig(check_dependencies=check_dependencies)
     scanner = SecurityScanner(config)
     report = await scanner.scan_directory(Path(target_path))
-    
+
     return {
         "success": True,
         "project_path": report.project_path,
@@ -231,7 +228,7 @@ async def format_code(
     """
     formatter = CodeFormatter()
     result = await formatter.format_file(Path(file_path))
-    
+
     return result.to_dict()
 
 
@@ -249,7 +246,7 @@ def suggest_refactoring(
     """
     suggester = RefactoringSuggester()
     report = suggester.analyze_file(Path(file_path))
-    
+
     return {
         "success": True,
         "file_path": report.file_path,
@@ -278,7 +275,7 @@ async def analyze_dependencies(
     config = DependencyConfig(check_outdated=check_outdated)
     resolver = DependencyResolver(config)
     report = await resolver.resolve_project(Path(project_path))
-    
+
     return {
         "success": True,
         "project_path": report.project_path,
@@ -316,7 +313,7 @@ async def generate_tests(
     )
     generator = TestGenerator(config)
     result = await generator.generate_tests(Path(source_file))
-    
+
     return {
         "success": True,
         "source_file": result.source_file,
@@ -343,14 +340,14 @@ async def generate_docs(
         文档生成结果
     """
     generator = DocGenerator()
-    
+
     if doc_type == "api":
         result = await generator.generate_api_docs(Path(source_path))
     elif doc_type == "readme":
         result = await generator.generate_readme(Path(source_path))
     else:
         result = await generator.generate_docstrings(Path(source_path))
-    
+
     return {
         "success": True,
         "doc_type": doc_type,
@@ -373,7 +370,7 @@ async def git_advanced(
         操作结果
     """
     git_ops = GitAdvancedOps()
-    
+
     if operation == "commit":
         message = await git_ops.generate_commit_message(kwargs.get("diff", ""))
         return {"success": True, "suggested_message": message}
@@ -402,12 +399,12 @@ async def analyze_image(
         图像分析结果
     """
     processor = MultimodalProcessor()
-    
+
     result = await processor.analyze_image(
         image_path=Path(image_path) if image_path else None,
         image_base64=image_base64,
     )
-    
+
     return result.to_dict()
 
 
@@ -428,13 +425,13 @@ def generate_diagram(
         图表生成结果
     """
     from .multimodal_processor import DiagramType
-    
+
     processor = MultimodalProcessor()
-    
+
     diagram_type_enum = DiagramType(diagram_type) if diagram_type in [e.value for e in DiagramType] else DiagramType.ARCHITECTURE
-    
+
     result = processor.generate_architecture_diagram(structure, diagram_type_enum, format)
-    
+
     return result.to_dict()
 
 
@@ -459,7 +456,7 @@ async def execute_snippet(
             "success": False,
             "error": f"不支持的语言: {language}",
         }
-    
+
     try:
         # 创建安全的执行环境
         safe_globals = {
@@ -478,21 +475,21 @@ async def execute_snippet(
                 "False": False,
             }
         }
-        
+
         # 使用 asyncio 执行并设置超时
         async def run_code():
             local_vars = {}
             exec(code, safe_globals, local_vars)
             return local_vars
-        
+
         result_vars = await asyncio.wait_for(run_code(), timeout=timeout)
-        
+
         return {
             "success": True,
             "output": str(result_vars),
             "variables": {k: repr(v) for k, v in result_vars.items()},
         }
-        
+
     except asyncio.TimeoutError:
         return {
             "success": False,

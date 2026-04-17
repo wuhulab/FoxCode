@@ -14,18 +14,23 @@ import os
 import secrets
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from foxcode.core.config import Config, AgentRole
-from foxcode.core.message import Conversation, Message, MessageRole
+from foxcode.core.config import AgentRole, Config
+from foxcode.types.message import Conversation, Message, MessageRole
 
 if TYPE_CHECKING:
-    from foxcode.core.progress import ProgressManager
+    from foxcode.context.context_bridge import ContextBridge, SessionType
+    from foxcode.context.context_reset import (
+        ContextResetManager,
+        ContextUsageInfo,
+        ResetResult,
+        ResetTrigger,
+    )
     from foxcode.core.feature_list import FeatureList
-    from foxcode.core.context_bridge import ContextBridge, SessionType
-    from foxcode.core.workflow import WorkflowManager, WorkflowInstance
-    from foxcode.core.context_reset import ContextResetManager, ResetTrigger, ContextUsageInfo, ResetResult
     from foxcode.core.handoff import HandoffArtifact, TaskItem
+    from foxcode.core.progress import ProgressManager
+    from foxcode.core.workflow import WorkflowInstance, WorkflowManager
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +42,7 @@ class Session:
     负责会话的创建、保存、加载和管理
     支持进度追踪和跨会话上下文传递
     """
-    
+
     def __init__(self, config: Config, session_id: str | None = None):
         """
         初始化会话
@@ -53,22 +58,22 @@ class Session:
             "working_dir": str(config.working_dir),
             "created_at": datetime.now().isoformat(),
         }
-        
+
         # 进度追踪相关属性
-        self._progress_manager: "ProgressManager | None" = None
-        self._feature_list: "FeatureList | None" = None
-        self._context_bridge: "ContextBridge | None" = None
-        self._session_type: "SessionType | None" = None
-        self._workflow_manager: "WorkflowManager | None" = None
-        self._current_workflow: "WorkflowInstance | None" = None
-        
+        self._progress_manager: ProgressManager | None = None
+        self._feature_list: FeatureList | None = None
+        self._context_bridge: ContextBridge | None = None
+        self._session_type: SessionType | None = None
+        self._workflow_manager: WorkflowManager | None = None
+        self._current_workflow: WorkflowInstance | None = None
+
         # 上下文重置相关属性
-        self._context_reset_manager: "ContextResetManager | None" = None
+        self._context_reset_manager: ContextResetManager | None = None
         self._agent_role: AgentRole = AgentRole.GENERATOR
-        
+
         # 确保目录存在
         config.ensure_directories()
-    
+
     @staticmethod
     def _generate_session_id() -> str:
         """
@@ -89,12 +94,12 @@ class Session:
         # 使用 16 字节（128 位）随机数，生成 32 字符的十六进制字符串
         random_suffix = secrets.token_hex(16)
         return f"{timestamp}_{random_suffix}"
-    
+
     @property
     def session_path(self) -> Path:
         """获取会话文件路径"""
         return self.config.get_session_path(self.session_id)
-    
+
     def add_message(self, message: Message) -> None:
         """
         添加消息到会话
@@ -103,14 +108,14 @@ class Session:
             message: 要添加的消息
         """
         self.conversation.add_message(message)
-        
+
         if self.config.auto_save_session:
             try:
                 self.save()
             except Exception as e:
                 # 保存失败不应中断程序运行
                 logger.warning(f"自动保存会话失败（将继续运行）: {e}")
-    
+
     def add_user_message(self, content: str) -> Message:
         """
         添加用户消息
@@ -124,10 +129,10 @@ class Session:
         message = Message(role=MessageRole.USER, content=content)
         self.add_message(message)
         return message
-    
+
     def add_assistant_message(
-        self, 
-        content: str, 
+        self,
+        content: str,
         input_tokens: int = 0,
         output_tokens: int = 0,
     ) -> Message:
@@ -150,7 +155,7 @@ class Session:
         )
         self.add_message(message)
         return message
-    
+
     def save(self) -> None:
         """保存会话到文件（加密存储）"""
         try:
@@ -159,11 +164,11 @@ class Session:
                 "conversation": self.conversation.to_dict(),
                 "metadata": self.metadata,
             }
-            
+
             try:
                 from foxcode.core.session_encryption import get_session_encryptor
                 encryptor = get_session_encryptor()
-                
+
                 if encryptor.config.enabled:
                     encrypted_data = encryptor.encrypt(data)
                     storage_data = {
@@ -183,10 +188,10 @@ class Session:
                     "data": data,
                     "version": 1,
                 }
-            
+
             with open(self.session_path, "w", encoding="utf-8") as f:
                 json.dump(storage_data, f, ensure_ascii=False, indent=2)
-            
+
             # 设置文件权限为仅所有者可读写（安全最佳实践）
             # 在 Windows 上可能不支持，但不应静默忽略失败
             try:
@@ -200,14 +205,14 @@ class Session:
             except OSError as e:
                 # Windows 等系统可能不支持 chmod，记录调试信息
                 logger.debug(f"设置文件权限不支持或失败: {e}")
-            
+
             logger.debug(f"会话已保存: {self.session_path}")
         except Exception as e:
             logger.error(f"保存会话失败: {e}")
             raise
-    
+
     @classmethod
-    def load(cls, config: Config, session_id: str) -> "Session":
+    def load(cls, config: Config, session_id: str) -> Session:
         """
         加载会话（支持解密）
         
@@ -219,14 +224,14 @@ class Session:
             加载的会话实例
         """
         session_path = config.get_session_path(session_id)
-        
+
         if not session_path.exists():
             raise FileNotFoundError(f"会话不存在: {session_id}")
-        
+
         try:
-            with open(session_path, "r", encoding="utf-8") as f:
+            with open(session_path, encoding="utf-8") as f:
                 storage_data = json.load(f)
-            
+
             if storage_data.get("encrypted", False):
                 try:
                     from foxcode.core.session_encryption import get_session_encryptor
@@ -238,23 +243,23 @@ class Session:
                     raise ValueError(f"解密会话数据失败: {e}")
             else:
                 data = storage_data.get("data", storage_data)
-            
+
             session = cls(config, session_id=data["session_id"])
             session.conversation = Conversation.from_dict(data["conversation"])
             session.metadata = data.get("metadata", {})
-            
+
             logger.info(f"会话已加载: {session_id}")
             return session
         except Exception as e:
             logger.error(f"加载会话失败: {e}")
             raise
-    
+
     def delete(self) -> None:
         """删除会话文件"""
         if self.session_path.exists():
             self.session_path.unlink()
             logger.info(f"会话已删除: {self.session_id}")
-    
+
     @staticmethod
     def list_sessions(config: Config) -> list[dict[str, Any]]:
         """
@@ -268,18 +273,18 @@ class Session:
         """
         config.ensure_directories()
         sessions = []
-        
+
         for session_file in sorted(
-            config.session_dir.glob("*.json"), 
+            config.session_dir.glob("*.json"),
             reverse=True
         ):
             try:
-                with open(session_file, "r", encoding="utf-8") as f:
+                with open(session_file, encoding="utf-8") as f:
                     data = json.load(f)
-                
+
                 conversation = data.get("conversation", {})
                 messages = conversation.get("messages", [])
-                
+
                 sessions.append({
                     "session_id": data.get("session_id", session_file.stem),
                     "created_at": conversation.get("created_at", ""),
@@ -292,17 +297,17 @@ class Session:
                 })
             except Exception as e:
                 logger.warning(f"读取会话文件失败 {session_file}: {e}")
-        
+
         return sessions
-    
+
     def clear(self) -> None:
         """清空当前会话"""
         self.conversation.clear()
         self.metadata["cleared_at"] = datetime.now().isoformat()
-        
+
         if self.config.auto_save_session:
             self.save()
-    
+
     def export(self, format: str = "json") -> str:
         """
         导出会话
@@ -317,16 +322,16 @@ class Session:
             return self.conversation.to_json()
         elif format == "markdown":
             lines = [
-                f"# 会话导出",
-                f"",
+                "# 会话导出",
+                "",
                 f"- 会话 ID: {self.session_id}",
                 f"- 创建时间: {self.conversation.created_at}",
                 f"- 消息数量: {len(self.conversation.messages)}",
-                f"",
+                "",
                 "---",
-                f"",
+                "",
             ]
-            
+
             for msg in self.conversation.messages:
                 role_name = {
                     "system": "系统",
@@ -334,21 +339,21 @@ class Session:
                     "assistant": "助手",
                     "tool": "工具",
                 }.get(msg.role.value, msg.role.value)
-                
+
                 lines.append(f"## {role_name}")
-                lines.append(f"")
+                lines.append("")
                 lines.append(msg.get_text_content())
-                lines.append(f"")
+                lines.append("")
                 lines.append("---")
                 lines.append("")
-            
+
             return "\n".join(lines)
         else:
             raise ValueError(f"不支持的导出格式: {format}")
-    
+
     # ==================== 进度追踪相关方法 ====================
-    
-    def get_progress_manager(self) -> "ProgressManager":
+
+    def get_progress_manager(self) -> ProgressManager:
         """
         获取进度管理器实例
         
@@ -357,15 +362,15 @@ class Session:
         """
         if self._progress_manager is None:
             from foxcode.core.progress import ProgressManager
-            
+
             self._progress_manager = ProgressManager(
                 working_dir=self.config.working_dir,
                 progress_file=self.config.long_running.progress_file,
             )
-        
+
         return self._progress_manager
-    
-    def get_feature_list(self) -> "FeatureList":
+
+    def get_feature_list(self) -> FeatureList:
         """
         获取功能列表实例
         
@@ -374,13 +379,13 @@ class Session:
         """
         if self._feature_list is None:
             from foxcode.core.feature_list import FeatureList
-            
+
             feature_file = self.config.working_dir / self.config.long_running.feature_list_file
             self._feature_list = FeatureList(file_path=feature_file)
-        
+
         return self._feature_list
-    
-    def get_context_bridge(self) -> "ContextBridge":
+
+    def get_context_bridge(self) -> ContextBridge:
         """
         获取上下文桥接实例
         
@@ -388,17 +393,17 @@ class Session:
             上下文桥接实例
         """
         if self._context_bridge is None:
-            from foxcode.core.context_bridge import ContextBridge
-            
+            from foxcode.context.context_bridge import ContextBridge
+
             self._context_bridge = ContextBridge(
                 working_dir=self.config.working_dir,
                 summary_file=self.config.long_running.summary_file,
                 compression_threshold=self.config.long_running.context_compression_threshold,
             )
-        
+
         return self._context_bridge
-    
-    def get_session_type(self) -> "SessionType":
+
+    def get_session_type(self) -> SessionType:
         """
         获取会话类型
         
@@ -407,9 +412,9 @@ class Session:
         """
         if self._session_type is None:
             self._session_type = self.get_context_bridge().detect_session_type()
-        
+
         return self._session_type
-    
+
     def load_progress_info(self) -> dict[str, Any]:
         """
         加载进度信息
@@ -421,32 +426,32 @@ class Session:
             progress_manager = self.get_progress_manager()
             context_bridge = self.get_context_bridge()
             feature_list = self.get_feature_list()
-            
+
             # 加载进度
             if progress_manager.exists():
                 progress_manager.load()
-            
+
             # 加载功能列表
             if feature_list.file_path.exists():
                 try:
                     feature_list.load()
                 except Exception as e:
                     logger.warning(f"加载功能列表失败: {e}")
-            
+
             # 加载摘要
             summary = context_bridge.load_summary()
-            
+
             return {
                 "progress_summary": progress_manager.get_summary() if progress_manager.exists() else "",
                 "pending_features": [f.title for f in feature_list.get_pending_features()],
                 "current_feature": feature_list.get_next_feature().title if feature_list.get_next_feature() else "",
                 "recent_summary": summary.to_markdown() if summary else "",
             }
-            
+
         except Exception as e:
             logger.error(f"加载进度信息失败: {e}")
             return {}
-    
+
     def save_session_summary(
         self,
         completed_work: list[str] | None = None,
@@ -471,7 +476,7 @@ class Session:
         """
         try:
             context_bridge = self.get_context_bridge()
-            
+
             # 生成摘要
             summary = context_bridge.generate_summary(
                 session_id=self.session_id,
@@ -484,19 +489,19 @@ class Session:
                 file_changes=file_changes or [],
                 notes=notes,
             )
-            
+
             # 追加到历史
             context_bridge.append_summary(summary)
-            
+
             # 保存当前摘要
             context_bridge.save_summary(summary)
-            
+
             logger.info(f"会话摘要已保存: {self.session_id}")
-            
+
         except Exception as e:
             logger.error(f"保存会话摘要失败: {e}")
             raise
-    
+
     def update_progress(
         self,
         current_task: str | None = None,
@@ -513,32 +518,32 @@ class Session:
         """
         try:
             progress_manager = self.get_progress_manager()
-            
+
             # 更新当前任务
             if current_task:
                 progress_manager.update_status(current_task=current_task)
-            
+
             # 添加工作记录
             if completed_tasks:
                 progress_manager.add_work_record(
                     session_id=self.session_id,
                     tasks=completed_tasks,
                 )
-            
+
             # 添加待办事项
             if new_todos:
                 for todo in new_todos:
                     progress_manager.add_todo(todo)
-            
+
             logger.debug(f"进度已更新: {current_task}")
-            
+
         except Exception as e:
             logger.error(f"更新进度失败: {e}")
             raise
-    
+
     # ==================== 工作流程相关方法 ====================
-    
-    def get_workflow_manager(self) -> "WorkflowManager":
+
+    def get_workflow_manager(self) -> WorkflowManager:
         """
         获取工作流程管理器实例
         
@@ -547,14 +552,14 @@ class Session:
         """
         if self._workflow_manager is None:
             from foxcode.core.workflow import create_workflow_manager
-            
+
             self._workflow_manager = create_workflow_manager(
                 working_dir=self.config.working_dir,
             )
-        
+
         return self._workflow_manager
-    
-    def get_current_workflow(self) -> "WorkflowInstance | None":
+
+    def get_current_workflow(self) -> WorkflowInstance | None:
         """
         获取当前工作流程实例
         
@@ -563,22 +568,22 @@ class Session:
         """
         if self._current_workflow is not None:
             return self._current_workflow
-        
+
         # 尝试获取与当前功能关联的工作流程
         feature_list = self.get_feature_list()
         next_feature = feature_list.get_next_feature()
-        
+
         if next_feature:
             workflow_manager = self.get_workflow_manager()
             self._current_workflow = workflow_manager.get_workflow_by_feature(next_feature.id)
-        
+
         return self._current_workflow
-    
+
     def start_workflow_for_feature(
         self,
         feature_id: str,
         branch_name: str = "",
-    ) -> "WorkflowInstance":
+    ) -> WorkflowInstance:
         """
         为功能启动工作流程
         
@@ -590,14 +595,14 @@ class Session:
             创建的工作流程实例
         """
         workflow_manager = self.get_workflow_manager()
-        
+
         # 检查是否已存在工作流程
         existing = workflow_manager.get_workflow_by_feature(feature_id)
         if existing:
             self._current_workflow = existing
             logger.info(f"功能 {feature_id} 已有工作流程: {existing.id}")
             return existing
-        
+
         # 创建新工作流程
         workflow = workflow_manager.create_workflow(
             feature_id=feature_id,
@@ -607,12 +612,12 @@ class Session:
                 "session_id": self.session_id,
             },
         )
-        
+
         self._current_workflow = workflow
         logger.info(f"已为功能 {feature_id} 创建工作流程: {workflow.id}")
-        
+
         return workflow
-    
+
     def advance_workflow(
         self,
         output: str = "",
@@ -632,22 +637,22 @@ class Session:
         if not workflow:
             logger.warning("没有当前工作流程")
             return False
-        
+
         workflow_manager = self.get_workflow_manager()
         current_phase = workflow.current_phase
-        
+
         success = workflow_manager.complete_phase_manually(
             workflow_id=workflow.id,
             phase=current_phase,
             output=output,
             artifacts=artifacts,
         )
-        
+
         if success:
             logger.info(f"工作流程已推进: {current_phase.get_display_name()} -> {workflow.current_phase.get_display_name()}")
-        
+
         return success
-    
+
     def get_workflow_context(self) -> dict[str, Any]:
         """
         获取工作流程上下文信息
@@ -661,7 +666,7 @@ class Session:
                 "has_workflow": False,
                 "message": "当前没有活动的工作流程",
             }
-        
+
         progress = workflow.get_progress()
         return {
             "has_workflow": True,
@@ -672,10 +677,10 @@ class Session:
             "progress_percent": progress["progress_percent"],
             "branch_name": workflow.branch_name,
         }
-    
+
     # ==================== 上下文重置相关方法 ====================
-    
-    def get_context_reset_manager(self) -> "ContextResetManager":
+
+    def get_context_reset_manager(self) -> ContextResetManager:
         """
         获取上下文重置管理器实例
         
@@ -689,7 +694,7 @@ class Session:
             from foxcode.core.context_reset import ContextResetManager
             self._context_reset_manager = ContextResetManager(config=self.config)
         return self._context_reset_manager
-    
+
     def get_agent_role(self) -> AgentRole:
         """
         获取当前代理角色
@@ -701,7 +706,7 @@ class Session:
             AgentRole: 当前代理角色
         """
         return self._agent_role
-    
+
     def switch_agent_role(self, role: AgentRole) -> None:
         """
         切换代理角色
@@ -718,8 +723,8 @@ class Session:
         """
         self._agent_role = role
         logger.info(f"代理角色已切换: {role.value}")
-    
-    def get_context_usage(self) -> "ContextUsageInfo":
+
+    def get_context_usage(self) -> ContextUsageInfo:
         """
         获取上下文使用信息
         
@@ -735,22 +740,22 @@ class Session:
         """
         manager = self.get_context_reset_manager()
         return manager.get_context_usage(self)
-    
+
     def reset_context(
         self,
-        trigger: "ResetTrigger" = None,
+        trigger: ResetTrigger = None,
         completed_work: list[str] | None = None,
         incomplete_work: list[str] | None = None,
-        current_task: "TaskItem | None" = None,
-        pending_tasks: list["TaskItem"] | None = None,
-        completed_tasks: list["TaskItem"] | None = None,
+        current_task: TaskItem | None = None,
+        pending_tasks: list[TaskItem] | None = None,
+        completed_tasks: list[TaskItem] | None = None,
         key_decisions: list[str] | None = None,
         file_changes: list[str] | None = None,
         next_steps: list[str] | None = None,
         issues: list[str] | None = None,
         blockers: list[str] | None = None,
         context_summary: str = "",
-    ) -> "ResetResult":
+    ) -> ResetResult:
         """
         重置上下文并生成 HandoffArtifact
         
@@ -784,13 +789,13 @@ class Session:
             ...     print(f"重置成功，新会话: {result.new_session_id}")
         """
         from foxcode.core.context_reset import ResetTrigger
-        
+
         # 设置默认触发原因
         if trigger is None:
             trigger = ResetTrigger.MANUAL
-        
+
         manager = self.get_context_reset_manager()
-        
+
         return manager.reset_context(
             session=self,
             trigger=trigger,
@@ -807,8 +812,8 @@ class Session:
             blockers=blockers,
             context_summary=context_summary,
         )
-    
-    def restore_from_artifact(self, artifact: "HandoffArtifact") -> bool:
+
+    def restore_from_artifact(self, artifact: HandoffArtifact) -> bool:
         """
         从 HandoffArtifact 恢复状态
         
@@ -830,13 +835,13 @@ class Session:
         """
         manager = self.get_context_reset_manager()
         success = manager.restore_context(self, artifact)
-        
+
         if success:
             self._agent_role = artifact.agent_role
             logger.info(f"已从 HandoffArtifact 恢复状态，代理角色: {artifact.agent_role.value}")
-        
+
         return success
-    
+
     def load_and_restore_handoff(self) -> bool:
         """
         加载最近的 HandoffArtifact 并恢复状态
@@ -856,12 +861,12 @@ class Session:
         """
         manager = self.get_context_reset_manager()
         artifact = manager.load_latest_handoff()
-        
+
         if artifact:
             return self.restore_from_artifact(artifact)
-        
+
         return False
-    
+
     def check_context_reset_needed(self) -> tuple[bool, str]:
         """
         检查是否需要上下文重置

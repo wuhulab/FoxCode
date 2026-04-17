@@ -14,11 +14,8 @@ FoxCode 知识库管理系统
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import os
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -85,7 +82,7 @@ class Knowledge:
     access_count: int = 0
     embedding: list[float] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         return {
@@ -103,9 +100,9 @@ class Knowledge:
             "embedding": self.embedding,
             "metadata": self.metadata,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Knowledge":
+    def from_dict(cls, data: dict[str, Any]) -> Knowledge:
         """从字典创建"""
         data["category"] = KnowledgeCategory(data["category"])
         data["priority"] = KnowledgePriority(data["priority"])
@@ -114,13 +111,13 @@ class Knowledge:
         if data.get("expires_at"):
             data["expires_at"] = datetime.fromisoformat(data["expires_at"])
         return cls(**data)
-    
+
     def is_expired(self) -> bool:
         """检查是否过期"""
         if self.expires_at is None:
             return False
         return datetime.now() > self.expires_at
-    
+
     def touch(self) -> None:
         """更新访问时间和计数"""
         self.access_count += 1
@@ -169,7 +166,7 @@ class KnowledgeBase:
         >>> await kb.store(knowledge)
         >>> results = await kb.retrieve("如何实现并发")
     """
-    
+
     def __init__(self, config: KnowledgeBaseConfig | None = None):
         """
         初始化知识库
@@ -184,15 +181,15 @@ class KnowledgeBase:
         self._session_shares: dict[str, set[str]] = {}  # session_id -> knowledge_ids
         self._embedding_model = None
         self._initialized = False
-        
+
         self._ensure_storage_dir()
         logger.info(f"知识库初始化完成，存储路径: {self.config.storage_path}")
-    
+
     def _ensure_storage_dir(self) -> None:
         """确保存储目录存在"""
         storage_path = Path(self.config.storage_path)
         storage_path.mkdir(parents=True, exist_ok=True)
-    
+
     async def initialize(self) -> None:
         """
         异步初始化知识库
@@ -201,22 +198,22 @@ class KnowledgeBase:
         """
         if self._initialized:
             return
-        
+
         try:
             # 加载已有知识
             await self._load_knowledge()
-            
+
             # 初始化嵌入模型
             if self.config.enable_embeddings:
                 await self._init_embedding_model()
-            
+
             self._initialized = True
             logger.info(f"知识库异步初始化完成，已加载 {len(self._knowledge)} 条知识")
-            
+
         except Exception as e:
             logger.error(f"知识库初始化失败: {e}")
             raise
-    
+
     async def _init_embedding_model(self) -> None:
         """初始化嵌入模型"""
         try:
@@ -233,29 +230,29 @@ class KnowledgeBase:
             except ImportError:
                 logger.warning("未找到嵌入模型，语义检索功能将受限")
                 self._embedding_model = None
-    
+
     async def _load_knowledge(self) -> None:
         """从存储加载知识"""
         storage_path = Path(self.config.storage_path)
         knowledge_file = storage_path / "knowledge.json"
-        
+
         if not knowledge_file.exists():
             return
-        
+
         try:
-            with open(knowledge_file, "r", encoding="utf-8") as f:
+            with open(knowledge_file, encoding="utf-8") as f:
                 data = json.load(f)
-            
+
             for item in data.get("knowledge", []):
                 knowledge = Knowledge.from_dict(item)
                 self._knowledge[knowledge.id] = knowledge
                 self._update_indexes(knowledge)
-            
+
             logger.info(f"已加载 {len(self._knowledge)} 条知识")
-            
+
         except Exception as e:
             logger.error(f"加载知识失败: {e}")
-    
+
     def _update_indexes(self, knowledge: Knowledge) -> None:
         """更新索引"""
         # 更新标签索引
@@ -263,23 +260,23 @@ class KnowledgeBase:
             if tag not in self._tag_index:
                 self._tag_index[tag] = set()
             self._tag_index[tag].add(knowledge.id)
-        
+
         # 更新类别索引
         if knowledge.category not in self._category_index:
             self._category_index[knowledge.category] = set()
         self._category_index[knowledge.category].add(knowledge.id)
-    
+
     def _remove_from_indexes(self, knowledge: Knowledge) -> None:
         """从索引中移除"""
         # 从标签索引移除
         for tag in knowledge.tags:
             if tag in self._tag_index:
                 self._tag_index[tag].discard(knowledge.id)
-        
+
         # 从类别索引移除
         if knowledge.category in self._category_index:
             self._category_index[knowledge.category].discard(knowledge.id)
-    
+
     async def _generate_embedding(self, text: str) -> list[float] | None:
         """
         生成文本嵌入向量
@@ -292,7 +289,7 @@ class KnowledgeBase:
         """
         if not self._embedding_model:
             return None
-        
+
         try:
             if self._embedding_model == "openai":
                 import openai
@@ -309,7 +306,7 @@ class KnowledgeBase:
         except Exception as e:
             logger.warning(f"生成嵌入失败: {e}")
             return None
-    
+
     async def store(self, knowledge: Knowledge) -> str:
         """
         存储知识
@@ -322,27 +319,27 @@ class KnowledgeBase:
         """
         if not self._initialized:
             await self.initialize()
-        
+
         # 检查数量限制
         if len(self._knowledge) >= self.config.max_knowledge_items:
             # 清理最旧或最低优先级的知识
             await self._cleanup_old_knowledge()
-        
+
         # 设置过期时间
         if knowledge.expires_at is None and self.config.default_expiry_days > 0:
             knowledge.expires_at = datetime.now() + timedelta(days=self.config.default_expiry_days)
-        
+
         # 生成嵌入
         if self.config.enable_embeddings and knowledge.embedding is None:
             knowledge.embedding = await self._generate_embedding(knowledge.content)
-        
+
         # 存储
         self._knowledge[knowledge.id] = knowledge
         self._update_indexes(knowledge)
-        
+
         logger.debug(f"存储知识: {knowledge.id} - {knowledge.title}")
         return knowledge.id
-    
+
     async def retrieve(
         self,
         query: str,
@@ -364,13 +361,13 @@ class KnowledgeBase:
         """
         if not self._initialized:
             await self.initialize()
-        
+
         # 获取候选集
         candidates = self._get_candidates(category, tags)
-        
+
         # 过期检查
         candidates = [k for k in candidates if not k.is_expired()]
-        
+
         # 如果有嵌入模型，使用语义检索
         if self.config.enable_embeddings and self._embedding_model:
             query_embedding = await self._generate_embedding(query)
@@ -380,13 +377,13 @@ class KnowledgeBase:
                 for k in results:
                     k.touch()
                 return results
-        
+
         # 回退到关键词搜索
         results = self._keyword_search(candidates, query, top_k)
         for k in results:
             k.touch()
         return results
-    
+
     def _get_candidates(
         self,
         category: KnowledgeCategory | None = None,
@@ -404,9 +401,9 @@ class KnowledgeBase:
             ids = set.union(*[self._tag_index.get(t, set()) for t in tags])
         else:
             ids = set(self._knowledge.keys())
-        
+
         return [self._knowledge[kid] for kid in ids if kid in self._knowledge]
-    
+
     def _semantic_search(
         self,
         candidates: list[Knowledge],
@@ -415,11 +412,11 @@ class KnowledgeBase:
     ) -> list[Knowledge]:
         """语义搜索"""
         import numpy as np
-        
+
         # 计算相似度
         scores = []
         query_vec = np.array(query_embedding)
-        
+
         for knowledge in candidates:
             if knowledge.embedding:
                 knowledge_vec = np.array(knowledge.embedding)
@@ -427,18 +424,18 @@ class KnowledgeBase:
                     np.linalg.norm(query_vec) * np.linalg.norm(knowledge_vec)
                 )
                 scores.append((knowledge, similarity))
-        
+
         # 排序
         scores.sort(key=lambda x: x[1], reverse=True)
-        
+
         # 过滤低相似度结果
         results = [
             k for k, s in scores[:top_k]
             if s >= self.config.similarity_threshold
         ]
-        
+
         return results
-    
+
     def _keyword_search(
         self,
         candidates: list[Knowledge],
@@ -448,12 +445,12 @@ class KnowledgeBase:
         """关键词搜索"""
         query_lower = query.lower()
         query_words = set(query_lower.split())
-        
+
         scores = []
         for knowledge in candidates:
             content_lower = knowledge.content.lower()
             title_lower = knowledge.title.lower()
-            
+
             # 计算匹配分数
             score = 0
             for word in query_words:
@@ -463,14 +460,14 @@ class KnowledgeBase:
                     score += 1
                 if word in knowledge.tags:
                     score += 2  # 标签匹配
-            
+
             scores.append((knowledge, score))
-        
+
         # 排序
         scores.sort(key=lambda x: x[1], reverse=True)
-        
+
         return [k for k, s in scores[:top_k] if s > 0]
-    
+
     def add_tag(self, knowledge_id: str, tag: str) -> bool:
         """
         添加标签
@@ -485,16 +482,16 @@ class KnowledgeBase:
         knowledge = self._knowledge.get(knowledge_id)
         if not knowledge:
             return False
-        
+
         if tag not in knowledge.tags:
             knowledge.tags.append(tag)
             if tag not in self._tag_index:
                 self._tag_index[tag] = set()
             self._tag_index[tag].add(knowledge_id)
             knowledge.updated_at = datetime.now()
-        
+
         return True
-    
+
     def remove_tag(self, knowledge_id: str, tag: str) -> bool:
         """
         移除标签
@@ -509,15 +506,15 @@ class KnowledgeBase:
         knowledge = self._knowledge.get(knowledge_id)
         if not knowledge:
             return False
-        
+
         if tag in knowledge.tags:
             knowledge.tags.remove(tag)
             if tag in self._tag_index:
                 self._tag_index[tag].discard(knowledge_id)
             knowledge.updated_at = datetime.now()
-        
+
         return True
-    
+
     def get_by_category(self, category: KnowledgeCategory) -> list[Knowledge]:
         """
         按类别获取知识
@@ -530,7 +527,7 @@ class KnowledgeBase:
         """
         ids = self._category_index.get(category, set())
         return [self._knowledge[kid] for kid in ids if kid in self._knowledge]
-    
+
     def get_by_tag(self, tag: str) -> list[Knowledge]:
         """
         按标签获取知识
@@ -543,7 +540,7 @@ class KnowledgeBase:
         """
         ids = self._tag_index.get(tag, set())
         return [self._knowledge[kid] for kid in ids if kid in self._knowledge]
-    
+
     def get(self, knowledge_id: str) -> Knowledge | None:
         """
         获取单个知识
@@ -558,7 +555,7 @@ class KnowledgeBase:
         if knowledge:
             knowledge.touch()
         return knowledge
-    
+
     def delete(self, knowledge_id: str) -> bool:
         """
         删除知识
@@ -575,7 +572,7 @@ class KnowledgeBase:
             logger.debug(f"删除知识: {knowledge_id}")
             return True
         return False
-    
+
     def expire_old_knowledge(self, max_age_days: int = 30) -> int:
         """
         清理过期知识
@@ -588,19 +585,19 @@ class KnowledgeBase:
         """
         cutoff = datetime.now() - timedelta(days=max_age_days)
         expired_ids = []
-        
+
         for kid, knowledge in self._knowledge.items():
             if knowledge.is_expired() or knowledge.updated_at < cutoff:
                 expired_ids.append(kid)
-        
+
         for kid in expired_ids:
             self.delete(kid)
-        
+
         if expired_ids:
             logger.info(f"清理了 {len(expired_ids)} 条过期知识")
-        
+
         return len(expired_ids)
-    
+
     async def _cleanup_old_knowledge(self) -> None:
         """清理旧知识以腾出空间"""
         # 按优先级和访问时间排序
@@ -612,14 +609,14 @@ class KnowledgeBase:
             x[1].access_count,
             x[1].updated_at,
         ))
-        
+
         # 删除 10% 的低优先级知识
         to_remove = max(1, len(items) // 10)
         for kid, _ in items[:to_remove]:
             self.delete(kid)
-        
+
         logger.info(f"清理了 {to_remove} 条低优先级知识")
-    
+
     async def share_to_session(self, knowledge_id: str, session_id: str) -> bool:
         """
         共享知识到会话
@@ -633,14 +630,14 @@ class KnowledgeBase:
         """
         if knowledge_id not in self._knowledge:
             return False
-        
+
         if session_id not in self._session_shares:
             self._session_shares[session_id] = set()
-        
+
         self._session_shares[session_id].add(knowledge_id)
         logger.debug(f"共享知识 {knowledge_id} 到会话 {session_id}")
         return True
-    
+
     def get_session_knowledge(self, session_id: str) -> list[Knowledge]:
         """
         获取会话共享的知识
@@ -653,7 +650,7 @@ class KnowledgeBase:
         """
         ids = self._session_shares.get(session_id, set())
         return [self._knowledge[kid] for kid in ids if kid in self._knowledge]
-    
+
     async def save(self) -> bool:
         """
         保存知识库
@@ -663,7 +660,7 @@ class KnowledgeBase:
         """
         storage_path = Path(self.config.storage_path)
         knowledge_file = storage_path / "knowledge.json"
-        
+
         try:
             data = {
                 "knowledge": [k.to_dict() for k in self._knowledge.values()],
@@ -675,17 +672,17 @@ class KnowledgeBase:
                     "total_count": len(self._knowledge),
                 }
             }
-            
+
             with open(knowledge_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            
+
             logger.info(f"知识库已保存，共 {len(self._knowledge)} 条知识")
             return True
-            
+
         except Exception as e:
             logger.error(f"保存知识库失败: {e}")
             return False
-    
+
     def get_statistics(self) -> dict[str, Any]:
         """
         获取知识库统计信息
@@ -696,7 +693,7 @@ class KnowledgeBase:
         categories = {}
         for cat in KnowledgeCategory:
             categories[cat.value] = len(self._category_index.get(cat, set()))
-        
+
         return {
             "total_knowledge": len(self._knowledge),
             "total_tags": len(self._tag_index),

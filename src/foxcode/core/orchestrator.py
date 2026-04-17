@@ -7,22 +7,20 @@ FoxCode 多代理协调器模块
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
-from typing import Any, Optional, Callable, Awaitable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from foxcode.core.config import Config, AgentRole
-from foxcode.core.handoff import HandoffArtifact, TaskItem
-from foxcode.core.evaluator import EvaluatorAgent, EvaluationReport, EvaluationType
+from foxcode.core.config import AgentRole, Config
 from foxcode.core.context_reset import ContextResetManager, ResetTrigger
+from foxcode.core.evaluator import EvaluationReport, EvaluatorAgent
+from foxcode.core.handoff import HandoffArtifact, TaskItem
 
 if TYPE_CHECKING:
     from foxcode.core.session import Session
-    from foxcode.core.agent import FoxCodeAgent
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +71,7 @@ class AgentMessage:
     message_type: str = "info"
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, Any]:
         """
         将消息转换为字典格式
@@ -113,11 +111,11 @@ class TaskResult:
     success: bool
     output: str = ""
     artifacts: list[str] = field(default_factory=list)
-    evaluation_report: Optional[EvaluationReport] = None
+    evaluation_report: EvaluationReport | None = None
     error: str | None = None
     needs_revision: bool = False
     revision_count: int = 0
-    
+
     def to_dict(self) -> dict[str, Any]:
         """
         将结果转换为字典格式
@@ -161,13 +159,13 @@ class MultiAgentOrchestrator:
         state: 当前协调器状态
         current_role: 当前代理角色
     """
-    
+
     DEFAULT_MAX_REVISIONS = 3
-    
+
     def __init__(
         self,
         config: Config,
-        session: "Session",
+        session: Session,
         max_revisions: int = DEFAULT_MAX_REVISIONS,
     ):
         """
@@ -184,29 +182,29 @@ class MultiAgentOrchestrator:
         # 参数验证
         if max_revisions < 0:
             raise ValueError("最大修订次数不能为负数")
-        
+
         self.config = config
         self.session = session
         self.max_revisions = max_revisions
-        
+
         # 状态管理
         self._state = OrchestratorState.IDLE
         self._current_role = AgentRole.PLANNER
-        
+
         # 任务管理
         self._tasks: list[TaskItem] = []
         self._current_task: TaskItem | None = None
         self._task_results: dict[str, TaskResult] = {}
-        
+
         # 消息队列
         self._message_queue: list[AgentMessage] = []
-        
+
         # 评估器（延迟初始化）
         self._evaluator: EvaluatorAgent | None = None
-        
+
         # 上下文重置管理器（延迟初始化）
         self._context_reset_manager: ContextResetManager | None = None
-        
+
         # 统计信息
         self._stats = {
             "tasks_planned": 0,
@@ -215,13 +213,13 @@ class MultiAgentOrchestrator:
             "evaluations_passed": 0,
             "evaluations_failed": 0,
         }
-        
+
         logger.info(
             f"多代理协调器初始化完成 - "
             f"最大修订次数: {max_revisions}, "
             f"初始角色: {self._current_role.value}"
         )
-    
+
     @property
     def state(self) -> OrchestratorState:
         """
@@ -231,7 +229,7 @@ class MultiAgentOrchestrator:
             当前状态枚举值
         """
         return self._state
-    
+
     @property
     def current_role(self) -> AgentRole:
         """
@@ -241,7 +239,7 @@ class MultiAgentOrchestrator:
             当前代理角色枚举值
         """
         return self._current_role
-    
+
     def get_evaluator(self) -> EvaluatorAgent:
         """
         获取评估器实例
@@ -269,9 +267,9 @@ class MultiAgentOrchestrator:
                 },
             )
             logger.debug(f"评估器已初始化，通过阈值: {criteria.passing_threshold}")
-        
+
         return self._evaluator
-    
+
     def get_context_reset_manager(self) -> ContextResetManager:
         """
         获取上下文重置管理器实例
@@ -284,11 +282,11 @@ class MultiAgentOrchestrator:
         if self._context_reset_manager is None:
             self._context_reset_manager = ContextResetManager(config=self.config)
             logger.debug("上下文重置管理器已初始化")
-        
+
         return self._context_reset_manager
-    
+
     # ==================== 角色切换 ====================
-    
+
     def switch_role(self, new_role: AgentRole) -> None:
         """
         切换代理角色
@@ -305,15 +303,15 @@ class MultiAgentOrchestrator:
         """
         old_role = self._current_role
         self._current_role = new_role
-        
+
         # 通知会话切换角色
         try:
             self.session.switch_agent_role(new_role)
         except Exception as e:
             logger.warning(f"通知会话切换角色失败: {e}")
-        
+
         logger.info(f"代理角色切换: {old_role.value} -> {new_role.value}")
-        
+
         # 发送角色切换消息
         self._add_message(AgentMessage(
             from_role=old_role,
@@ -321,9 +319,9 @@ class MultiAgentOrchestrator:
             content=f"角色切换: {old_role.value} -> {new_role.value}",
             message_type="info",
         ))
-    
+
     # ==================== 任务管理 ====================
-    
+
     def set_tasks(self, tasks: list[TaskItem]) -> None:
         """
         设置任务列表
@@ -338,18 +336,18 @@ class MultiAgentOrchestrator:
         """
         if not tasks:
             raise ValueError("任务列表不能为空")
-        
+
         self._tasks = list(tasks)  # 创建副本以避免外部修改
         self._stats["tasks_planned"] = len(tasks)
-        
+
         logger.info(f"已设置 {len(tasks)} 个任务")
-        
+
         # 记录任务详情
         for i, task in enumerate(self._tasks[:5], 1):
             logger.debug(f"  任务 {i}: [{task.id}] {task.title}")
         if len(self._tasks) > 5:
             logger.debug(f"  ... 共 {len(self._tasks)} 个任务")
-    
+
     def get_next_task(self) -> TaskItem | None:
         """
         获取下一个待处理任务
@@ -363,7 +361,7 @@ class MultiAgentOrchestrator:
             if task.status == "pending":
                 return task
         return None
-    
+
     def get_task_by_id(self, task_id: str) -> TaskItem | None:
         """
         根据 ID 获取任务
@@ -378,7 +376,7 @@ class MultiAgentOrchestrator:
             if task.id == task_id:
                 return task
         return None
-    
+
     def start_task(self, task: TaskItem) -> None:
         """
         开始执行任务
@@ -392,9 +390,9 @@ class MultiAgentOrchestrator:
         self._current_task = task
         self._state = OrchestratorState.GENERATING
         self.switch_role(AgentRole.GENERATOR)
-        
+
         logger.info(f"开始执行任务: {task.id} - {task.title}")
-        
+
         # 发送任务开始消息
         self._add_message(AgentMessage(
             from_role=AgentRole.PLANNER,
@@ -403,7 +401,7 @@ class MultiAgentOrchestrator:
             message_type="task",
             metadata={"task_id": task.id},
         ))
-    
+
     def complete_task(self, task: TaskItem, result: TaskResult) -> None:
         """
         完成任务
@@ -424,18 +422,18 @@ class MultiAgentOrchestrator:
                 f"任务需要修订: {task.id}, "
                 f"原因: {result.error or '评估未通过'}"
             )
-        
+
         # 保存结果
         self._task_results[task.id] = result
-        
+
         # 检查是否所有任务都已完成
         pending_count = len([t for t in self._tasks if t.status in ("pending", "in_progress")])
         if pending_count == 0:
             self._state = OrchestratorState.COMPLETED
             logger.info("所有任务已完成")
-        
+
         self._current_task = None
-    
+
     def fail_task(self, task: TaskItem, error: str) -> None:
         """
         标记任务失败
@@ -448,7 +446,7 @@ class MultiAgentOrchestrator:
         """
         task.status = "failed"
         task.notes = f"错误: {error}"
-        
+
         # 创建失败结果
         result = TaskResult(
             task_id=task.id,
@@ -456,12 +454,12 @@ class MultiAgentOrchestrator:
             error=error,
         )
         self._task_results[task.id] = result
-        
+
         logger.error(f"任务失败: {task.id} - {error}")
         self._current_task = None
-    
+
     # ==================== 评估流程 ====================
-    
+
     async def evaluate_task(
         self,
         task: TaskItem,
@@ -486,12 +484,12 @@ class MultiAgentOrchestrator:
         """
         if not code_content or not code_content.strip():
             raise ValueError("代码内容不能为空")
-        
+
         self._state = OrchestratorState.EVALUATING
         self.switch_role(AgentRole.EVALUATOR)
-        
+
         evaluator = self.get_evaluator()
-        
+
         try:
             # 执行完整评估
             if design_doc:
@@ -503,26 +501,26 @@ class MultiAgentOrchestrator:
                 report = await evaluator.evaluate_code(
                     code_content=code_content,
                 )
-            
+
             # 更新统计
             if report.passed:
                 self._stats["evaluations_passed"] += 1
             else:
                 self._stats["evaluations_failed"] += 1
-            
+
             logger.info(
                 f"任务 {task.id} 评估完成: "
                 f"{'通过' if report.passed else '未通过'}, "
                 f"总分: {report.total_score:.1f}/10"
             )
-            
+
             return report
-            
+
         except Exception as e:
             logger.error(f"评估任务 {task.id} 时发生错误: {e}")
             self._stats["evaluations_failed"] += 1
             raise
-    
+
     async def run_generation_evaluation_cycle(
         self,
         task: TaskItem,
@@ -554,33 +552,33 @@ class MultiAgentOrchestrator:
         revision_count = 0
         last_error = None
         last_output = ""
-        
+
         while revision_count < self.max_revisions:
             try:
                 # 生成阶段
                 self._state = OrchestratorState.GENERATING
                 self.switch_role(AgentRole.GENERATOR)
-                
+
                 logger.info(
                     f"开始生成 (尝试 {revision_count + 1}/{self.max_revisions}): "
                     f"{task.id}"
                 )
-                
+
                 # 执行生成
                 output = await generator_func(task)
                 last_output = output
                 code_content = code_extractor(output)
-                
+
                 if not code_content:
                     raise ValueError("无法从输出中提取代码内容")
-                
+
                 # 评估阶段
                 report = await self.evaluate_task(
                     task=task,
                     code_content=code_content,
                     design_doc=design_doc,
                 )
-                
+
                 if report.passed:
                     logger.info(f"任务 {task.id} 通过评估")
                     return TaskResult(
@@ -589,40 +587,40 @@ class MultiAgentOrchestrator:
                         output=output,
                         evaluation_report=report,
                     )
-                
+
                 # 评估未通过，准备修订
                 revision_count += 1
                 self._stats["tasks_revised"] += 1
                 self._state = OrchestratorState.REVISION
-                
+
                 # 发送反馈给生成器
                 feedback = self._create_feedback_message(report, revision_count)
                 self._add_message(feedback)
-                
+
                 last_error = (
                     f"评估未通过，总分: {report.total_score:.1f}/10, "
                     f"阈值: {report.threshold}"
                 )
-                
+
                 logger.warning(
                     f"任务 {task.id} 评估未通过，准备修订 "
                     f"({revision_count}/{self.max_revisions})"
                 )
-                
+
             except Exception as e:
                 logger.error(f"生成-评估循环出错: {e}")
                 last_error = str(e)
                 revision_count += 1
-                
+
                 # 如果是最后一次尝试，不再继续
                 if revision_count >= self.max_revisions:
                     break
-        
+
         # 达到最大修订次数仍未通过
         logger.error(
             f"任务 {task.id} 达到最大修订次数 ({self.max_revisions}) 仍未通过"
         )
-        
+
         return TaskResult(
             task_id=task.id,
             success=False,
@@ -631,7 +629,7 @@ class MultiAgentOrchestrator:
             needs_revision=True,
             revision_count=revision_count,
         )
-    
+
     def _create_feedback_message(
         self,
         report: EvaluationReport,
@@ -652,7 +650,7 @@ class MultiAgentOrchestrator:
         recommendations = "\n".join(
             f"- {r}" for r in report.recommendations[:5]
         )
-        
+
         content = f"""
 ## 评估结果
 
@@ -669,10 +667,10 @@ class MultiAgentOrchestrator:
             content += f"- {status} **{score.category}**: {score.score:.1f}/10\n"
             if score.comments:
                 content += f"  - {score.comments}\n"
-        
+
         if report.recommendations:
             content += f"\n## 改进建议\n\n{recommendations}\n"
-        
+
         return AgentMessage(
             from_role=AgentRole.EVALUATOR,
             to_role=AgentRole.GENERATOR,
@@ -683,7 +681,7 @@ class MultiAgentOrchestrator:
                 "revision_count": revision_count,
             },
         )
-    
+
     def _add_message(self, message: AgentMessage) -> None:
         """
         添加消息到队列
@@ -698,7 +696,7 @@ class MultiAgentOrchestrator:
             f"消息已添加: {message.from_role.value} -> {message.to_role.value} "
             f"[{message.message_type}]"
         )
-    
+
     def get_messages(self, to_role: AgentRole | None = None) -> list[AgentMessage]:
         """
         获取消息
@@ -713,9 +711,9 @@ class MultiAgentOrchestrator:
         """
         if to_role is None:
             return list(self._message_queue)
-        
+
         return [m for m in self._message_queue if m.to_role == to_role]
-    
+
     def clear_messages(self) -> int:
         """
         清空消息队列
@@ -727,9 +725,9 @@ class MultiAgentOrchestrator:
         self._message_queue.clear()
         logger.debug(f"已清空 {count} 条消息")
         return count
-    
+
     # ==================== 上下文重置 ====================
-    
+
     async def check_and_reset_context(self) -> bool:
         """
         检查并执行上下文重置
@@ -741,15 +739,15 @@ class MultiAgentOrchestrator:
         """
         manager = self.get_context_reset_manager()
         usage = self.session.get_context_usage()
-        
+
         needs_reset, reason = manager.check_reset_needed(
             usage.used_tokens,
             usage.max_tokens,
         )
-        
+
         if needs_reset:
             logger.warning(f"触发上下文重置: {reason}")
-            
+
             try:
                 # 创建 HandoffArtifact
                 result = self.session.reset_context(
@@ -759,7 +757,7 @@ class MultiAgentOrchestrator:
                     completed_tasks=[t for t in self._tasks if t.status == "completed"],
                     context_summary=f"协调器状态: {self._state.value}",
                 )
-                
+
                 if result.success:
                     logger.info(
                         f"上下文重置成功 - "
@@ -770,15 +768,15 @@ class MultiAgentOrchestrator:
                 else:
                     logger.error(f"上下文重置失败: {result.error}")
                     return False
-                    
+
             except Exception as e:
                 logger.error(f"上下文重置过程中发生错误: {e}")
                 return False
-        
+
         return False
-    
+
     # ==================== 状态管理 ====================
-    
+
     def create_handoff(self) -> HandoffArtifact:
         """
         创建当前状态的 HandoffArtifact
@@ -801,10 +799,10 @@ class MultiAgentOrchestrator:
             },
             working_directory=str(self.config.working_dir),
         )
-        
+
         logger.info(f"已创建 HandoffArtifact: {artifact.session_id}")
         return artifact
-    
+
     def restore_from_handoff(self, artifact: HandoffArtifact) -> None:
         """
         从 HandoffArtifact 恢复状态
@@ -816,27 +814,27 @@ class MultiAgentOrchestrator:
         """
         # 恢复角色
         self._current_role = artifact.agent_role
-        
+
         # 恢复任务
         self._current_task = artifact.current_task
         self._tasks = artifact.pending_tasks + artifact.completed_tasks
-        
+
         # 恢复统计信息
         if "stats" in artifact.metadata:
             self._stats.update(artifact.metadata["stats"])
-        
+
         # 恢复会话状态
         try:
             self.session.restore_from_artifact(artifact)
         except Exception as e:
             logger.warning(f"恢复会话状态失败: {e}")
-        
+
         logger.info(
             f"已从 HandoffArtifact 恢复协调器状态 - "
             f"角色: {self._current_role.value}, "
             f"任务数: {len(self._tasks)}"
         )
-    
+
     def get_statistics(self) -> dict[str, Any]:
         """
         获取统计信息
@@ -858,7 +856,7 @@ class MultiAgentOrchestrator:
             "message_count": len(self._message_queue),
             "max_revisions": self.max_revisions,
         }
-    
+
     def reset(self) -> None:
         """
         重置协调器状态
@@ -878,9 +876,9 @@ class MultiAgentOrchestrator:
             "evaluations_passed": 0,
             "evaluations_failed": 0,
         }
-        
+
         logger.info("协调器已重置")
-    
+
     def get_progress_summary(self) -> str:
         """
         获取进度摘要
@@ -892,27 +890,27 @@ class MultiAgentOrchestrator:
         """
         completed = len([t for t in self._tasks if t.status == "completed"])
         total = len(self._tasks)
-        
+
         if total == 0:
             return "无任务"
-        
+
         progress = (completed / total) * 100
-        
+
         summary = (
             f"进度: {completed}/{total} ({progress:.0f}%) | "
             f"状态: {self._state.value} | "
             f"角色: {self._current_role.value}"
         )
-        
+
         if self._current_task:
             summary += f" | 当前: {self._current_task.title}"
-        
+
         return summary
 
 
 def create_multi_agent_orchestrator(
     config: Config,
-    session: "Session",
+    session: Session,
     max_revisions: int = 3,
 ) -> MultiAgentOrchestrator:
     """

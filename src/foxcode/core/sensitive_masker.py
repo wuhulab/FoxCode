@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class SensitiveDataMasker:
     - IP 地址
     - 文件路径
     """
-    
+
     DEFAULT_PATTERNS = [
         SensitivePattern(
             name="api_key_generic",
@@ -182,7 +182,7 @@ class SensitiveDataMasker:
             description="数据库连接字符串"
         ),
     ]
-    
+
     SENSITIVE_FIELD_NAMES = {
         'password', 'passwd', 'pwd', 'secret', 'secret_key', 'secretkey',
         'api_key', 'apikey', 'token', 'access_token', 'refresh_token',
@@ -191,7 +191,7 @@ class SensitiveDataMasker:
         'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token',
         'database_url', 'db_url', 'db_password',
     }
-    
+
     def __init__(self, custom_patterns: list[SensitivePattern] | None = None):
         """
         初始化敏感数据脱敏器
@@ -202,7 +202,7 @@ class SensitiveDataMasker:
         self.patterns = self.DEFAULT_PATTERNS.copy()
         if custom_patterns:
             self.patterns.extend(custom_patterns)
-    
+
     def mask(self, text: str) -> str:
         """
         脱敏文本中的敏感信息
@@ -215,17 +215,17 @@ class SensitiveDataMasker:
         """
         if not text:
             return text
-        
+
         masked_text = text
-        
+
         for pattern in self.patterns:
             try:
                 masked_text = pattern.pattern.sub(pattern.replacement, masked_text)
             except Exception as e:
                 logger.debug(f"脱敏模式 {pattern.name} 应用失败: {e}")
-        
+
         return masked_text
-    
+
     def mask_dict(self, data: dict[str, Any], depth: int = 0) -> dict[str, Any]:
         """
         脱敏字典中的敏感信息
@@ -239,12 +239,12 @@ class SensitiveDataMasker:
         """
         if depth > 10:
             return data
-        
+
         masked_data = {}
-        
+
         for key, value in data.items():
             key_lower = key.lower().replace('-', '_').replace(' ', '_')
-            
+
             if key_lower in self.SENSITIVE_FIELD_NAMES:
                 masked_data[key] = "***MASKED***"
             elif isinstance(value, str):
@@ -260,9 +260,9 @@ class SensitiveDataMasker:
                 ]
             else:
                 masked_data[key] = value
-        
+
         return masked_data
-    
+
     def mask_path(self, path: str, show_filename: bool = True) -> str:
         """
         脱敏文件路径
@@ -276,18 +276,18 @@ class SensitiveDataMasker:
         """
         if not path:
             return path
-        
+
         try:
             from pathlib import Path
             p = Path(path)
-            
+
             if show_filename and p.name:
                 return f"***PATH***/{p.name}"
             else:
                 return "***PATH***"
         except Exception:
             return "***PATH***"
-    
+
     def detect_sensitive_data(self, text: str) -> list[dict[str, Any]]:
         """
         检测文本中的敏感信息
@@ -299,7 +299,7 @@ class SensitiveDataMasker:
             检测到的敏感信息列表
         """
         detected = []
-        
+
         for pattern in self.patterns:
             matches = pattern.pattern.findall(text)
             if matches:
@@ -308,7 +308,7 @@ class SensitiveDataMasker:
                     "description": pattern.description,
                     "count": len(matches) if isinstance(matches, list) else 1,
                 })
-        
+
         return detected
 
 
@@ -322,14 +322,14 @@ class SensitiveLogFilter(logging.Filter):
     - IP 地址
     - 个人信息
     """
-    
+
     PATH_PATTERNS = [
         re.compile(r'[A-Za-z]:\\[^\s<>:"|?*]+', re.IGNORECASE),  # Windows 路径
         re.compile(r'/[^\s<>:"|?*]+/[^\s<>:"|?*]+'),  # Unix 路径
         re.compile(r'~[^\s]*'),  # 用户主目录
         re.compile(r'\.\.?/[^\s]*'),  # 相对路径
     ]
-    
+
     def __init__(
         self,
         masker: SensitiveDataMasker | None = None,
@@ -348,7 +348,7 @@ class SensitiveLogFilter(logging.Filter):
         self.masker = masker or SensitiveDataMasker()
         self.mask_paths = mask_paths
         self.mask_ips = mask_ips
-    
+
     def filter(self, record: logging.LogRecord) -> bool:
         """
         过滤日志记录
@@ -361,7 +361,7 @@ class SensitiveLogFilter(logging.Filter):
         """
         if record.msg and isinstance(record.msg, str):
             record.msg = self._mask_all(record.msg)
-        
+
         if record.args:
             if isinstance(record.args, dict):
                 record.args = self._mask_args_dict(record.args)
@@ -370,9 +370,9 @@ class SensitiveLogFilter(logging.Filter):
                     self._mask_all(arg) if isinstance(arg, str) else arg
                     for arg in record.args
                 )
-        
+
         return True
-    
+
     def _mask_all(self, text: str) -> str:
         """
         应用所有脱敏规则
@@ -385,14 +385,14 @@ class SensitiveLogFilter(logging.Filter):
         """
         if not text:
             return text
-        
+
         text = self.masker.mask(text)
-        
+
         if self.mask_paths:
             text = self._mask_paths(text)
-        
+
         return text
-    
+
     def _mask_paths(self, text: str) -> str:
         """
         脱敏路径
@@ -416,9 +416,9 @@ class SensitiveLogFilter(logging.Filter):
                     text = text.replace(match, masked)
                 except Exception:
                     text = text.replace(match, "***PATH***")
-        
+
         return text
-    
+
     def _mask_args_dict(self, args: dict[str, Any]) -> dict[str, Any]:
         """
         脱敏字典参数
@@ -511,14 +511,14 @@ def setup_global_log_filter() -> None:
     这应该在应用程序启动时调用
     """
     root_logger = logging.getLogger()
-    
+
     for handler in root_logger.handlers:
         if not any(isinstance(f, SensitiveLogFilter) for f in handler.filters):
             handler.addFilter(SensitiveLogFilter())
-    
+
     if not any(isinstance(f, SensitiveLogFilter) for f in root_logger.filters):
         root_logger.addFilter(SensitiveLogFilter())
-    
+
     for name in logging.root.manager.loggerDict:
         logger_instance = logging.getLogger(name)
         if not any(isinstance(f, SensitiveLogFilter) for f in logger_instance.filters):

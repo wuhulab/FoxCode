@@ -68,7 +68,7 @@ class Feature:
     completed_at: datetime | None = None
     verification: str = ""
     notes: str = ""
-    
+
     def __post_init__(self) -> None:
         """初始化后处理，确保时间字段为 datetime 类型"""
         if isinstance(self.created_at, str):
@@ -77,7 +77,7 @@ class Feature:
             self.updated_at = datetime.fromisoformat(self.updated_at)
         if self.completed_at and isinstance(self.completed_at, str):
             self.completed_at = datetime.fromisoformat(self.completed_at)
-    
+
     def to_dict(self) -> dict[str, Any]:
         """
         将功能项转换为字典
@@ -100,9 +100,9 @@ class Feature:
             "verification": self.verification,
             "notes": self.notes,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Feature":
+    def from_dict(cls, data: dict[str, Any]) -> Feature:
         """
         从字典创建功能项
         
@@ -127,15 +127,15 @@ class Feature:
             verification=data.get("verification", ""),
             notes=data.get("notes", ""),
         )
-    
+
     def is_completed(self) -> bool:
         """检查功能是否已完成"""
         return self.status == FeatureStatus.COMPLETED
-    
+
     def is_pending(self) -> bool:
         """检查功能是否待处理"""
         return self.status == FeatureStatus.PENDING
-    
+
     def is_in_progress(self) -> bool:
         """检查功能是否进行中"""
         return self.status == FeatureStatus.IN_PROGRESS
@@ -147,7 +147,7 @@ class FeatureList:
     
     管理功能需求列表，支持创建、加载、更新和导出功能列表
     """
-    
+
     def __init__(self, file_path: Path | None = None):
         """
         初始化功能列表
@@ -164,7 +164,7 @@ class FeatureList:
             "version": "1.0",
         }
         logger.debug(f"功能列表管理器初始化完成，文件路径: {self.file_path}")
-    
+
     def add_feature(
         self,
         feature_id: str,
@@ -198,7 +198,7 @@ class FeatureList:
         if feature_id in self.features:
             logger.error(f"功能 ID 已存在: {feature_id}")
             raise ValueError(f"功能 ID 已存在: {feature_id}")
-        
+
         feature = Feature(
             id=feature_id,
             title=title,
@@ -209,13 +209,13 @@ class FeatureList:
             dependencies=dependencies or [],
             notes=notes,
         )
-        
+
         self.features[feature_id] = feature
         self._update_timestamp()
         logger.info(f"已添加功能: {feature_id} - {title}")
-        
+
         return feature
-    
+
     def update_status(
         self,
         feature_id: str,
@@ -239,24 +239,24 @@ class FeatureList:
         if feature_id not in self.features:
             logger.error(f"功能不存在: {feature_id}")
             raise KeyError(f"功能不存在: {feature_id}")
-        
+
         feature = self.features[feature_id]
         old_status = feature.status
         feature.status = status
         feature.updated_at = datetime.now()
-        
+
         if verification:
             feature.verification = verification
-        
+
         if status == FeatureStatus.COMPLETED:
             feature.completed_at = datetime.now()
             logger.info(f"功能 {feature_id} 已标记为完成")
         else:
             logger.info(f"功能 {feature_id} 状态从 {old_status.value} 更新为 {status.value}")
-        
+
         self._update_timestamp()
         return feature
-    
+
     def mark_completed(self, feature_id: str, verification: str = "") -> Feature:
         """
         标记功能为已完成
@@ -269,7 +269,7 @@ class FeatureList:
             更新后的功能项
         """
         return self.update_status(feature_id, FeatureStatus.COMPLETED, verification)
-    
+
     def mark_in_progress(self, feature_id: str) -> Feature:
         """
         标记功能为进行中
@@ -281,7 +281,7 @@ class FeatureList:
             更新后的功能项
         """
         return self.update_status(feature_id, FeatureStatus.IN_PROGRESS)
-    
+
     def mark_failed(self, feature_id: str, reason: str = "") -> Feature:
         """
         标记功能为失败
@@ -294,7 +294,7 @@ class FeatureList:
             更新后的功能项
         """
         return self.update_status(feature_id, FeatureStatus.FAILED, reason)
-    
+
     def get_feature(self, feature_id: str) -> Feature | None:
         """
         获取指定功能
@@ -306,7 +306,7 @@ class FeatureList:
             功能项，不存在则返回 None
         """
         return self.features.get(feature_id)
-    
+
     def get_pending_features(self) -> list[Feature]:
         """
         获取所有待处理功能
@@ -316,7 +316,7 @@ class FeatureList:
         """
         pending = [f for f in self.features.values() if f.is_pending()]
         return self._sort_by_priority(pending)
-    
+
     def get_in_progress_features(self) -> list[Feature]:
         """
         获取所有进行中的功能
@@ -325,7 +325,7 @@ class FeatureList:
             进行中功能列表
         """
         return [f for f in self.features.values() if f.is_in_progress()]
-    
+
     def get_completed_features(self) -> list[Feature]:
         """
         获取所有已完成功能
@@ -334,7 +334,7 @@ class FeatureList:
             已完成功能列表
         """
         return [f for f in self.features.values() if f.is_completed()]
-    
+
     def get_next_feature(self) -> Feature | None:
         """
         获取下一个建议处理的功能
@@ -348,7 +348,7 @@ class FeatureList:
         in_progress = self.get_in_progress_features()
         if in_progress:
             return in_progress[0]
-        
+
         # 返回最高优先级的待处理功能
         pending = self.get_pending_features()
         if pending:
@@ -356,9 +356,9 @@ class FeatureList:
             for feature in pending:
                 if self._check_dependencies(feature):
                     return feature
-        
+
         return None
-    
+
     def get_features_by_category(self, category: str) -> list[Feature]:
         """
         获取指定分类的功能
@@ -370,7 +370,7 @@ class FeatureList:
             该分类下的功能列表
         """
         return [f for f in self.features.values() if f.category == category]
-    
+
     def get_categories(self) -> list[str]:
         """
         获取所有分类
@@ -379,7 +379,7 @@ class FeatureList:
             分类列表
         """
         return list(set(f.category for f in self.features.values()))
-    
+
     def get_statistics(self) -> dict[str, Any]:
         """
         获取功能统计信息
@@ -398,7 +398,7 @@ class FeatureList:
                 "blocked": 0,
                 "completion_rate": 0.0,
             }
-        
+
         status_counts = {
             FeatureStatus.PENDING: 0,
             FeatureStatus.IN_PROGRESS: 0,
@@ -406,10 +406,10 @@ class FeatureList:
             FeatureStatus.FAILED: 0,
             FeatureStatus.BLOCKED: 0,
         }
-        
+
         for feature in self.features.values():
             status_counts[feature.status] += 1
-        
+
         return {
             "total": total,
             "pending": status_counts[FeatureStatus.PENDING],
@@ -419,7 +419,7 @@ class FeatureList:
             "blocked": status_counts[FeatureStatus.BLOCKED],
             "completion_rate": round(status_counts[FeatureStatus.COMPLETED] / total * 100, 2),
         }
-    
+
     def create(self, project_name: str = "") -> None:
         """
         创建新的功能列表文件
@@ -430,13 +430,13 @@ class FeatureList:
         self.metadata["project_name"] = project_name
         self.metadata["created_at"] = datetime.now().isoformat()
         self._update_timestamp()
-        
+
         # 确保目录存在
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         self.save()
         logger.info(f"已创建功能列表文件: {self.file_path}")
-    
+
     def load(self) -> None:
         """
         加载现有功能列表文件
@@ -448,7 +448,7 @@ class FeatureList:
         if not self.file_path.exists():
             logger.error(f"功能列表文件不存在: {self.file_path}")
             raise FileNotFoundError(f"功能列表文件不存在: {self.file_path}")
-        
+
         try:
             content = self.file_path.read_text(encoding="utf-8")
             self.from_markdown(content)
@@ -456,7 +456,7 @@ class FeatureList:
         except Exception as e:
             logger.error(f"加载功能列表失败: {e}")
             raise
-    
+
     def save(self) -> None:
         """
         保存功能列表到文件
@@ -468,7 +468,7 @@ class FeatureList:
         except Exception as e:
             logger.error(f"保存功能列表失败: {e}")
             raise
-    
+
     def to_markdown(self) -> str:
         """
         导出为 Markdown 格式
@@ -486,7 +486,7 @@ class FeatureList:
             "## 统计信息",
             "",
         ]
-        
+
         stats = self.get_statistics()
         lines.extend([
             f"- 总计: {stats['total']} 个功能",
@@ -496,46 +496,46 @@ class FeatureList:
             f"- 完成率: {stats['completion_rate']}%",
             "",
         ])
-        
+
         # 按分类组织功能
         categories = self.get_categories()
         for category in categories:
             features = self.get_features_by_category(category)
             lines.append(f"## {category}")
             lines.append("")
-            
+
             for feature in features:
                 # 状态标记
                 checkbox = "[x]" if feature.is_completed() else "[ ]"
-                
+
                 lines.append(f"- {checkbox} {feature.id}: {feature.title}")
                 lines.append(f"  - 状态: {feature.status.value}")
                 lines.append(f"  - 优先级: {feature.priority.value}")
-                
+
                 if feature.description:
                     lines.append(f"  - 描述: {feature.description}")
-                
+
                 if feature.acceptance_criteria:
                     lines.append("  - 验收标准:")
                     for criteria in feature.acceptance_criteria:
                         lines.append(f"    - {criteria}")
-                
+
                 if feature.dependencies:
                     lines.append(f"  - 依赖: {', '.join(feature.dependencies)}")
-                
+
                 if feature.completed_at:
                     lines.append(f"  - 完成时间: {feature.completed_at.isoformat()}")
-                
+
                 if feature.verification:
                     lines.append(f"  - 验证: {feature.verification}")
-                
+
                 if feature.notes:
                     lines.append(f"  - 备注: {feature.notes}")
-                
+
                 lines.append("")
-        
+
         return "\n".join(lines)
-    
+
     def from_markdown(self, content: str) -> None:
         """
         从 Markdown 格式导入
@@ -551,7 +551,7 @@ class FeatureList:
             current_category = "核心功能"
             current_feature: dict[str, Any] | None = None
             features_data: list[dict[str, Any]] = []
-            
+
             # 解析元数据
             for line in lines:
                 if line.startswith("> 项目:"):
@@ -560,11 +560,11 @@ class FeatureList:
                     self.metadata["created_at"] = line.split(":", 1)[1].strip()
                 elif line.startswith("> 更新时间:"):
                     self.metadata["updated_at"] = line.split(":", 1)[1].strip()
-            
+
             # 解析功能项
             for line in lines:
                 line = line.rstrip()
-                
+
                 # 分类标题
                 if line.startswith("## ") and not line.startswith("## 统计"):
                     if current_feature:
@@ -572,17 +572,17 @@ class FeatureList:
                         current_feature = None
                     current_category = line[3:].strip()
                     continue
-                
+
                 # 功能项开始
                 feature_match = re.match(r"- \[([ x])\] ([A-Z]+-\d+): (.+)", line)
                 if feature_match:
                     if current_feature:
                         features_data.append(current_feature)
-                    
+
                     is_completed = feature_match.group(1) == "x"
                     feature_id = feature_match.group(2)
                     title = feature_match.group(3)
-                    
+
                     current_feature = {
                         "id": feature_id,
                         "title": title,
@@ -592,7 +592,7 @@ class FeatureList:
                         "dependencies": [],
                     }
                     continue
-                
+
                 # 功能属性
                 if current_feature:
                     if line.strip().startswith("- 状态:"):
@@ -615,23 +615,23 @@ class FeatureList:
                         criteria = line.strip()[2:]
                         if criteria and not criteria.startswith("状态") and not criteria.startswith("优先级"):
                             current_feature["acceptance_criteria"].append(criteria)
-            
+
             # 添加最后一个功能
             if current_feature:
                 features_data.append(current_feature)
-            
+
             # 创建功能对象
             self.features.clear()
             for data in features_data:
                 feature = Feature.from_dict(data)
                 self.features[feature.id] = feature
-            
+
             logger.info(f"已从 Markdown 导入 {len(self.features)} 个功能")
-            
+
         except Exception as e:
             logger.error(f"解析 Markdown 失败: {e}")
             raise ValueError(f"解析 Markdown 失败: {e}")
-    
+
     def delete_feature(self, feature_id: str) -> bool:
         """
         删除功能
@@ -648,17 +648,17 @@ class FeatureList:
             logger.info(f"已删除功能: {feature_id}")
             return True
         return False
-    
+
     def clear(self) -> None:
         """清空所有功能"""
         self.features.clear()
         self._update_timestamp()
         logger.info("已清空功能列表")
-    
+
     def _update_timestamp(self) -> None:
         """更新时间戳"""
         self.metadata["updated_at"] = datetime.now().isoformat()
-    
+
     def _sort_by_priority(self, features: list[Feature]) -> list[Feature]:
         """
         按优先级排序功能
@@ -676,7 +676,7 @@ class FeatureList:
             FeaturePriority.LOW: 3,
         }
         return sorted(features, key=lambda f: priority_order.get(f.priority, 2))
-    
+
     def _check_dependencies(self, feature: Feature) -> bool:
         """
         检查功能依赖是否满足
@@ -692,9 +692,9 @@ class FeatureList:
             if not dep_feature or not dep_feature.is_completed():
                 return False
         return True
-    
+
     # ==================== 异步方法 ====================
-    
+
     async def add_feature_async(self, *args: Any, **kwargs: Any) -> Feature:
         """
         异步添加功能
@@ -703,7 +703,7 @@ class FeatureList:
             创建的功能项
         """
         return await asyncio.to_thread(self.add_feature, *args, **kwargs)
-    
+
     async def update_status_async(
         self,
         feature_id: str,
@@ -717,15 +717,15 @@ class FeatureList:
             更新后的功能项
         """
         return await asyncio.to_thread(self.update_status, feature_id, status, verification)
-    
+
     async def load_async(self) -> None:
         """异步加载功能列表"""
         await asyncio.to_thread(self.load)
-    
+
     async def save_async(self) -> None:
         """异步保存功能列表"""
         await asyncio.to_thread(self.save)
-    
+
     async def get_next_feature_async(self) -> Feature | None:
         """
         异步获取下一个建议功能
@@ -734,19 +734,19 @@ class FeatureList:
             建议的功能项
         """
         return await asyncio.to_thread(self.get_next_feature)
-    
+
     def __len__(self) -> int:
         """返回功能数量"""
         return len(self.features)
-    
+
     def __contains__(self, feature_id: str) -> bool:
         """检查功能是否存在"""
         return feature_id in self.features
-    
+
     def __iter__(self):
         """迭代功能项"""
         return iter(self.features.values())
-    
+
     def __repr__(self) -> str:
         """字符串表示"""
         stats = self.get_statistics()

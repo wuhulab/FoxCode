@@ -146,7 +146,7 @@ class WorkModeManager:
 
         # 加载状态
         self._load_state()
-        
+
         # 加载任务记录
         self._load_records()
 
@@ -175,12 +175,12 @@ class WorkModeManager:
                 json.dump(self.state.to_dict(), f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"保存状态失败: {e}")
-    
+
     def _load_records(self) -> None:
         """加载任务记录"""
         if not self.config.save_records:
             return
-        
+
         records_file = self.working_dir / self.RECORDS_FILE
         if records_file.exists():
             try:
@@ -206,35 +206,35 @@ class WorkModeManager:
                 logger.info(f"加载了 {len(self._tasks)} 条任务记录")
             except Exception as e:
                 logger.warning(f"加载任务记录失败: {e}")
-    
+
     def _save_records(self) -> None:
         """保存任务记录"""
         if not self.config.save_records:
             return
-        
+
         records_file = self.working_dir / self.RECORDS_FILE
         try:
             records_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # 获取所有任务，按创建时间排序
             all_tasks = sorted(
                 self._tasks.values(),
                 key=lambda t: t.created_at,
                 reverse=True
             )
-            
+
             # 限制记录数量
             tasks_to_save = all_tasks[:self.config.max_records]
-            
+
             records = {
                 "tasks": [t.to_dict() for t in tasks_to_save],
                 "total_tasks": len(self._tasks),
                 "last_updated": datetime.now().isoformat(),
             }
-            
+
             with open(records_file, "w", encoding="utf-8") as f:
                 json.dump(records, f, ensure_ascii=False, indent=2)
-            
+
             logger.debug(f"保存了 {len(tasks_to_save)} 条任务记录")
         except Exception as e:
             logger.error(f"保存任务记录失败: {e}")
@@ -351,7 +351,7 @@ class WorkModeManager:
         )
 
         self._tasks[task_id] = task
-        
+
         # 保存记录
         self._save_records()
 
@@ -666,21 +666,21 @@ class WorkModeManager:
             analysis_result["target_stats"] = {"exists": False, "path": str(target_path)}
 
         output_lines = [
-            f"[OK] 任务分析完成",
-            f"",
+            "[OK] 任务分析完成",
+            "",
             f"**任务类型**: {analysis_result['task_type']}",
             f"**涉及文件类型**: {', '.join(analysis_result['file_types'])}",
             f"**复杂度**: {analysis_result['complexity']}",
             f"**预计步骤**: {analysis_result['estimated_steps']}",
-            f"",
-            f"**建议操作**:",
+            "",
+            "**建议操作**:",
         ]
         for i, action in enumerate(analysis_result["suggested_actions"], 1):
             output_lines.append(f"  {i}. {action}")
 
         if analysis_result.get("target_stats"):
             stats = analysis_result["target_stats"]
-            output_lines.append(f"")
+            output_lines.append("")
             output_lines.append(f"**目标目录**: {stats['path']}")
             if stats.get("exists"):
                 output_lines.append(f"  - 文件数: {stats.get('file_count', 'N/A')}")
@@ -771,12 +771,12 @@ class WorkModeManager:
 
         execution_log = []
         execution_log.append(f"[TIME] 开始时间: {datetime.now().isoformat()}")
-        execution_log.append(f"")
-        execution_log.append(f"[LIST] 任务信息:")
+        execution_log.append("")
+        execution_log.append("[LIST] 任务信息:")
         execution_log.append(f"  - 描述: {task.description}")
         execution_log.append(f"  - 目标路径: {task.target_subfolder}")
-        execution_log.append(f"  - 执行模式: 模拟模式 (SIMULATION)")
-        execution_log.append(f"")
+        execution_log.append("  - 执行模式: 模拟模式 (SIMULATION)")
+        execution_log.append("")
 
         analysis = task.metadata.get("analysis", {})
         task_type = analysis.get("task_type", "general")
@@ -784,17 +784,17 @@ class WorkModeManager:
         complexity = analysis.get("complexity", "medium")
         suggested_actions = analysis.get("suggested_actions", ["分析任务", "执行操作", "验证结果"])
 
-        execution_log.append(f"[STATS] 任务分析结果:")
+        execution_log.append("[STATS] 任务分析结果:")
         execution_log.append(f"  - 类型: {task_type}")
         execution_log.append(f"  - 文件类型: {', '.join(file_types)}")
         execution_log.append(f"  - 复杂度: {complexity}")
-        execution_log.append(f"")
+        execution_log.append("")
 
         target_path = self.working_dir / task.target_subfolder
         scanned_files = []
         scanned_dirs = []
 
-        execution_log.append(f"[VIEW] 扫描目标目录...")
+        execution_log.append("[VIEW] 扫描目标目录...")
         if target_path.exists():
             try:
                 for item in target_path.rglob("*"):
@@ -802,13 +802,13 @@ class WorkModeManager:
                         scanned_files.append(str(item.relative_to(target_path)))
                     elif item.is_dir():
                         scanned_dirs.append(str(item.relative_to(target_path)))
-                
-                execution_log.append(f"  [OK] 扫描完成")
+
+                execution_log.append("  [OK] 扫描完成")
                 execution_log.append(f"  - 发现文件: {len(scanned_files)} 个")
                 execution_log.append(f"  - 发现目录: {len(scanned_dirs)} 个")
-                
+
                 if scanned_files:
-                    execution_log.append(f"  - 主要文件:")
+                    execution_log.append("  - 主要文件:")
                     for f in scanned_files[:10]:
                         execution_log.append(f"    * {f}")
                     if len(scanned_files) > 10:
@@ -816,13 +816,13 @@ class WorkModeManager:
             except Exception as e:
                 execution_log.append(f"  [WARN] 扫描失败: {e}")
         else:
-            execution_log.append(f"  [WARN] 目标目录不存在，将创建")
+            execution_log.append("  [WARN] 目标目录不存在，将创建")
             scanned_dirs.append(task.target_subfolder)
-        execution_log.append(f"")
+        execution_log.append("")
 
-        execution_log.append(f"[TOOL] 执行模拟操作...")
+        execution_log.append("[TOOL] 执行模拟操作...")
         simulated_operations = []
-        
+
         for i, action in enumerate(suggested_actions, 1):
             await asyncio.sleep(0.1)
             operation_detail = await self._simulate_operation(action, task, target_path, scanned_files)
@@ -836,31 +836,31 @@ class WorkModeManager:
             for line in operation_detail.split("\n"):
                 if line.strip():
                     execution_log.append(f"     {line}")
-        
-        execution_log.append(f"")
 
-        execution_log.append(f"[SAVE] 模拟文件变更:")
+        execution_log.append("")
+
+        execution_log.append("[SAVE] 模拟文件变更:")
         simulated_changes = self._generate_simulated_changes(task, task_type, file_types, scanned_files)
         for change in simulated_changes:
             execution_log.append(f"  * {change}")
-        execution_log.append(f"")
+        execution_log.append("")
 
-        execution_log.append(f"[STATS] 执行统计:")
+        execution_log.append("[STATS] 执行统计:")
         execution_log.append(f"  - 执行步骤: {len(simulated_operations)}")
         execution_log.append(f"  - 模拟变更: {len(simulated_changes)} 个文件")
         execution_log.append(f"  - 扫描文件: {len(scanned_files)} 个")
-        execution_log.append(f"")
+        execution_log.append("")
 
-        execution_log.append(f"[INFO] 后续建议:")
+        execution_log.append("[INFO] 后续建议:")
         suggestions = self._generate_suggestions(task_type, complexity, scanned_files)
         for suggestion in suggestions:
             execution_log.append(f"  * {suggestion}")
-        execution_log.append(f"")
+        execution_log.append("")
 
         execution_log.append(f"[TIME] 完成时间: {datetime.now().isoformat()}")
-        execution_log.append(f"")
-        execution_log.append(f"[NOTE] 这是模拟执行，实际文件未被修改。")
-        execution_log.append(f"   要执行真实操作，请切换到 SINGLE_AGENT 或 MULTI_AGENT 模式。")
+        execution_log.append("")
+        execution_log.append("[NOTE] 这是模拟执行，实际文件未被修改。")
+        execution_log.append("   要执行真实操作，请切换到 SINGLE_AGENT 或 MULTI_AGENT 模式。")
 
         return {
             "success": True,
@@ -891,56 +891,56 @@ class WorkModeManager:
             操作详情
         """
         action_lower = action.lower()
-        
+
         if "分析" in action or "analyze" in action_lower:
             return f"分析任务需求: {task.description[:50]}..."
-        
+
         elif "定位" in action or "locate" in action_lower:
             if existing_files:
                 return f"定位到 {len(existing_files)} 个相关文件"
             return f"目标目录: {target_path}"
-        
+
         elif "创建" in action or "create" in action_lower:
-            return f"模拟创建新文件结构"
-        
+            return "模拟创建新文件结构"
+
         elif "修改" in action or "修改" in action or "update" in action_lower or "edit" in action_lower:
             if existing_files:
                 return f"模拟修改文件: {existing_files[0] if existing_files else 'new_file'}"
-            return f"模拟修改操作"
-        
+            return "模拟修改操作"
+
         elif "删除" in action or "delete" in action_lower or "remove" in action_lower:
-            return f"模拟删除操作 (未实际执行)"
-        
+            return "模拟删除操作 (未实际执行)"
+
         elif "测试" in action or "test" in action_lower:
-            return f"模拟测试执行 - 预计通过"
-        
+            return "模拟测试执行 - 预计通过"
+
         elif "验证" in action or "verify" in action_lower:
-            return f"验证操作完成 - 检查通过"
-        
+            return "验证操作完成 - 检查通过"
+
         elif "设计" in action or "design" in action_lower:
-            return f"设计文件结构和接口"
-        
+            return "设计文件结构和接口"
+
         elif "实现" in action or "implement" in action_lower:
-            return f"模拟实现功能代码"
-        
+            return "模拟实现功能代码"
+
         elif "备份" in action or "backup" in action_lower:
-            return f"模拟备份当前状态"
-        
+            return "模拟备份当前状态"
+
         elif "生成" in action or "generate" in action_lower:
-            return f"模拟生成报告/文档"
-        
+            return "模拟生成报告/文档"
+
         elif "收集" in action or "collect" in action_lower:
-            return f"收集相关信息完成"
-        
+            return "收集相关信息完成"
+
         elif "编写" in action or "write" in action_lower:
-            return f"模拟编写内容"
-        
+            return "模拟编写内容"
+
         elif "审核" in action or "review" in action_lower:
-            return f"模拟审核完成"
-        
+            return "模拟审核完成"
+
         elif "确定" in action or "confirm" in action_lower:
-            return f"确定配置项完成"
-        
+            return "确定配置项完成"
+
         else:
             return f"执行: {action}"
 
@@ -965,7 +965,7 @@ class WorkModeManager:
         """
         changes = []
         task_desc = task.description[:30]
-        
+
         file_extensions = {
             "python": ".py",
             "javascript": ".js",
@@ -995,38 +995,38 @@ class WorkModeManager:
                     changes.append(f"[新建] {task.target_subfolder}/src/newModule.test.ts")
                 else:
                     changes.append(f"[新建] {task.target_subfolder}/new_file{ext}")
-        
+
         elif task_type == "modify":
             if existing_files:
                 for f in existing_files[:3]:
                     changes.append(f"[修改] {task.target_subfolder}/{f}")
             else:
                 changes.append(f"[修改] {task.target_subfolder}/main_file (模拟)")
-        
+
         elif task_type == "delete":
             if existing_files:
                 changes.append(f"[删除] {task.target_subfolder}/{existing_files[0]} (模拟)")
             else:
                 changes.append(f"[删除] {task.target_subfolder}/old_file (模拟)")
-        
+
         elif task_type == "fix":
             if existing_files:
                 changes.append(f"[修复] {task.target_subfolder}/{existing_files[0]}")
             else:
                 changes.append(f"[修复] {task.target_subfolder}/buggy_file.py (模拟)")
-        
+
         elif task_type == "test":
             changes.append(f"[新建] {task.target_subfolder}/tests/test_new.py")
             changes.append(f"[修改] {task.target_subfolder}/tests/__init__.py")
-        
+
         elif task_type == "document":
             changes.append(f"[新建] {task.target_subfolder}/docs/README.md")
             changes.append(f"[修改] {task.target_subfolder}/README.md")
-        
+
         elif task_type == "config":
             changes.append(f"[修改] {task.target_subfolder}/config/settings.py")
             changes.append(f"[新建] {task.target_subfolder}/.env.example")
-        
+
         else:
             changes.append(f"[操作] {task.target_subfolder}/ (模拟变更)")
 
@@ -1050,11 +1050,11 @@ class WorkModeManager:
             建议列表
         """
         suggestions = []
-        
+
         if complexity == "high":
             suggestions.append("建议分阶段执行，先完成核心功能")
             suggestions.append("考虑添加单元测试覆盖")
-        
+
         if task_type == "create":
             suggestions.append("创建完成后运行测试验证")
             suggestions.append("添加必要的文档说明")
@@ -1067,14 +1067,14 @@ class WorkModeManager:
         elif task_type == "test":
             suggestions.append("确保测试覆盖率达标")
             suggestions.append("运行完整测试套件")
-        
+
         if len(existing_files) > 20:
             suggestions.append("项目较大，建议使用版本控制")
-        
+
         if not suggestions:
             suggestions.append("任务执行完成，建议验证结果")
             suggestions.append("如有问题可重新执行或切换到真实模式")
-        
+
         return suggestions
 
     async def _phase_execute_single_agent(self, task: WorkTask) -> dict[str, Any]:
@@ -1089,7 +1089,7 @@ class WorkModeManager:
         Returns:
             执行结果
         """
-        logger.info(f"[WORK] 单代理模式: 正在获取 Agent...")
+        logger.info("[WORK] 单代理模式: 正在获取 Agent...")
 
         agent = await self._get_agent()
 
@@ -1260,24 +1260,24 @@ class WorkModeManager:
         verify_log = []
         verify_log.append(f"[VIEW] 开始验证任务: {task.id}")
         verify_log.append(f"[TIME] 验证时间: {datetime.now().isoformat()}")
-        verify_log.append(f"")
+        verify_log.append("")
 
         target_path = self.working_dir / task.target_subfolder
         analysis = task.metadata.get("analysis", {})
         task_type = analysis.get("task_type", "general")
 
-        verify_log.append(f"[SAVE] 检查目标目录...")
+        verify_log.append("[SAVE] 检查目标目录...")
         if target_path.exists():
             verify_result["checks"].append({"name": "目录存在", "status": "passed"})
             verify_log.append(f"  [OK] 目标目录存在: {target_path}")
-            
+
             try:
                 file_count = sum(1 for _ in target_path.rglob("*") if _.is_file())
                 dir_count = sum(1 for _ in target_path.rglob("*") if _.is_dir())
                 verify_log.append(f"  [OK] 文件数量: {file_count}")
                 verify_log.append(f"  [OK] 目录数量: {dir_count}")
                 verify_result["checks"].append({
-                    "name": "目录结构", 
+                    "name": "目录结构",
                     "status": "passed",
                     "file_count": file_count,
                     "dir_count": dir_count,
@@ -1290,8 +1290,8 @@ class WorkModeManager:
             verify_log.append(f"  [WARN] 目标目录不存在: {target_path}")
             verify_result["warnings"].append("目标目录不存在")
 
-        verify_log.append(f"")
-        verify_log.append(f"[NOTE] 检查文件类型...")
+        verify_log.append("")
+        verify_log.append("[NOTE] 检查文件类型...")
         file_type_checks = self._verify_file_types(target_path, analysis.get("file_types", []))
         for check in file_type_checks:
             verify_result["checks"].append(check)
@@ -1304,8 +1304,8 @@ class WorkModeManager:
                 verify_log.append(f"  [FAIL] {check['name']}: {check.get('message', '')}")
                 verify_result["errors"].append(check.get("message", ""))
 
-        verify_log.append(f"")
-        verify_log.append(f"[TOOL] 检查代码语法...")
+        verify_log.append("")
+        verify_log.append("[TOOL] 检查代码语法...")
         syntax_checks = await self._verify_code_syntax(target_path)
         for check in syntax_checks:
             verify_result["checks"].append(check)
@@ -1318,8 +1318,8 @@ class WorkModeManager:
                 verify_log.append(f"  [FAIL] {check['name']}: {check.get('message', '')}")
                 verify_result["errors"].append(check.get("message", ""))
 
-        verify_log.append(f"")
-        verify_log.append(f"[LIST] 检查任务完成度...")
+        verify_log.append("")
+        verify_log.append("[LIST] 检查任务完成度...")
         completion_check = self._verify_task_completion(task, task_type, target_path)
         verify_result["checks"].append(completion_check)
         if completion_check["status"] == "passed":
@@ -1328,8 +1328,8 @@ class WorkModeManager:
             verify_log.append(f"  [WARN] {completion_check['name']}: {completion_check.get('message', '')}")
             verify_result["warnings"].append(completion_check.get("message", ""))
 
-        verify_log.append(f"")
-        verify_log.append(f"[STATS] 验证统计:")
+        verify_log.append("")
+        verify_log.append("[STATS] 验证统计:")
         passed_count = sum(1 for c in verify_result["checks"] if c["status"] == "passed")
         warning_count = sum(1 for c in verify_result["checks"] if c["status"] == "warning")
         failed_count = sum(1 for c in verify_result["checks"] if c["status"] == "failed")
@@ -1339,15 +1339,15 @@ class WorkModeManager:
         verify_log.append(f"  - 通过: {passed_count}")
         verify_log.append(f"  - 警告: {warning_count}")
         verify_log.append(f"  - 失败: {failed_count}")
-        verify_log.append(f"")
+        verify_log.append("")
 
         if failed_count > 0:
             verify_result["success"] = False
-            verify_log.append(f"[FAIL] 验证结果: 存在失败项")
+            verify_log.append("[FAIL] 验证结果: 存在失败项")
         elif warning_count > 0:
-            verify_log.append(f"[WARN] 验证结果: 通过（存在警告）")
+            verify_log.append("[WARN] 验证结果: 通过（存在警告）")
         else:
-            verify_log.append(f"[OK] 验证结果: 全部通过")
+            verify_log.append("[OK] 验证结果: 全部通过")
 
         verify_result["output"] = "\n".join(verify_log)
         verify_result["stats"] = {
@@ -1475,7 +1475,7 @@ class WorkModeManager:
                         "status": "warning",
                         "message": f"语法错误: 行 {e.lineno}",
                     })
-                except Exception as e:
+                except Exception:
                     pass
 
             if python_valid:
@@ -1500,7 +1500,7 @@ class WorkModeManager:
                         "status": "warning",
                         "message": f"JSON 错误: 行 {e.lineno}",
                     })
-                except Exception as e:
+                except Exception:
                     pass
 
             if json_valid:
@@ -1520,14 +1520,14 @@ class WorkModeManager:
                     try:
                         with open(yaml_file, encoding="utf-8", errors="ignore") as f:
                             yaml.safe_load(f)
-                    except yaml.YAMLError as e:
+                    except yaml.YAMLError:
                         yaml_valid = False
                         checks.append({
                             "name": f"YAML 语法: {yaml_file.name}",
                             "status": "warning",
-                            "message": f"YAML 错误",
+                            "message": "YAML 错误",
                         })
-                    except Exception as e:
+                    except Exception:
                         pass
 
                 if yaml_valid:
@@ -1624,14 +1624,14 @@ class WorkModeManager:
         report_parts = []
 
         report_parts.append("=" * 60)
-        report_parts.append(f"[LIST] 任务执行报告")
+        report_parts.append("[LIST] 任务执行报告")
         report_parts.append("=" * 60)
         report_parts.append("")
 
         report_parts.append("## 基本信息")
         report_parts.append("")
-        report_parts.append(f"| 项目 | 值 |")
-        report_parts.append(f"|------|-----|")
+        report_parts.append("| 项目 | 值 |")
+        report_parts.append("|------|-----|")
         report_parts.append(f"| 任务 ID | {task.id} |")
         report_parts.append(f"| 描述 | {task.description[:50]}{'...' if len(task.description) > 50 else ''} |")
         report_parts.append(f"| 目标路径 | {task.target_subfolder} |")
@@ -1688,8 +1688,8 @@ class WorkModeManager:
             report_parts.append("## 验证结果")
             report_parts.append("")
             stats = verify_data["stats"]
-            report_parts.append(f"| 检查项 | 数量 |")
-            report_parts.append(f"|--------|------|")
+            report_parts.append("| 检查项 | 数量 |")
+            report_parts.append("|--------|------|")
             report_parts.append(f"| 总计 | {stats.get('total', 0)} |")
             report_parts.append(f"| 通过 | {stats.get('passed', 0)} |")
             report_parts.append(f"| 警告 | {stats.get('warnings', 0)} |")

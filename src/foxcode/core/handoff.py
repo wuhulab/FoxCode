@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from foxcode.core.config import AgentRole
 
@@ -46,7 +46,7 @@ class TaskItem:
     verification_criteria: str = ""
     artifacts: list[str] = field(default_factory=list)
     notes: str = ""
-    
+
     def to_dict(self) -> dict[str, Any]:
         """
         将任务项转换为字典格式
@@ -65,9 +65,9 @@ class TaskItem:
             "artifacts": self.artifacts,
             "notes": self.notes,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TaskItem":
+    def from_dict(cls, data: dict[str, Any]) -> TaskItem:
         """
         从字典创建任务项实例
         
@@ -128,28 +128,28 @@ class HandoffArtifact:
     session_id: str
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     agent_role: AgentRole = AgentRole.GENERATOR
-    
+
     completed_work: list[str] = field(default_factory=list)
     incomplete_work: list[str] = field(default_factory=list)
-    
-    current_task: Optional[TaskItem] = None
+
+    current_task: TaskItem | None = None
     pending_tasks: list[TaskItem] = field(default_factory=list)
     completed_tasks: list[TaskItem] = field(default_factory=list)
-    
+
     key_decisions: list[str] = field(default_factory=list)
     file_changes: list[str] = field(default_factory=list)
-    
+
     next_steps: list[str] = field(default_factory=list)
-    
+
     issues: list[str] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)
-    
+
     context_summary: str = ""
     working_directory: str = ""
     branch_name: str = ""
-    
+
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict[str, Any]:
         """
         将 HandoffArtifact 转换为字典格式
@@ -176,9 +176,9 @@ class HandoffArtifact:
             "branch_name": self.branch_name,
             "metadata": self.metadata,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "HandoffArtifact":
+    def from_dict(cls, data: dict[str, Any]) -> HandoffArtifact:
         """
         从字典创建 HandoffArtifact 实例
         
@@ -196,7 +196,7 @@ class HandoffArtifact:
             current_task = None
             if data.get("current_task"):
                 current_task = TaskItem.from_dict(data["current_task"])
-            
+
             return cls(
                 session_id=data["session_id"],
                 timestamp=data.get("timestamp", datetime.now().isoformat()),
@@ -222,7 +222,7 @@ class HandoffArtifact:
         except ValueError as e:
             logger.error(f"无效的 agent_role 值: {e}")
             raise
-    
+
     def to_prompt_context(self) -> str:
         """
         生成可注入系统提示词的上下文
@@ -241,7 +241,7 @@ class HandoffArtifact:
             f"**代理角色**: {self.agent_role.value}",
             "",
         ]
-        
+
         if self.current_task:
             lines.append("### 当前任务")
             lines.append(f"- **ID**: {self.current_task.id}")
@@ -250,7 +250,7 @@ class HandoffArtifact:
             if self.current_task.description:
                 lines.append(f"- **描述**: {self.current_task.description}")
             lines.append("")
-        
+
         if self.completed_work:
             lines.append("### 已完成工作")
             for work in self.completed_work[:5]:
@@ -258,7 +258,7 @@ class HandoffArtifact:
             if len(self.completed_work) > 5:
                 lines.append(f"- ... 共 {len(self.completed_work)} 项")
             lines.append("")
-        
+
         if self.pending_tasks:
             lines.append("### 待处理任务")
             status_icons = {"pending": "⏳", "in_progress": "🔄", "completed": "✅", "blocked": "🚫"}
@@ -268,19 +268,19 @@ class HandoffArtifact:
             if len(self.pending_tasks) > 5:
                 lines.append(f"- ... 共 {len(self.pending_tasks)} 项")
             lines.append("")
-        
+
         if self.next_steps:
             lines.append("### 下一步计划")
             for i, step in enumerate(self.next_steps[:5], 1):
                 lines.append(f"{i}. {step}")
             lines.append("")
-        
+
         if self.key_decisions:
             lines.append("### 关键决策")
             for decision in self.key_decisions[:3]:
                 lines.append(f"- {decision}")
             lines.append("")
-        
+
         if self.issues or self.blockers:
             lines.append("### 问题追踪")
             for issue in self.issues[:3]:
@@ -288,13 +288,13 @@ class HandoffArtifact:
             for blocker in self.blockers[:3]:
                 lines.append(f"- 🚫 {blocker}")
             lines.append("")
-        
+
         if self.file_changes:
             lines.append("### 文件变更")
             for change in self.file_changes[:5]:
                 lines.append(f"- {change}")
             lines.append("")
-        
+
         if self.context_summary:
             lines.append("### 上下文摘要")
             truncated_summary = self.context_summary[:500]
@@ -302,9 +302,9 @@ class HandoffArtifact:
             if len(self.context_summary) > 500:
                 lines.append("... (已截断)")
             lines.append("")
-        
+
         return "\n".join(lines)
-    
+
     def to_json(self) -> str:
         """
         将 HandoffArtifact 转换为 JSON 字符串
@@ -313,9 +313,9 @@ class HandoffArtifact:
             格式化的 JSON 字符串
         """
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
-    
+
     @classmethod
-    def from_json(cls, json_str: str) -> "HandoffArtifact":
+    def from_json(cls, json_str: str) -> HandoffArtifact:
         """
         从 JSON 字符串创建 HandoffArtifact 实例
         
@@ -335,7 +335,7 @@ class HandoffArtifact:
         except json.JSONDecodeError as e:
             logger.error(f"JSON 解析失败: {e}")
             raise
-    
+
     def save(self, file_path: Path | str) -> None:
         """
         将 HandoffArtifact 保存到文件
@@ -347,20 +347,20 @@ class HandoffArtifact:
             OSError: 当文件写入失败时
         """
         file_path = Path(file_path)
-        
+
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-            
+
             logger.info(f"HandoffArtifact 已保存: {file_path}")
         except OSError as e:
             logger.error(f"保存 HandoffArtifact 失败: {e}")
             raise
-    
+
     @classmethod
-    def load(cls, file_path: Path | str) -> "HandoffArtifact":
+    def load(cls, file_path: Path | str) -> HandoffArtifact:
         """
         从文件加载 HandoffArtifact
         
@@ -375,16 +375,16 @@ class HandoffArtifact:
             json.JSONDecodeError: 当文件内容 JSON 格式无效时
         """
         file_path = Path(file_path)
-        
+
         if not file_path.exists():
             error_msg = f"HandoffArtifact 文件不存在: {file_path}"
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)
-        
+
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
-            
+
             logger.info(f"HandoffArtifact 已加载: {file_path}")
             return cls.from_dict(data)
         except json.JSONDecodeError as e:
@@ -393,7 +393,7 @@ class HandoffArtifact:
         except OSError as e:
             logger.error(f"读取文件失败: {file_path}, 错误: {e}")
             raise
-    
+
     def get_progress_summary(self) -> str:
         """
         获取进度摘要
@@ -406,20 +406,20 @@ class HandoffArtifact:
         completed = len(self.completed_tasks)
         pending = len(self.pending_tasks)
         total = completed + pending
-        
+
         if total == 0:
             return "无任务记录"
-        
+
         progress = (completed / total) * 100 if total > 0 else 0
-        
+
         summary = f"进度: {completed}/{total} ({progress:.0f}%)"
-        
+
         if self.current_task:
             summary += f" | 当前: {self.current_task.title}"
-        
+
         if self.blockers:
             summary += f" | 阻塞: {len(self.blockers)} 项"
-        
+
         return summary
 
 

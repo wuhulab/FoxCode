@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,9 @@ class WorkflowPhase(str, Enum):
     INTEGRATION_TEST = "integration_test"  # 集成测试阶段
     PUSH = "push"                         # 推送分支阶段
     COMPLETED = "completed"               # 已完成
-    
+
     @classmethod
-    def get_order(cls) -> list["WorkflowPhase"]:
+    def get_order(cls) -> list[WorkflowPhase]:
         """获取阶段顺序列表"""
         return [
             cls.DESIGN,
@@ -49,8 +49,8 @@ class WorkflowPhase(str, Enum):
             cls.PUSH,
             cls.COMPLETED,
         ]
-    
-    def get_next(self) -> Optional["WorkflowPhase"]:
+
+    def get_next(self) -> WorkflowPhase | None:
         """获取下一个阶段"""
         order = self.get_order()
         try:
@@ -60,8 +60,8 @@ class WorkflowPhase(str, Enum):
         except ValueError:
             pass
         return None
-    
-    def get_previous(self) -> Optional["WorkflowPhase"]:
+
+    def get_previous(self) -> WorkflowPhase | None:
         """获取上一个阶段"""
         order = self.get_order()
         try:
@@ -71,7 +71,7 @@ class WorkflowPhase(str, Enum):
         except ValueError:
             pass
         return None
-    
+
     def get_display_name(self) -> str:
         """获取阶段显示名称"""
         names = {
@@ -112,12 +112,12 @@ class PhaseResult:
     error: str | None = None
     artifacts: list[str] = field(default_factory=list)  # 产物文件列表
     notes: str = ""
-    
+
     def mark_started(self) -> None:
         """标记阶段开始"""
         self.status = PhaseStatus.IN_PROGRESS
         self.started_at = datetime.now().isoformat()
-    
+
     def mark_completed(self, output: str = "", artifacts: list[str] | None = None) -> None:
         """标记阶段完成"""
         self.status = PhaseStatus.COMPLETED
@@ -125,18 +125,18 @@ class PhaseResult:
         self.output = output
         if artifacts:
             self.artifacts = artifacts
-    
+
     def mark_failed(self, error: str) -> None:
         """标记阶段失败"""
         self.status = PhaseStatus.FAILED
         self.completed_at = datetime.now().isoformat()
         self.error = error
-    
+
     def mark_skipped(self, reason: str = "") -> None:
         """标记阶段跳过"""
         self.status = PhaseStatus.SKIPPED
         self.notes = reason
-    
+
     @property
     def duration_seconds(self) -> float | None:
         """计算阶段持续时间（秒）"""
@@ -145,7 +145,7 @@ class PhaseResult:
         start = datetime.fromisoformat(self.started_at)
         end = datetime.fromisoformat(self.completed_at)
         return (end - start).total_seconds()
-    
+
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         return {
@@ -159,9 +159,9 @@ class PhaseResult:
             "artifacts": self.artifacts,
             "notes": self.notes,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PhaseResult":
+    def from_dict(cls, data: dict[str, Any]) -> PhaseResult:
         """从字典创建"""
         return cls(
             phase=WorkflowPhase(data["phase"]),
@@ -190,20 +190,20 @@ class WorkflowInstance:
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
     def __post_init__(self) -> None:
         """初始化阶段结果"""
         # 确保所有阶段都有结果记录
         for phase in WorkflowPhase.get_order():
             if phase not in self.phase_results:
                 self.phase_results[phase] = PhaseResult(phase=phase)
-    
+
     def get_phase_result(self, phase: WorkflowPhase) -> PhaseResult:
         """获取指定阶段的结果"""
         if phase not in self.phase_results:
             self.phase_results[phase] = PhaseResult(phase=phase)
         return self.phase_results[phase]
-    
+
     def advance_to_phase(self, phase: WorkflowPhase) -> bool:
         """
         推进到指定阶段
@@ -218,21 +218,21 @@ class WorkflowInstance:
         try:
             current_idx = order.index(self.current_phase)
             target_idx = order.index(phase)
-            
+
             # 只能向前推进到下一个阶段或当前阶段
             if target_idx > current_idx + 1:
                 logger.warning(f"无法跳过阶段: {self.current_phase} -> {phase}")
                 return False
-            
+
             self.current_phase = phase
             self.updated_at = datetime.now().isoformat()
             logger.info(f"工作流程 {self.id} 推进到阶段: {phase.get_display_name()}")
             return True
-            
+
         except ValueError:
             logger.error(f"无效的阶段: {phase}")
             return False
-    
+
     def complete_phase(
         self,
         phase: WorkflowPhase,
@@ -252,7 +252,7 @@ class WorkflowInstance:
         """
         result = self.get_phase_result(phase)
         result.mark_completed(output, artifacts)
-        
+
         # 自动推进到下一阶段
         next_phase = phase.get_next()
         if next_phase:
@@ -260,18 +260,18 @@ class WorkflowInstance:
             # 初始化下一阶段
             next_result = self.get_phase_result(next_phase)
             next_result.mark_started()
-        
+
         self.updated_at = datetime.now().isoformat()
         logger.info(f"阶段 {phase.get_display_name()} 已完成")
         return True
-    
+
     def fail_phase(self, phase: WorkflowPhase, error: str) -> None:
         """标记阶段失败"""
         result = self.get_phase_result(phase)
         result.mark_failed(error)
         self.updated_at = datetime.now().isoformat()
         logger.error(f"阶段 {phase.get_display_name()} 失败: {error}")
-    
+
     def get_progress(self) -> dict[str, Any]:
         """获取进度信息"""
         order = WorkflowPhase.get_order()
@@ -280,7 +280,7 @@ class WorkflowInstance:
             if self.phase_results.get(p, PhaseResult(p)).status == PhaseStatus.COMPLETED
         )
         total = len(order) - 1  # 排除 COMPLETED
-        
+
         return {
             "workflow_id": self.id,
             "feature_id": self.feature_id,
@@ -291,7 +291,7 @@ class WorkflowInstance:
             "progress_percent": round(completed / total * 100, 1) if total > 0 else 0,
             "branch_name": self.branch_name,
         }
-    
+
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         return {
@@ -300,7 +300,7 @@ class WorkflowInstance:
             "branch_name": self.branch_name,
             "current_phase": self.current_phase.value,
             "phase_results": {
-                p.value: r.to_dict() 
+                p.value: r.to_dict()
                 for p, r in self.phase_results.items()
             },
             "created_at": self.created_at,
@@ -308,15 +308,15 @@ class WorkflowInstance:
             "metadata": self.metadata,
             "progress": self.get_progress(),
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "WorkflowInstance":
+    def from_dict(cls, data: dict[str, Any]) -> WorkflowInstance:
         """从字典创建"""
         phase_results = {}
         for p_str, r_data in data.get("phase_results", {}).items():
             phase = WorkflowPhase(p_str)
             phase_results[phase] = PhaseResult.from_dict(r_data)
-        
+
         return cls(
             id=data["id"],
             feature_id=data["feature_id"],
@@ -327,7 +327,7 @@ class WorkflowInstance:
             updated_at=data.get("updated_at", datetime.now().isoformat()),
             metadata=data.get("metadata", {}),
         )
-    
+
     def to_markdown(self) -> str:
         """转换为 Markdown 格式"""
         lines = [
@@ -341,7 +341,7 @@ class WorkflowInstance:
             "## 阶段详情",
             "",
         ]
-        
+
         for phase in WorkflowPhase.get_order():
             result = self.get_phase_result(phase)
             status_icon = {
@@ -352,10 +352,10 @@ class WorkflowInstance:
                 PhaseStatus.SKIPPED: "⏭️",
                 PhaseStatus.BLOCKED: "🚫",
             }.get(result.status, "❓")
-            
+
             lines.append(f"### {status_icon} {phase.get_display_name()}")
             lines.append(f"- 状态: {result.status.value}")
-            
+
             if result.started_at:
                 lines.append(f"- 开始时间: {result.started_at}")
             if result.completed_at:
@@ -368,9 +368,9 @@ class WorkflowInstance:
                 lines.append(f"- 错误: {result.error}")
             if result.artifacts:
                 lines.append(f"- 产物: {', '.join(result.artifacts)}")
-            
+
             lines.append("")
-        
+
         return "\n".join(lines)
 
 
@@ -380,9 +380,9 @@ class WorkflowManager:
     
     管理工作流程实例的创建、执行、状态追踪和持久化
     """
-    
+
     DEFAULT_WORKFLOW_DIR = ".foxcode/workflows"
-    
+
     def __init__(self, working_dir: Path, workflow_dir: str | None = None):
         """
         初始化工作流程管理器
@@ -394,15 +394,15 @@ class WorkflowManager:
         self.working_dir = Path(working_dir)
         self.workflow_dir = self.working_dir / (workflow_dir or self.DEFAULT_WORKFLOW_DIR)
         self._workflows: dict[str, WorkflowInstance] = {}
-        
+
         # 阶段执行器注册表
         self._phase_executors: dict[WorkflowPhase, Callable] = {}
-        
+
         # 确保目录存在
         self._ensure_directory()
-        
+
         logger.debug(f"工作流程管理器初始化完成，目录: {self.workflow_dir}")
-    
+
     def _ensure_directory(self) -> None:
         """确保工作流程目录存在"""
         try:
@@ -410,7 +410,7 @@ class WorkflowManager:
         except Exception as e:
             logger.error(f"创建工作流程目录失败: {e}")
             raise
-    
+
     def register_phase_executor(
         self,
         phase: WorkflowPhase,
@@ -425,7 +425,7 @@ class WorkflowManager:
         """
         self._phase_executors[phase] = executor
         logger.debug(f"已注册阶段执行器: {phase.get_display_name()}")
-    
+
     def create_workflow(
         self,
         feature_id: str,
@@ -446,25 +446,25 @@ class WorkflowManager:
         # 生成工作流程 ID
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         workflow_id = f"WF-{feature_id}-{timestamp}"
-        
+
         workflow = WorkflowInstance(
             id=workflow_id,
             feature_id=feature_id,
             branch_name=branch_name,
             metadata=metadata or {},
         )
-        
+
         # 初始化第一个阶段
         first_phase = WorkflowPhase.DESIGN
         result = workflow.get_phase_result(first_phase)
         result.mark_started()
-        
+
         self._workflows[workflow_id] = workflow
         self._save_workflow(workflow)
-        
+
         logger.info(f"已创建工作流程: {workflow_id}")
         return workflow
-    
+
     def get_workflow(self, workflow_id: str) -> WorkflowInstance | None:
         """
         获取工作流程实例
@@ -478,13 +478,13 @@ class WorkflowManager:
         # 先从内存获取
         if workflow_id in self._workflows:
             return self._workflows[workflow_id]
-        
+
         # 尝试从文件加载
         workflow = self._load_workflow(workflow_id)
         if workflow:
             self._workflows[workflow_id] = workflow
         return workflow
-    
+
     def get_workflow_by_feature(self, feature_id: str) -> WorkflowInstance | None:
         """
         根据功能 ID 获取工作流程
@@ -498,7 +498,7 @@ class WorkflowManager:
         for workflow in self._workflows.values():
             if workflow.feature_id == feature_id:
                 return workflow
-        
+
         # 尝试从文件查找
         for workflow_file in self.workflow_dir.glob("*.json"):
             try:
@@ -508,9 +508,9 @@ class WorkflowManager:
                     return workflow
             except Exception as e:
                 logger.warning(f"加载工作流程文件失败: {workflow_file}: {e}")
-        
+
         return None
-    
+
     def list_workflows(
         self,
         status: PhaseStatus | None = None,
@@ -527,7 +527,7 @@ class WorkflowManager:
             工作流程列表
         """
         workflows = list(self._workflows.values())
-        
+
         # 加载所有工作流程文件
         for workflow_file in self.workflow_dir.glob("*.json"):
             workflow_id = workflow_file.stem
@@ -536,22 +536,22 @@ class WorkflowManager:
                 if workflow:
                     self._workflows[workflow_id] = workflow
                     workflows.append(workflow)
-        
+
         # 过滤
         if status:
             workflows = [
                 w for w in workflows
                 if w.get_phase_result(w.current_phase).status == status
             ]
-        
+
         if phase:
             workflows = [w for w in workflows if w.current_phase == phase]
-        
+
         # 按更新时间排序
         workflows.sort(key=lambda w: w.updated_at, reverse=True)
-        
+
         return workflows
-    
+
     async def execute_phase(
         self,
         workflow_id: str,
@@ -572,10 +572,10 @@ class WorkflowManager:
         workflow = self.get_workflow(workflow_id)
         if not workflow:
             raise ValueError(f"工作流程不存在: {workflow_id}")
-        
+
         result = workflow.get_phase_result(phase)
         result.mark_started()
-        
+
         # 检查是否有注册的执行器
         executor = self._phase_executors.get(phase)
         if executor:
@@ -583,7 +583,7 @@ class WorkflowManager:
                 output = await asyncio.to_thread(
                     executor, workflow, params or {}
                 )
-                
+
                 # 处理执行结果
                 if isinstance(output, dict):
                     workflow.complete_phase(
@@ -593,7 +593,7 @@ class WorkflowManager:
                     )
                 else:
                     workflow.complete_phase(phase, output=str(output))
-                
+
             except Exception as e:
                 workflow.fail_phase(phase, str(e))
                 logger.error(f"阶段执行失败: {phase.get_display_name()}: {e}")
@@ -601,10 +601,10 @@ class WorkflowManager:
         else:
             # 没有执行器，标记为需要手动完成
             logger.info(f"阶段 {phase.get_display_name()} 需要手动完成")
-        
+
         self._save_workflow(workflow)
         return result
-    
+
     def complete_phase_manually(
         self,
         workflow_id: str,
@@ -628,12 +628,12 @@ class WorkflowManager:
         if not workflow:
             logger.error(f"工作流程不存在: {workflow_id}")
             return False
-        
+
         success = workflow.complete_phase(phase, output, artifacts)
         if success:
             self._save_workflow(workflow)
         return success
-    
+
     def fail_phase_manually(
         self,
         workflow_id: str,
@@ -655,11 +655,11 @@ class WorkflowManager:
         if not workflow:
             logger.error(f"工作流程不存在: {workflow_id}")
             return False
-        
+
         workflow.fail_phase(phase, error)
         self._save_workflow(workflow)
         return True
-    
+
     def skip_phase(
         self,
         workflow_id: str,
@@ -681,22 +681,22 @@ class WorkflowManager:
         if not workflow:
             logger.error(f"工作流程不存在: {workflow_id}")
             return False
-        
+
         result = workflow.get_phase_result(phase)
         result.mark_skipped(reason)
-        
+
         # 推进到下一阶段
         next_phase = phase.get_next()
         if next_phase:
             workflow.current_phase = next_phase
-        
+
         self._save_workflow(workflow)
         return True
-    
+
     def _save_workflow(self, workflow: WorkflowInstance) -> None:
         """保存工作流程到文件"""
         import json
-        
+
         try:
             file_path = self.workflow_dir / f"{workflow.id}.json"
             with open(file_path, "w", encoding="utf-8") as f:
@@ -705,23 +705,23 @@ class WorkflowManager:
         except Exception as e:
             logger.error(f"保存工作流程失败: {e}")
             raise
-    
+
     def _load_workflow(self, workflow_id: str) -> WorkflowInstance | None:
         """从文件加载工作流程"""
         import json
-        
+
         file_path = self.workflow_dir / f"{workflow_id}.json"
         if not file_path.exists():
             return None
-        
+
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
             return WorkflowInstance.from_dict(data)
         except Exception as e:
             logger.error(f"加载工作流程失败: {workflow_id}: {e}")
             return None
-    
+
     def delete_workflow(self, workflow_id: str) -> bool:
         """
         删除工作流程
@@ -735,7 +735,7 @@ class WorkflowManager:
         # 从内存删除
         if workflow_id in self._workflows:
             del self._workflows[workflow_id]
-        
+
         # 删除文件
         file_path = self.workflow_dir / f"{workflow_id}.json"
         if file_path.exists():
@@ -746,9 +746,9 @@ class WorkflowManager:
             except Exception as e:
                 logger.error(f"删除工作流程文件失败: {e}")
                 return False
-        
+
         return True
-    
+
     def get_statistics(self) -> dict[str, Any]:
         """
         获取工作流程统计信息
@@ -757,26 +757,26 @@ class WorkflowManager:
             统计信息字典
         """
         workflows = self.list_workflows()
-        
+
         stats = {
             "total": len(workflows),
             "by_phase": {},
             "by_status": {},
         }
-        
+
         for phase in WorkflowPhase.get_order():
             stats["by_phase"][phase.value] = len([
                 w for w in workflows if w.current_phase == phase
             ])
-        
+
         for status in PhaseStatus:
             stats["by_status"][status.value] = len([
                 w for w in workflows
                 if w.get_phase_result(w.current_phase).status == status
             ])
-        
+
         return stats
-    
+
     def get_context_for_prompt(self, workflow_id: str | None = None) -> str:
         """
         获取用于注入系统提示词的上下文
@@ -799,10 +799,10 @@ class WorkflowManager:
             ]
             if in_progress:
                 workflow = in_progress[0]
-        
+
         if not workflow:
             return "当前没有活动的工作流程"
-        
+
         progress = workflow.get_progress()
         lines = [
             "## 当前工作流程",
@@ -814,7 +814,7 @@ class WorkflowManager:
             f"- **分支**: {workflow.branch_name or '未创建'}",
             "",
         ]
-        
+
         # 显示当前阶段详情
         current_result = workflow.get_phase_result(workflow.current_phase)
         lines.append("### 当前阶段状态")
@@ -823,7 +823,7 @@ class WorkflowManager:
             lines.append(f"- 输出: {current_result.output[:100]}...")
         if current_result.error:
             lines.append(f"- 错误: {current_result.error}")
-        
+
         return "\n".join(lines)
 
 
@@ -867,7 +867,7 @@ def create_default_test_executor(test_command: str = "pytest") -> Callable:
     """
     def executor(workflow: WorkflowInstance, params: dict[str, Any]) -> dict[str, Any]:
         import subprocess
-        
+
         try:
             result = subprocess.run(
                 test_command.split(),
@@ -876,7 +876,7 @@ def create_default_test_executor(test_command: str = "pytest") -> Callable:
                 text=True,
                 timeout=300,
             )
-            
+
             if result.returncode == 0:
                 return {
                     "output": result.stdout,
@@ -884,12 +884,12 @@ def create_default_test_executor(test_command: str = "pytest") -> Callable:
                 }
             else:
                 raise Exception(f"测试失败: {result.stderr}")
-                
+
         except subprocess.TimeoutExpired:
             raise Exception("测试执行超时")
         except Exception as e:
             raise Exception(f"测试执行错误: {e}")
-    
+
     return executor
 
 
@@ -906,9 +906,9 @@ def create_default_merge_executor(
     """
     def executor(workflow: WorkflowInstance, params: dict[str, Any]) -> dict[str, Any]:
         import subprocess
-        
+
         working_dir = workflow.metadata.get("working_dir", ".")
-        
+
         try:
             # 拉取最新主分支
             subprocess.run(
@@ -917,7 +917,7 @@ def create_default_merge_executor(
                 capture_output=True,
                 check=True,
             )
-            
+
             # 合并主分支
             subprocess.run(
                 ["git", "merge", f"{remote}/{main_branch}"],
@@ -925,15 +925,15 @@ def create_default_merge_executor(
                 capture_output=True,
                 check=True,
             )
-            
+
             return {
                 "output": f"成功合并 {remote}/{main_branch}",
                 "artifacts": [],
             }
-            
+
         except subprocess.CalledProcessError as e:
             raise Exception(f"合并失败: {e.stderr}")
-    
+
     return executor
 
 
@@ -946,13 +946,13 @@ def create_default_push_executor(remote: str = "origin") -> Callable:
     """
     def executor(workflow: WorkflowInstance, params: dict[str, Any]) -> dict[str, Any]:
         import subprocess
-        
+
         working_dir = workflow.metadata.get("working_dir", ".")
         branch = workflow.branch_name
-        
+
         if not branch:
             raise Exception("未设置工作分支名称")
-        
+
         try:
             subprocess.run(
                 ["git", "push", remote, branch],
@@ -960,15 +960,15 @@ def create_default_push_executor(remote: str = "origin") -> Callable:
                 capture_output=True,
                 check=True,
             )
-            
+
             return {
                 "output": f"成功推送分支 {branch} 到 {remote}",
                 "artifacts": [],
             }
-            
+
         except subprocess.CalledProcessError as e:
             raise Exception(f"推送失败: {e.stderr}")
-    
+
     return executor
 
 
@@ -986,21 +986,21 @@ def create_default_evaluation_executor() -> Callable:
         评估阶段执行器函数
     """
     def executor(workflow: WorkflowInstance, params: dict[str, Any]) -> dict[str, Any]:
-        from foxcode.core.evaluator import EvaluatorAgent, EvaluationType
-        
+        from foxcode.core.evaluator import EvaluatorAgent
+
         # 获取评估参数
         code_content = params.get("code_content", "")
         design_doc = params.get("design_doc", "")
         evaluation_type = params.get("evaluation_type", "full")
-        
+
         # 获取评估标准配置
         criteria = workflow.metadata.get("evaluator_criteria")
-        
+
         # 创建评估器实例
         evaluator = EvaluatorAgent(
             passing_threshold=criteria.passing_threshold if criteria else 7.0,
         )
-        
+
         # 定义异步评估执行函数
         async def run_evaluation() -> Any:
             """
@@ -1020,12 +1020,12 @@ def create_default_evaluation_executor() -> Callable:
                 # 完整评估（代码和设计）
                 logger.info("执行完整质量评估")
                 return await evaluator.evaluate_full(code_content, design_doc)
-        
+
         try:
             # 运行评估
             logger.info(f"开始评估阶段，类型: {evaluation_type}")
             report = asyncio.run(run_evaluation())
-            
+
             # 检查评估是否通过
             if report.passed:
                 logger.info(f"评估通过，总分: {report.total_score:.1f}/10")
@@ -1044,7 +1044,7 @@ def create_default_evaluation_executor() -> Callable:
                     "evaluation_report": report.to_dict(),
                     "needs_revision": True,  # 标记需要返回编码阶段
                 }
-                
+
         except ImportError as e:
             # EvaluatorAgent 模块导入失败
             error_msg = f"评估器模块导入失败: {e}"
@@ -1055,7 +1055,7 @@ def create_default_evaluation_executor() -> Callable:
             error_msg = f"评估执行错误: {e}"
             logger.error(error_msg)
             raise Exception(error_msg)
-    
+
     return executor
 
 
@@ -1079,7 +1079,7 @@ def create_workflow_manager(
         working_dir=Path(working_dir),
         workflow_dir=workflow_dir,
     )
-    
+
     # 注册默认执行器
     manager.register_phase_executor(
         WorkflowPhase.EVALUATION,  # 新增评估阶段执行器
@@ -1101,5 +1101,5 @@ def create_workflow_manager(
         WorkflowPhase.PUSH,
         create_default_push_executor(),
     )
-    
+
     return manager

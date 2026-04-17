@@ -100,7 +100,7 @@ class CodeSmell:
     severity: Severity = Severity.MEDIUM
     suggestion: str = ""
     code_snippet: str = ""
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "type": self.type.value,
@@ -129,7 +129,7 @@ class PatternSuggestion:
     benefits: list[str] = field(default_factory=list)
     implementation_hint: str = ""
     confidence: float = 0.7
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "pattern": self.pattern.value,
@@ -159,7 +159,7 @@ class RefactoringAction:
     refactored_code: str = ""
     changes: list[str] = field(default_factory=list)
     risks: list[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "title": self.title,
@@ -190,7 +190,7 @@ class RefactoringReport:
     refactoring_actions: list[RefactoringAction] = field(default_factory=list)
     complexity_score: float = 0.0
     maintainability_index: float = 0.0
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "file_path": self.file_path,
@@ -236,7 +236,7 @@ class RefactoringSuggester:
         >>> for smell in report.smells:
         ...     print(f"{smell.type}: {smell.description}")
     """
-    
+
     def __init__(self, config: RefactoringConfig | None = None):
         """
         初始化重构建议工具
@@ -246,7 +246,7 @@ class RefactoringSuggester:
         """
         self.config = config or RefactoringConfig()
         logger.info("重构建议工具初始化完成")
-    
+
     def analyze_file(self, file_path: Path) -> RefactoringReport:
         """
         分析文件
@@ -258,30 +258,30 @@ class RefactoringSuggester:
             重构报告
         """
         report = RefactoringReport(file_path=str(file_path))
-        
+
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 source = f.read()
-            
+
             # 解析 AST
             tree = ast.parse(source)
-            
+
             # 检测代码异味
             report.smells = self._detect_smells(tree, source)
-            
+
             # 检测设计模式机会
             if self.config.detect_patterns:
                 report.pattern_suggestions = self._suggest_patterns(tree, source)
-            
+
             # 生成重构动作
             report.refactoring_actions = self._generate_refactoring_actions(
                 tree, source, report.smells
             )
-            
+
             # 计算复杂度
             report.complexity_score = self._calculate_complexity(tree)
             report.maintainability_index = self._calculate_maintainability(tree, source)
-            
+
         except SyntaxError as e:
             report.smells.append(CodeSmell(
                 type=CodeSmellType.DEAD_CODE,
@@ -291,9 +291,9 @@ class RefactoringSuggester:
             ))
         except Exception as e:
             logger.error(f"分析文件失败: {e}")
-        
+
         return report
-    
+
     def analyze_code(self, code: str) -> RefactoringReport:
         """
         分析代码字符串
@@ -305,21 +305,21 @@ class RefactoringSuggester:
             重构报告
         """
         report = RefactoringReport()
-        
+
         try:
             tree = ast.parse(code)
             report.smells = self._detect_smells(tree, code)
-            
+
             if self.config.detect_patterns:
                 report.pattern_suggestions = self._suggest_patterns(tree, code)
-            
+
             report.refactoring_actions = self._generate_refactoring_actions(
                 tree, code, report.smells
             )
-            
+
             report.complexity_score = self._calculate_complexity(tree)
             report.maintainability_index = self._calculate_maintainability(tree, code)
-            
+
         except SyntaxError as e:
             report.smells.append(CodeSmell(
                 type=CodeSmellType.DEAD_CODE,
@@ -327,34 +327,34 @@ class RefactoringSuggester:
                 description=f"语法错误: {e.msg}",
                 severity=Severity.HIGH,
             ))
-        
+
         return report
-    
+
     def _detect_smells(self, tree: ast.AST, source: str) -> list[CodeSmell]:
         """检测代码异味"""
         smells = []
-        
+
         for node in ast.walk(tree):
             # 检测过长方法
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 smells.extend(self._check_long_method(node, source))
                 smells.extend(self._check_long_parameters(node))
                 smells.extend(self._check_nested_complexity(node))
-            
+
             # 检测过大类
             if isinstance(node, ast.ClassDef):
                 smells.extend(self._check_long_class(node, source))
                 smells.extend(self._check_god_class(node))
-            
+
             # 检测魔法数字
             if isinstance(node, ast.Constant):
                 smells.extend(self._check_magic_number(node))
-        
+
         # 检测重复代码（简化版）
         smells.extend(self._check_duplicate_code(source))
-        
+
         return smells
-    
+
     def _check_long_method(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -362,12 +362,12 @@ class RefactoringSuggester:
     ) -> list[CodeSmell]:
         """检查过长方法"""
         smells = []
-        
+
         # 计算方法行数
         start_line = node.lineno
         end_line = node.end_lineno or start_line
         lines = end_line - start_line + 1
-        
+
         if lines > self.config.max_method_lines:
             smells.append(CodeSmell(
                 type=CodeSmellType.LONG_METHOD,
@@ -377,23 +377,23 @@ class RefactoringSuggester:
                 suggestion="考虑将方法拆分为更小的、单一职责的方法",
                 code_snippet=source.split("\n")[start_line - 1][:100] if source else "",
             ))
-        
+
         return smells
-    
+
     def _check_long_parameters(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
     ) -> list[CodeSmell]:
         """检查过长参数列表"""
         smells = []
-        
+
         # 计算参数数量
         param_count = len(node.args.args)
         if node.args.vararg:
             param_count += 1
         if node.args.kwarg:
             param_count += 1
-        
+
         if param_count > self.config.max_parameters:
             smells.append(CodeSmell(
                 type=CodeSmellType.LONG_PARAMETER_LIST,
@@ -402,18 +402,18 @@ class RefactoringSuggester:
                 severity=Severity.MEDIUM,
                 suggestion="考虑使用参数对象或建造者模式",
             ))
-        
+
         return smells
-    
+
     def _check_nested_complexity(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
     ) -> list[CodeSmell]:
         """检查嵌套复杂度"""
         smells = []
-        
+
         max_depth = self._get_max_nesting_depth(node)
-        
+
         if max_depth > self.config.max_nesting_depth:
             smells.append(CodeSmell(
                 type=CodeSmellType.NESTED_IF,
@@ -422,15 +422,15 @@ class RefactoringSuggester:
                 severity=Severity.MEDIUM,
                 suggestion="考虑使用提前返回或提取方法来减少嵌套",
             ))
-        
+
         return smells
-    
+
     def _get_max_nesting_depth(self, node: ast.AST, current_depth: int = 0) -> int:
         """获取最大嵌套深度"""
         max_depth = current_depth
-        
+
         nesting_nodes = (ast.If, ast.For, ast.While, ast.With, ast.Try)
-        
+
         for child in ast.iter_child_nodes(node):
             if isinstance(child, nesting_nodes):
                 child_depth = self._get_max_nesting_depth(child, current_depth + 1)
@@ -438,9 +438,9 @@ class RefactoringSuggester:
             else:
                 child_depth = self._get_max_nesting_depth(child, current_depth)
                 max_depth = max(max_depth, child_depth)
-        
+
         return max_depth
-    
+
     def _check_long_class(
         self,
         node: ast.ClassDef,
@@ -448,11 +448,11 @@ class RefactoringSuggester:
     ) -> list[CodeSmell]:
         """检查过大类"""
         smells = []
-        
+
         start_line = node.lineno
         end_line = node.end_lineno or start_line
         lines = end_line - start_line + 1
-        
+
         if lines > self.config.max_class_lines:
             smells.append(CodeSmell(
                 type=CodeSmellType.LONG_CLASS,
@@ -461,16 +461,16 @@ class RefactoringSuggester:
                 severity=Severity.MEDIUM,
                 suggestion="考虑将类拆分为更小的、单一职责的类",
             ))
-        
+
         return smells
-    
+
     def _check_god_class(self, node: ast.ClassDef) -> list[CodeSmell]:
         """检查上帝类"""
         smells = []
-        
+
         # 计算方法数量
         methods = [n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-        
+
         if len(methods) > 15:
             smells.append(CodeSmell(
                 type=CodeSmellType.GOD_CLASS,
@@ -479,13 +479,13 @@ class RefactoringSuggester:
                 severity=Severity.HIGH,
                 suggestion="考虑按职责拆分类，遵循单一职责原则",
             ))
-        
+
         return smells
-    
+
     def _check_magic_number(self, node: ast.Constant) -> list[CodeSmell]:
         """检查魔法数字"""
         smells = []
-        
+
         if isinstance(node.value, (int, float)):
             # 排除常见的非魔法数字
             if node.value not in (0, 1, 2, -1, 0.0, 1.0, 2.0, 100, 1000):
@@ -496,15 +496,15 @@ class RefactoringSuggester:
                     severity=Severity.LOW,
                     suggestion="考虑将数字定义为有意义的常量",
                 ))
-        
+
         return smells
-    
+
     def _check_duplicate_code(self, source: str) -> list[CodeSmell]:
         """检查重复代码（简化版）"""
         smells = []
-        
+
         lines = source.split("\n")
-        
+
         # 简单的重复行检测
         seen_lines = {}
         for i, line in enumerate(lines):
@@ -520,13 +520,13 @@ class RefactoringSuggester:
                     ))
                 else:
                     seen_lines[line] = i + 1
-        
+
         return smells[:10]  # 限制数量
-    
+
     def _suggest_patterns(self, tree: ast.AST, source: str) -> list[PatternSuggestion]:
         """建议设计模式"""
         suggestions = []
-        
+
         for node in ast.walk(tree):
             # 检测单例模式机会
             if isinstance(node, ast.ClassDef):
@@ -538,7 +538,7 @@ class RefactoringSuggester:
                         implementation_hint="使用类变量存储实例，私有化构造函数",
                         confidence=0.5,
                     ))
-                
+
                 # 检测工厂模式机会
                 if self._could_use_factory(node):
                     suggestions.append(PatternSuggestion(
@@ -548,7 +548,7 @@ class RefactoringSuggester:
                         implementation_hint="创建工厂类，将创建逻辑移入工厂方法",
                         confidence=0.5,
                     ))
-                
+
                 # 检测策略模式机会
                 if self._could_use_strategy(node):
                     suggestions.append(PatternSuggestion(
@@ -558,15 +558,15 @@ class RefactoringSuggester:
                         implementation_hint="定义策略接口，将不同行为封装为策略类",
                         confidence=0.6,
                     ))
-        
+
         return suggestions
-    
+
     def _could_be_singleton(self, node: ast.ClassDef) -> bool:
         """检查是否可能是单例"""
         # 简单启发式：类名包含 Manager, Registry, Config 等
         singleton_keywords = ["manager", "registry", "config", "settings", "cache", "pool"]
         return any(kw in node.name.lower() for kw in singleton_keywords)
-    
+
     def _could_use_factory(self, node: ast.ClassDef) -> bool:
         """检查是否可能需要工厂模式"""
         # 检查是否有多个创建对象的地方
@@ -575,9 +575,9 @@ class RefactoringSuggester:
             if isinstance(child, ast.Call):
                 if isinstance(child.func, ast.Name):
                     create_count += 1
-        
+
         return create_count > 3
-    
+
     def _could_use_strategy(self, node: ast.ClassDef) -> bool:
         """检查是否可能需要策略模式"""
         # 检查是否有多个 if-elif 分支
@@ -585,9 +585,9 @@ class RefactoringSuggester:
         for child in ast.walk(node):
             if isinstance(child, ast.If):
                 if_count += 1
-        
+
         return if_count > 3
-    
+
     def _generate_refactoring_actions(
         self,
         tree: ast.AST,
@@ -596,7 +596,7 @@ class RefactoringSuggester:
     ) -> list[RefactoringAction]:
         """生成重构动作"""
         actions = []
-        
+
         for smell in smells:
             if smell.type == CodeSmellType.LONG_METHOD:
                 actions.append(RefactoringAction(
@@ -605,7 +605,7 @@ class RefactoringSuggester:
                     changes=["识别方法中的独立功能块", "提取为独立方法", "调用新方法"],
                     risks=["可能需要传递较多参数", "需要确保方法命名清晰"],
                 ))
-            
+
             elif smell.type == CodeSmellType.LONG_PARAMETER_LIST:
                 actions.append(RefactoringAction(
                     title="引入参数对象",
@@ -613,7 +613,7 @@ class RefactoringSuggester:
                     changes=["创建参数类", "将相关参数移入类中", "使用参数对象替代多个参数"],
                     risks=["需要修改所有调用点", "可能增加类的数量"],
                 ))
-            
+
             elif smell.type == CodeSmellType.NESTED_IF:
                 actions.append(RefactoringAction(
                     title="使用提前返回",
@@ -621,7 +621,7 @@ class RefactoringSuggester:
                     changes=["反转条件", "提前返回", "减少缩进层级"],
                     risks=["需要仔细处理逻辑顺序"],
                 ))
-            
+
             elif smell.type == CodeSmellType.MAGIC_NUMBER:
                 actions.append(RefactoringAction(
                     title="提取常量",
@@ -629,13 +629,13 @@ class RefactoringSuggester:
                     changes=["定义常量", "使用有意义的名称", "替换所有使用处"],
                     risks=["需要确保常量名称有意义"],
                 ))
-        
+
         return actions
-    
+
     def _calculate_complexity(self, tree: ast.AST) -> float:
         """计算复杂度评分"""
         complexity = 1  # 基础复杂度
-        
+
         for node in ast.walk(tree):
             # 每个决策点增加复杂度
             if isinstance(node, (ast.If, ast.While, ast.For, ast.ExceptHandler)):
@@ -646,25 +646,25 @@ class RefactoringSuggester:
                 complexity += 1
                 if node.ifs:
                     complexity += len(node.ifs)
-        
+
         return complexity
-    
+
     def _calculate_maintainability(self, tree: ast.AST, source: str) -> float:
         """计算可维护性指数"""
         # 简化的可维护性指数计算
         lines = len(source.split("\n"))
         complexity = self._calculate_complexity(tree)
-        
+
         # 计算注释率
         comment_lines = sum(1 for line in source.split("\n") if line.strip().startswith("#"))
         comment_ratio = comment_lines / lines if lines > 0 else 0
-        
+
         # 可维护性指数 (简化版)
         # 范围 0-100，越高越好
         mi = max(0, 100 - (complexity * 2) - (lines / 10) + (comment_ratio * 20))
-        
+
         return min(100, max(0, mi))
-    
+
     def suggest_simplification(self, code: str) -> list[RefactoringAction]:
         """
         建议代码简化
@@ -676,7 +676,7 @@ class RefactoringSuggester:
             简化建议列表
         """
         actions = []
-        
+
         # 检测可以简化的模式
         patterns = [
             (
@@ -695,7 +695,7 @@ class RefactoringSuggester:
                 "使用 list() 替代循环",
             ),
         ]
-        
+
         for pattern, replacement, title in patterns:
             if re.search(pattern, code):
                 actions.append(RefactoringAction(
@@ -705,9 +705,9 @@ class RefactoringSuggester:
                     refactored_code=re.sub(pattern, replacement, code),
                     changes=["使用更简洁的语法"],
                 ))
-        
+
         return actions
-    
+
     def apply_refactoring(
         self,
         code: str,

@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from foxcode.core.config import Config, AgentRole
+from foxcode.core.config import AgentRole, Config
 from foxcode.core.handoff import HandoffArtifact, TaskItem
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ class ResetResult:
     handoff_path: str | None = None
     error: str | None = None
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-    
+
     def to_dict(self) -> dict[str, Any]:
         """
         将重置结果转换为字典格式
@@ -110,7 +110,7 @@ class ContextUsageInfo:
     used_tokens: int = 0
     max_tokens: int = 128000
     usage_percentage: float = 0.0
-    
+
     def calculate_percentage(self) -> float:
         """
         计算使用百分比
@@ -124,10 +124,10 @@ class ContextUsageInfo:
         if self.max_tokens <= 0:
             self.usage_percentage = 0.0
             return 0.0
-        
+
         self.usage_percentage = (self.used_tokens / self.max_tokens) * 100
         return self.usage_percentage
-    
+
     def is_above_threshold(self, threshold: float) -> bool:
         """
         检查使用率是否超过指定阈值
@@ -139,7 +139,7 @@ class ContextUsageInfo:
             如果使用率超过阈值返回 True，否则返回 False
         """
         return (self.usage_percentage / 100) >= threshold
-    
+
     def to_dict(self) -> dict[str, Any]:
         """
         将上下文使用信息转换为字典格式
@@ -177,7 +177,7 @@ class ContextResetManager:
         warning_threshold: 警告阈值（0.0-1.0）
         max_context_tokens: 最大上下文 token 数
     """
-    
+
     # 过早结束行为的关键词模式（上下文焦虑检测）
     # 这些模式用于检测模型是否因为上下文过长而试图过早结束任务
     ANXIETY_PATTERNS = [
@@ -202,7 +202,7 @@ class ContextResetManager:
         r"差不多.*结束",
         r"差不多.*收尾",
     ]
-    
+
     def __init__(
         self,
         config: Config,
@@ -219,28 +219,28 @@ class ContextResetManager:
             OSError: 当无法创建 HandoffArtifact 目录时
         """
         self.config = config
-        
+
         # 设置 HandoffArtifact 存储目录
         self.handoff_dir = Path(handoff_dir or config.long_running.handoff_dir)
         self._ensure_directory()
-        
+
         # 从配置获取阈值
         self.reset_threshold = config.long_running.context_reset_threshold
         self.warning_threshold = config.long_running.context_warning_threshold
         self.max_context_tokens = config.long_running.max_context_tokens
-        
+
         # 状态追踪
         self._last_reset_time: str | None = None
         self._reset_count: int = 0
         self._last_usage_info: ContextUsageInfo | None = None
-        
+
         logger.info(
             f"上下文重置管理器初始化完成 - "
             f"重置阈值: {self.reset_threshold * 100:.1f}%, "
             f"警告阈值: {self.warning_threshold * 100:.1f}%, "
             f"最大上下文: {self.max_context_tokens} tokens"
         )
-    
+
     def _ensure_directory(self) -> None:
         """
         确保 HandoffArtifact 目录存在
@@ -256,7 +256,7 @@ class ContextResetManager:
         except OSError as e:
             logger.error(f"创建 HandoffArtifact 目录失败: {e}")
             raise
-    
+
     def check_reset_needed(
         self,
         current_tokens: int,
@@ -281,21 +281,21 @@ class ContextResetManager:
             ...     print(f"需要重置: {reason}")
         """
         max_tokens = max_tokens or self.max_context_tokens
-        
+
         # 参数验证
         if max_tokens <= 0:
             error_msg = "无效的最大 token 数（必须大于 0）"
             logger.warning(error_msg)
             return False, error_msg
-        
+
         if current_tokens < 0:
             error_msg = "无效的当前 token 数（不能为负数）"
             logger.warning(error_msg)
             return False, error_msg
-        
+
         # 计算使用率
         usage_ratio = current_tokens / max_tokens
-        
+
         # 更新最后的使用信息
         self._last_usage_info = ContextUsageInfo(
             total_tokens=current_tokens,
@@ -303,7 +303,7 @@ class ContextResetManager:
             max_tokens=max_tokens,
         )
         self._last_usage_info.calculate_percentage()
-        
+
         # 检查是否超过重置阈值
         if usage_ratio >= self.reset_threshold:
             reason = (
@@ -312,16 +312,16 @@ class ContextResetManager:
             )
             logger.warning(f"[重置触发] {reason}")
             return True, reason
-        
+
         # 检查是否超过警告阈值
         if usage_ratio >= self.warning_threshold:
             logger.info(
                 f"[上下文警告] 使用率达到 {usage_ratio * 100:.1f}%，"
                 f"接近重置阈值 {self.reset_threshold * 100:.1f}%"
             )
-        
+
         return False, f"上下文使用率 {usage_ratio * 100:.1f}%，无需重置"
-    
+
     def detect_anxiety(
         self,
         output_text: str,
@@ -354,13 +354,13 @@ class ContextResetManager:
         """
         if not output_text:
             return False, ""
-        
+
         # 检查是否有待处理任务
         has_pending = pending_tasks and len(pending_tasks) > 0
-        
+
         # 检查输出是否匹配焦虑模式
         detected_patterns: list[str] = []
-        
+
         for pattern in self.ANXIETY_PATTERNS:
             try:
                 if re.search(pattern, output_text, re.IGNORECASE):
@@ -368,7 +368,7 @@ class ContextResetManager:
             except re.error as e:
                 logger.warning(f"正则表达式错误（模式: {pattern}）: {e}")
                 continue
-        
+
         # 如果检测到焦虑模式且仍有待处理任务，则判定为焦虑行为
         if detected_patterns and has_pending:
             reason = (
@@ -378,19 +378,19 @@ class ContextResetManager:
             )
             logger.warning(f"[焦虑检测] {reason}")
             return True, reason
-        
+
         # 如果检测到焦虑模式但没有待处理任务，记录调试信息
         if detected_patterns and not has_pending:
             logger.debug(
                 f"检测到结束模式但无待处理任务，可能是正常结束 - "
                 f"匹配模式: {detected_patterns[:3]}"
             )
-        
+
         return False, ""
-    
+
     def get_context_usage(
         self,
-        session: "Session",
+        session: Session,
     ) -> ContextUsageInfo:
         """
         获取上下文使用信息
@@ -409,20 +409,20 @@ class ContextResetManager:
             >>> print(f"使用率: {usage.usage_percentage:.1f}%")
         """
         info = ContextUsageInfo(max_tokens=self.max_context_tokens)
-        
+
         try:
             # 从会话获取 token 使用情况
             conversation = session.conversation
             info.total_tokens = (
-                conversation.total_input_tokens + 
+                conversation.total_input_tokens +
                 conversation.total_output_tokens
             )
             info.used_tokens = info.total_tokens
             info.calculate_percentage()
-            
+
             # 缓存使用信息
             self._last_usage_info = info
-            
+
             logger.debug(
                 f"上下文使用信息 - "
                 f"输入: {conversation.total_input_tokens}, "
@@ -430,17 +430,17 @@ class ContextResetManager:
                 f"总计: {info.total_tokens}, "
                 f"使用率: {info.usage_percentage:.1f}%"
             )
-            
+
         except AttributeError as e:
             logger.error(f"获取上下文使用信息失败（属性错误）: {e}")
         except Exception as e:
             logger.error(f"获取上下文使用信息失败: {e}")
-        
+
         return info
-    
+
     def create_handoff(
         self,
-        session: "Session",
+        session: Session,
         agent_role: AgentRole = AgentRole.GENERATOR,
         trigger: ResetTrigger = ResetTrigger.AUTO_THRESHOLD,
         completed_work: list[str] | None = None,
@@ -511,22 +511,22 @@ class ContextResetManager:
                 "manager_version": "1.0.0",
             },
         )
-        
+
         # 保存到文件
         handoff_path = self._get_handoff_path(session.session_id)
-        
+
         try:
             artifact.save(handoff_path)
             logger.info(f"HandoffArtifact 已创建并保存: {handoff_path}")
         except Exception as e:
             logger.error(f"保存 HandoffArtifact 失败: {e}")
             raise
-        
+
         return artifact
-    
+
     def restore_context(
         self,
-        session: "Session",
+        session: Session,
         handoff: HandoffArtifact,
     ) -> bool:
         """
@@ -551,7 +551,7 @@ class ContextResetManager:
         try:
             # 构建恢复上下文消息
             context_message = handoff.to_prompt_context()
-            
+
             # 添加恢复提示
             restore_prompt = (
                 f"[系统] 从上一会话恢复上下文\n\n"
@@ -561,23 +561,23 @@ class ContextResetManager:
                 f"---\n\n"
                 f"请根据以上上下文继续工作。"
             )
-            
+
             # 添加到会话
             session.add_user_message(restore_prompt)
-            
+
             logger.info(
                 f"上下文已恢复 - "
                 f"源会话: {handoff.session_id}, "
                 f"待处理任务: {len(handoff.pending_tasks)}, "
                 f"已完成工作: {len(handoff.completed_work)}"
             )
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"恢复上下文失败: {e}")
             return False
-    
+
     def load_latest_handoff(self) -> HandoffArtifact | None:
         """
         加载最近的 HandoffArtifact
@@ -597,36 +597,36 @@ class ContextResetManager:
         try:
             # 查找所有 handoff 文件
             handoff_files = list(self.handoff_dir.glob("handoff_*.json"))
-            
+
             if not handoff_files:
                 logger.debug("没有找到 HandoffArtifact 文件")
                 return None
-            
+
             # 按修改时间排序，获取最新的
             handoff_files.sort(
-                key=lambda f: f.stat().st_mtime, 
+                key=lambda f: f.stat().st_mtime,
                 reverse=True
             )
             latest_file = handoff_files[0]
-            
+
             # 加载文件
             artifact = HandoffArtifact.load(latest_file)
-            
+
             logger.info(
                 f"已加载最近的 HandoffArtifact - "
                 f"文件: {latest_file.name}, "
                 f"会话: {artifact.session_id}"
             )
-            
+
             return artifact
-            
+
         except FileNotFoundError:
             logger.warning("HandoffArtifact 文件不存在")
             return None
         except Exception as e:
             logger.error(f"加载 HandoffArtifact 失败: {e}")
             return None
-    
+
     def load_handoff_by_session(self, session_id: str) -> HandoffArtifact | None:
         """
         根据会话 ID 加载 HandoffArtifact
@@ -643,30 +643,30 @@ class ContextResetManager:
             # 查找匹配的 handoff 文件
             pattern = f"handoff_{session_id}_*.json"
             handoff_files = list(self.handoff_dir.glob(pattern))
-            
+
             if not handoff_files:
                 logger.debug(f"没有找到会话 {session_id} 的 HandoffArtifact")
                 return None
-            
+
             # 按修改时间排序，获取最新的
             handoff_files.sort(
-                key=lambda f: f.stat().st_mtime, 
+                key=lambda f: f.stat().st_mtime,
                 reverse=True
             )
             latest_file = handoff_files[0]
-            
+
             artifact = HandoffArtifact.load(latest_file)
             logger.info(f"已加载会话 {session_id} 的 HandoffArtifact")
-            
+
             return artifact
-            
+
         except Exception as e:
             logger.error(f"加载会话 {session_id} 的 HandoffArtifact 失败: {e}")
             return None
-    
+
     def reset_context(
         self,
-        session: "Session",
+        session: Session,
         trigger: ResetTrigger = ResetTrigger.MANUAL,
         agent_role: AgentRole = AgentRole.GENERATOR,
         **handoff_kwargs: Any,
@@ -701,13 +701,13 @@ class ContextResetManager:
             ...     print(f"重置成功，新会话: {result.new_session_id}")
         """
         old_session_id = session.session_id
-        
+
         logger.info(
             f"开始上下文重置 - "
             f"会话: {old_session_id}, "
             f"触发原因: {trigger.value}"
         )
-        
+
         try:
             # 步骤 1: 创建 HandoffArtifact
             handoff = self.create_handoff(
@@ -716,28 +716,28 @@ class ContextResetManager:
                 trigger=trigger,
                 **handoff_kwargs,
             )
-            
+
             # 步骤 2: 保存当前会话
             try:
                 session.save()
                 logger.debug(f"会话已保存: {old_session_id}")
             except Exception as e:
                 logger.warning(f"保存会话失败（将继续重置）: {e}")
-            
+
             # 步骤 3: 清空对话
             session.clear()
             logger.debug("对话已清空")
-            
+
             # 步骤 4: 恢复上下文
             restore_success = self.restore_context(session, handoff)
-            
+
             if not restore_success:
                 logger.warning("上下文恢复失败，会话将以空上下文继续")
-            
+
             # 更新状态追踪
             self._last_reset_time = datetime.now().isoformat()
             self._reset_count += 1
-            
+
             # 构建成功结果
             result = ResetResult(
                 success=True,
@@ -746,27 +746,27 @@ class ContextResetManager:
                 new_session_id=session.session_id,
                 handoff_path=str(self._get_handoff_path(old_session_id)),
             )
-            
+
             logger.info(
                 f"上下文重置成功 - "
                 f"旧会话: {old_session_id}, "
                 f"新会话: {session.session_id}, "
                 f"累计重置次数: {self._reset_count}"
             )
-            
+
             return result
-            
+
         except Exception as e:
             error_msg = f"上下文重置失败: {e}"
             logger.error(error_msg, exc_info=True)
-            
+
             return ResetResult(
                 success=False,
                 trigger=trigger,
                 old_session_id=old_session_id,
                 error=str(e),
             )
-    
+
     def _get_handoff_path(self, session_id: str) -> Path:
         """
         获取 HandoffArtifact 文件路径
@@ -782,7 +782,7 @@ class ContextResetManager:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"handoff_{session_id}_{timestamp}.json"
         return self.handoff_dir / filename
-    
+
     def get_statistics(self) -> dict[str, Any]:
         """
         获取重置统计信息
@@ -806,20 +806,20 @@ class ContextResetManager:
             "max_context_tokens": self.max_context_tokens,
             "handoff_dir": str(self.handoff_dir),
         }
-        
+
         # 添加最后的使用信息
         if self._last_usage_info:
             stats["last_usage"] = self._last_usage_info.to_dict()
-        
+
         # 统计 handoff 文件数量
         try:
             handoff_count = len(list(self.handoff_dir.glob("handoff_*.json")))
             stats["handoff_file_count"] = handoff_count
         except Exception:
             stats["handoff_file_count"] = 0
-        
+
         return stats
-    
+
     def cleanup_old_handoffs(
         self,
         max_age_days: int = 30,
@@ -839,26 +839,26 @@ class ContextResetManager:
             删除的文件数量
         """
         import time
-        
+
         deleted_count = 0
-        
+
         try:
             # 获取所有 handoff 文件
             handoff_files = list(self.handoff_dir.glob("handoff_*.json"))
-            
+
             if not handoff_files:
                 return 0
-            
+
             # 按修改时间排序（旧的在前）
             handoff_files.sort(key=lambda f: f.stat().st_mtime)
-            
+
             current_time = time.time()
             max_age_seconds = max_age_days * 24 * 60 * 60
-            
+
             # 按年龄删除
             for file_path in handoff_files:
                 file_age = current_time - file_path.stat().st_mtime
-                
+
                 if file_age > max_age_seconds:
                     try:
                         file_path.unlink()
@@ -866,11 +866,11 @@ class ContextResetManager:
                         logger.debug(f"已删除过期 handoff 文件: {file_path.name}")
                     except Exception as e:
                         logger.warning(f"删除文件失败 {file_path}: {e}")
-            
+
             # 如果删除后仍超过最大数量，继续删除最旧的
             remaining_files = list(self.handoff_dir.glob("handoff_*.json"))
             remaining_files.sort(key=lambda f: f.stat().st_mtime)
-            
+
             while len(remaining_files) > max_count:
                 oldest = remaining_files.pop(0)
                 try:
@@ -879,18 +879,18 @@ class ContextResetManager:
                     logger.debug(f"已删除超量 handoff 文件: {oldest.name}")
                 except Exception as e:
                     logger.warning(f"删除文件失败 {oldest}: {e}")
-            
+
             if deleted_count > 0:
                 logger.info(f"清理完成，共删除 {deleted_count} 个 handoff 文件")
-            
+
         except Exception as e:
             logger.error(f"清理 handoff 文件失败: {e}")
-        
+
         return deleted_count
-    
+
     def should_trigger_reset(
         self,
-        session: "Session",
+        session: Session,
         output_text: str = "",
         pending_tasks: list[TaskItem] | None = None,
     ) -> tuple[bool, ResetTrigger, str]:
@@ -918,19 +918,19 @@ class ContextResetManager:
         """
         # 获取上下文使用信息
         usage_info = self.get_context_usage(session)
-        
+
         # 检查是否超过阈值
         need_reset, threshold_reason = self.check_reset_needed(usage_info.used_tokens)
-        
+
         if need_reset:
             return True, ResetTrigger.AUTO_THRESHOLD, threshold_reason
-        
+
         # 检查焦虑行为
         if output_text and pending_tasks:
             is_anxious, anxiety_reason = self.detect_anxiety(
                 output_text, pending_tasks
             )
-            
+
             if is_anxious:
                 # 只有在上下文使用率较高时才因焦虑触发重置
                 if usage_info.is_above_threshold(self.warning_threshold):
@@ -940,7 +940,7 @@ class ContextResetManager:
                         f"检测到焦虑行为但上下文使用率较低 "
                         f"({usage_info.usage_percentage:.1f}%)，暂不触发重置"
                     )
-        
+
         return False, ResetTrigger.MANUAL, "无需重置"
 
 

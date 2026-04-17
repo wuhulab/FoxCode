@@ -14,11 +14,10 @@ import sys
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import ClassVar
 
 from foxcode.core.work_mode_config import WorkModeConfig
 
@@ -80,7 +79,7 @@ class AgentRole(str, Enum):
 class ModelConfig(BaseModel):
     """模型配置"""
     model_config = ConfigDict(protected_namespaces=())
-    
+
     provider: ModelProvider = ModelProvider.OPENAI
     model_name: str = "gpt-4o"
     api_key: str | None = None
@@ -88,7 +87,7 @@ class ModelConfig(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, ge=1)
     timeout: int = Field(default=120, ge=1)
-    
+
     # 模型别名映射（类变量）
     MODEL_ALIASES: ClassVar[dict[str, tuple[ModelProvider, str]]] = {
         "claude": (ModelProvider.ANTHROPIC, "claude-sonnet-4-20250514"),
@@ -109,7 +108,7 @@ class ModelConfig(BaseModel):
         "step-3.5": (ModelProvider.STEP, "step-3.5-flash"),
         "step-3.5-flash": (ModelProvider.STEP, "step-3.5-flash"),
     }
-    
+
     @field_validator("model_name", mode="before")
     @classmethod
     def resolve_model_alias(cls, v: str) -> str:
@@ -117,12 +116,12 @@ class ModelConfig(BaseModel):
         if v in cls.MODEL_ALIASES:
             return cls.MODEL_ALIASES[v][1]
         return v
-    
+
     def get_effective_api_key(self) -> str:
         """获取有效的 API Key"""
         if self.api_key:
             return self.api_key
-        
+
         # 从环境变量获取
         env_keys = {
             ModelProvider.OPENAI: "OPENAI_API_KEY",
@@ -130,13 +129,13 @@ class ModelConfig(BaseModel):
             ModelProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
             ModelProvider.STEP: "STEP_API_KEY",
         }
-        
+
         env_key = env_keys.get(self.provider)
         if env_key:
             key = os.environ.get(env_key)
             if key:
                 return key
-        
+
         raise ValueError(f"未找到 {self.provider.value} 的 API Key，请设置环境变量或配置")
 
 
@@ -184,41 +183,41 @@ class SandboxConfigModel(BaseModel):
         default_factory=list,
         description="黑名单命令列表（黑名单模式下生效，为空则使用默认黑名单）"
     )
-    
+
     @field_validator("allowed_commands", "blocked_commands", mode="before")
     @classmethod
     def validate_commands(cls, v: list[str] | None) -> list[str]:
         """验证命令列表格式，防止命令注入"""
         if v is None:
             return []
-        
+
         validated = []
         dangerous_chars = [';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r']
-        
+
         for cmd in v:
             # 跳过空值
             if not cmd or not isinstance(cmd, str):
                 continue
-            
+
             # 去除首尾空白
             cmd = cmd.strip()
             if not cmd:
                 continue
-            
+
             # 检查危险字符
             if any(char in cmd for char in dangerous_chars):
                 continue  # 跳过包含危险字符的命令
-            
+
             # 只允许字母、数字、连字符、下划线和点号
             if not all(c.isalnum() or c in '-_.' for c in cmd):
                 continue
-            
+
             # 长度限制
             if len(cmd) > 50:
                 continue
-            
+
             validated.append(cmd.lower())
-        
+
         return validated
 
 
@@ -237,34 +236,34 @@ class ToolConfig(BaseModel):
         ".json", ".yaml", ".yml", ".toml", ".xml", ".html", ".css",
         ".md", ".txt", ".rst", ".ini", ".cfg", ".env", ".gitignore",
     ])
-    
+
     @field_validator("allowed_extensions", mode="before")
     @classmethod
     def validate_extensions(cls, v: list[str] | None) -> list[str]:
         """验证文件扩展名格式"""
         if v is None:
             return []
-        
+
         validated = []
         for ext in v:
             # 跳过空值
             if not ext or not isinstance(ext, str):
                 continue
-            
+
             # 确保以 '.' 开头（对于没有点的扩展名自动添加）
             if not ext.startswith('.'):
                 ext = '.' + ext
-            
+
             # 验证扩展名只包含有效字符（字母、数字、连字符、下划线）
             ext_part = ext[1:]  # 去掉点号
             if not ext_part:
                 continue  # 跳过只有点号的扩展名
-            
+
             if not all(c.isalnum() or c in '-_' for c in ext_part):
                 continue  # 跳过包含无效字符的扩展名
-            
+
             validated.append(ext.lower())
-        
+
         return validated
 
 
@@ -379,7 +378,7 @@ class LongRunningConfig(BaseModel):
     auto_generate_summary: bool = True  # 是否自动生成会话摘要
     context_compression_threshold: int = Field(default=4000, ge=500)  # 上下文压缩阈值
     enable_long_running_mode: bool = False  # 是否启用长时间运行模式
-    
+
     context_reset_threshold: float = Field(
         default=0.85,
         ge=0.0,
@@ -573,7 +572,7 @@ class Config(BaseSettings):
         env_nested_delimiter="__",
         extra="ignore",
     )
-    
+
     # 基本配置
     run_mode: RunMode = RunMode.DEFAULT
     debug: bool = False
@@ -582,7 +581,7 @@ class Config(BaseSettings):
         default=OutputTopic.DEFAULT,
         description="输出主题模式: default, debug, minimalism"
     )
-    
+
     # 子配置
     model: ModelConfig = Field(default_factory=ModelConfig)
     tools: ToolConfig = Field(default_factory=ToolConfig)
@@ -602,21 +601,21 @@ class Config(BaseSettings):
         default_factory=UpdateConfig,
         description="版本更新配置"
     )
-    
+
     # 工作目录
     working_dir: Path = Field(default_factory=lambda: Path.cwd())
-    
+
     # 会话配置 - 默认在工作目录下的 .foxcode 目录
     session_dir: Path | None = Field(default=None)
     auto_save_session: bool = True
     max_history: int = Field(default=100, ge=0)
-    
+
     def model_post_init(self, __context: Any) -> None:
         """Pydantic 模型初始化后处理"""
         # 如果未指定会话目录，使用工作目录下的 .foxcode/sessions
         if self.session_dir is None:
             self.session_dir = self.working_dir / ".foxcode" / "sessions"
-    
+
     @classmethod
     def load_from_file(cls, config_path: Path | None = None) -> dict[str, Any]:
         """
@@ -631,23 +630,23 @@ class Config(BaseSettings):
         if config_path and config_path.exists():
             with open(config_path, "rb") as f:
                 return tomllib.load(f)
-        
+
         # 自动查找配置文件
         search_paths = [
             Path.cwd() / ".foxcode.toml",
             Path.cwd() / "foxcode.toml",
             Path.home() / ".foxcode" / "config.toml",
         ]
-        
+
         for path in search_paths:
             if path.exists():
                 with open(path, "rb") as f:
                     return tomllib.load(f)
-        
+
         return {}
-    
+
     @classmethod
-    def create(cls, **overrides: Any) -> "Config":
+    def create(cls, **overrides: Any) -> Config:
         """
         创建配置实例，合并所有配置来源
         
@@ -659,10 +658,10 @@ class Config(BaseSettings):
         """
         # 从文件加载
         file_config = cls.load_from_file()
-        
+
         # 合并配置
         return cls(**{**file_config, **overrides})
-    
+
     @classmethod
     def validate_file(cls, config_path: Path | None = None) -> tuple[bool, str]:
         """
@@ -675,7 +674,7 @@ class Config(BaseSettings):
             (是否有效, 验证报告)
         """
         from foxcode.core.config_validator import validate_config_file
-        
+
         if config_path is None:
             # 自动查找配置文件
             search_paths = [
@@ -687,12 +686,12 @@ class Config(BaseSettings):
                 if path.exists():
                     config_path = path
                     break
-        
+
         if config_path is None or not config_path.exists():
             return True, "未找到配置文件，将使用默认配置"
-        
+
         return validate_config_file(config_path)
-    
+
     def validate(self) -> tuple[bool, list[dict[str, Any]], list[dict[str, Any]]]:
         """
         验证当前配置
@@ -701,7 +700,7 @@ class Config(BaseSettings):
             (是否有效, 错误列表, 警告列表)
         """
         from foxcode.core.config_validator import validate_config
-        
+
         # 将配置转换为字典
         config_dict = {
             "model": {
@@ -733,17 +732,17 @@ class Config(BaseSettings):
             "working_dir": str(self.working_dir),
             "session_dir": str(self.session_dir) if self.session_dir else None,
         }
-        
+
         return validate_config(config_dict)
-    
+
     def get_session_path(self, session_id: str) -> Path:
         """获取会话文件路径"""
         return self.session_dir / f"{session_id}.json"
-    
+
     def ensure_directories(self) -> None:
         """确保必要的目录存在"""
         self.session_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def get_config_file_path(self) -> Path:
         """
         获取配置文件路径
@@ -759,17 +758,17 @@ class Config(BaseSettings):
         project_config = self.working_dir / ".foxcode.toml"
         if project_config.exists():
             return project_config
-        
+
         # 再检查用户级配置文件
         user_config = Path.home() / ".foxcode" / "config.toml"
         if user_config.exists():
             return user_config
-        
+
         # 默认使用用户级配置文件
         user_config.parent.mkdir(parents=True, exist_ok=True)
         return user_config
-    
-    def save_output_topic(self, topic: "OutputTopic") -> bool:
+
+    def save_output_topic(self, topic: OutputTopic) -> bool:
         """
         保存 output_topic 设置到配置文件
         
@@ -781,7 +780,7 @@ class Config(BaseSettings):
         """
         try:
             config_path = self.get_config_file_path()
-            
+
             # 读取现有配置文件
             existing_config = {}
             if config_path.exists():
@@ -790,7 +789,7 @@ class Config(BaseSettings):
                         existing_config = tomllib.load(f)
                 except Exception:
                     existing_config = {}
-            
+
             # 如果配置文件中没有模型配置，从当前 Config 对象获取
             if "model" not in existing_config:
                 base_config = self._get_base_config_dict()
@@ -798,10 +797,10 @@ class Config(BaseSettings):
                 for key, value in base_config.items():
                     if key not in existing_config:
                         existing_config[key] = value
-            
+
             # 更新 output_topic（作为顶级字段）
             existing_config["output_topic"] = topic.value
-            
+
             # 写入配置文件
             try:
                 import tomli_w
@@ -811,12 +810,12 @@ class Config(BaseSettings):
             except ImportError:
                 # 如果没有 tomli_w，使用简单的格式写入
                 return self._write_simple_config(config_path, existing_config)
-            
+
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"保存配置失败: {e}")
             return False
-    
+
     def _get_base_config_dict(self) -> dict[str, Any]:
         """
         获取基础配置字典（用于保存配置时保留现有设置）
@@ -837,7 +836,7 @@ class Config(BaseSettings):
                 "timeout": self.model.timeout,
             },
         }
-    
+
     def _write_simple_config(self, config_path: Path, config_dict: dict) -> bool:
         """
         简单的 TOML 配置写入（不依赖 tomli_w）
@@ -853,25 +852,25 @@ class Config(BaseSettings):
             with open(config_path, "w", encoding="utf-8") as f:
                 f.write('# FoxCode 配置文件\n')
                 f.write(f'# 自动生成于 {time.strftime("%Y-%m-%d %H:%M:%S")}\n\n')
-                
+
                 # 先写入顶级字段
                 for key, value in config_dict.items():
                     if not isinstance(value, dict):
                         self._write_toml_value(f, key, value)
-                
+
                 # 再写入节
                 for key, value in config_dict.items():
                     if isinstance(value, dict):
                         f.write(f'\n[{key}]\n')
                         for k, v in value.items():
                             self._write_toml_value(f, k, v, indent="    ")
-            
+
             return True
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"写入配置失败: {e}")
             return False
-    
+
     def _write_toml_value(self, f, key: str, value, indent: str = "") -> None:
         """
         写入单个 TOML 值

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
-from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +24,24 @@ MODEL_PRICING = {
     "gpt-4-turbo": {"input": 0.01, "output": 0.03},
     "gpt-4": {"input": 0.03, "output": 0.06},
     "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-    
+
     # Anthropic 模型
     "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
     "claude-opus-4-20250514": {"input": 0.015, "output": 0.075},
     "claude-3-sonnet": {"input": 0.003, "output": 0.015},
     "claude-3-opus": {"input": 0.015, "output": 0.075},
     "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
-    
+
     # DeepSeek 模型
     "deepseek-chat": {"input": 0.00014, "output": 0.00028},
     "deepseek-coder": {"input": 0.00014, "output": 0.00028},
-    
+
     # StepFun 模型
     "step-1-8k": {"input": 0.002, "output": 0.002},
     "step-1-32k": {"input": 0.004, "output": 0.004},
     "step-2-16k": {"input": 0.004, "output": 0.004},
     "step-3.5-flash": {"input": 0.0004, "output": 0.0004},
-    
+
     # 默认定价（未知模型）
     "default": {"input": 0.001, "output": 0.002},
 }
@@ -78,18 +78,18 @@ class SessionStats:
     tool_success: int = 0              # 成功次数
     tool_failures: int = 0             # 失败次数
     tool_total_duration: float = 0.0   # 总执行时长
-    
+
     # API 统计
     api_calls: int = 0                 # API 调用次数
     total_input_tokens: int = 0        # 总输入 tokens
     total_output_tokens: int = 0       # 总输出 tokens
     total_cost: float = 0.0            # 总成本（美元）
     api_total_duration: float = 0.0    # API 总响应时长
-    
+
     # 详细记录
     tool_records: list[ToolUsageRecord] = field(default_factory=list)
     api_records: list[APIUsageRecord] = field(default_factory=list)
-    
+
     # 按工具名称统计
     tool_usage_by_name: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
@@ -100,7 +100,7 @@ class StatisticsManager:
     
     跟踪工具使用和 API 调用情况，计算成本
     """
-    
+
     def __init__(self, max_records: int = 1000):
         """
         初始化统计管理器
@@ -111,7 +111,7 @@ class StatisticsManager:
         self._session_stats = SessionStats()
         self._max_records = max_records
         self._start_time = time.time()
-    
+
     def record_tool_usage(
         self,
         tool_name: str,
@@ -134,7 +134,7 @@ class StatisticsManager:
         """
         # 脱敏参数（移除敏感信息）
         sanitized_params = self._sanitize_params(params or {})
-        
+
         record = ToolUsageRecord(
             tool_name=tool_name,
             timestamp=time.time(),
@@ -144,26 +144,26 @@ class StatisticsManager:
             params=sanitized_params,
             result_size=result_size,
         )
-        
+
         # 更新统计
         self._session_stats.tool_calls += 1
         self._session_stats.tool_total_duration += duration
         self._session_stats.tool_usage_by_name[tool_name] += 1
-        
+
         if success:
             self._session_stats.tool_success += 1
         else:
             self._session_stats.tool_failures += 1
-        
+
         # 添加记录
         self._session_stats.tool_records.append(record)
-        
+
         # 清理旧记录
         if len(self._session_stats.tool_records) > self._max_records:
             self._session_stats.tool_records = self._session_stats.tool_records[-self._max_records:]
-        
+
         logger.debug(f"记录工具使用: {tool_name}, 成功: {success}, 耗时: {duration:.2f}s")
-    
+
     def record_api_usage(
         self,
         model: str,
@@ -185,7 +185,7 @@ class StatisticsManager:
         """
         # 计算成本
         cost = self.calculate_cost(model, input_tokens, output_tokens)
-        
+
         record = APIUsageRecord(
             model=model,
             timestamp=time.time(),
@@ -194,29 +194,29 @@ class StatisticsManager:
             cost=cost,
             duration=duration,
         )
-        
+
         # 更新统计
         self._session_stats.api_calls += 1
         self._session_stats.total_input_tokens += input_tokens
         self._session_stats.total_output_tokens += output_tokens
         self._session_stats.total_cost += cost
         self._session_stats.api_total_duration += duration
-        
+
         # 添加记录
         self._session_stats.api_records.append(record)
-        
+
         # 清理旧记录
         if len(self._session_stats.api_records) > self._max_records:
             self._session_stats.api_records = self._session_stats.api_records[-self._max_records:]
-        
+
         logger.debug(
             f"记录 API 使用: {model}, "
             f"输入: {input_tokens}, 输出: {output_tokens}, "
             f"成本: ${cost:.6f}"
         )
-        
+
         return cost
-    
+
     @staticmethod
     def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
         """
@@ -232,13 +232,13 @@ class StatisticsManager:
         """
         # 获取定价
         pricing = MODEL_PRICING.get(model, MODEL_PRICING["default"])
-        
+
         # 计算成本（价格是每千 tokens）
         input_cost = (input_tokens / 1000) * pricing["input"]
         output_cost = (output_tokens / 1000) * pricing["output"]
-        
+
         return input_cost + output_cost
-    
+
     @staticmethod
     def get_model_pricing(model: str) -> dict[str, float]:
         """
@@ -251,7 +251,7 @@ class StatisticsManager:
             定价信息
         """
         return MODEL_PRICING.get(model, MODEL_PRICING["default"])
-    
+
     def get_session_stats(self) -> dict[str, Any]:
         """
         获取会话统计
@@ -260,11 +260,11 @@ class StatisticsManager:
             统计信息字典
         """
         session_duration = time.time() - self._start_time
-        
+
         return {
             # 会话信息
             "session_duration": round(session_duration, 2),
-            
+
             # 工具统计
             "tool_calls": self._session_stats.tool_calls,
             "tool_success": self._session_stats.tool_success,
@@ -279,7 +279,7 @@ class StatisticsManager:
                 if self._session_stats.tool_calls > 0 else 0
             ),
             "tool_usage_by_name": dict(self._session_stats.tool_usage_by_name),
-            
+
             # API 统计
             "api_calls": self._session_stats.api_calls,
             "total_input_tokens": self._session_stats.total_input_tokens,
@@ -292,7 +292,7 @@ class StatisticsManager:
                 if self._session_stats.api_calls > 0 else 0
             ),
         }
-    
+
     def get_tool_usage_report(self) -> str:
         """
         获取工具使用报告
@@ -301,7 +301,7 @@ class StatisticsManager:
             格式化的报告字符串
         """
         stats = self.get_session_stats()
-        
+
         lines = [
             "📊 工具使用统计",
             "═" * 40,
@@ -314,19 +314,19 @@ class StatisticsManager:
             "",
             "工具使用分布:",
         ]
-        
+
         # 按使用次数排序
         sorted_tools = sorted(
             stats["tool_usage_by_name"].items(),
             key=lambda x: x[1],
             reverse=True,
         )
-        
+
         for tool_name, count in sorted_tools:
             lines.append(f"  • {tool_name}: {count} 次")
-        
+
         return "\n".join(lines)
-    
+
     def get_api_usage_report(self) -> str:
         """
         获取 API 使用报告
@@ -335,7 +335,7 @@ class StatisticsManager:
             格式化的报告字符串
         """
         stats = self.get_session_stats()
-        
+
         lines = [
             "💰 API 使用统计",
             "═" * 40,
@@ -347,9 +347,9 @@ class StatisticsManager:
             f"API 总耗时: {stats['api_total_duration']}s",
             f"平均响应时间: {stats['api_avg_duration']}s",
         ]
-        
+
         return "\n".join(lines)
-    
+
     def get_full_report(self) -> str:
         """
         获取完整报告
@@ -358,7 +358,7 @@ class StatisticsManager:
             格式化的完整报告字符串
         """
         stats = self.get_session_stats()
-        
+
         lines = [
             "📈 FoxCode 会话统计报告",
             "═" * 50,
@@ -370,15 +370,15 @@ class StatisticsManager:
             "",
             "═" * 50,
         ]
-        
+
         return "\n".join(lines)
-    
+
     def reset(self) -> None:
         """重置统计"""
         self._session_stats = SessionStats()
         self._start_time = time.time()
         logger.info("统计已重置")
-    
+
     def _sanitize_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """
         脱敏参数
@@ -395,7 +395,7 @@ class StatisticsManager:
             "api_key", "apikey", "password", "passwd", "secret",
             "token", "auth", "credential", "private_key",
         }
-        
+
         sanitized = {}
         for key, value in params.items():
             key_lower = key.lower()
@@ -408,7 +408,7 @@ class StatisticsManager:
                 sanitized[key] = value[:100] + "..."
             else:
                 sanitized[key] = value
-        
+
         return sanitized
 
 

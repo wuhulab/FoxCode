@@ -13,7 +13,6 @@ FoxCode 版本更新模块
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -24,13 +23,14 @@ import sys
 import tempfile
 import threading
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class ReleaseInfo:
     assets: list[dict[str, Any]] = field(default_factory=list)  # 资产列表
     prerelease: bool = False            # 是否为预发布版本
     draft: bool = False                 # 是否为草稿
-    
+
     def get_download_url(self, platform_name: str | None = None) -> str | None:
         """
         获取指定平台的下载链接
@@ -82,27 +82,27 @@ class ReleaseInfo:
         """
         if not self.assets:
             return None
-        
+
         if platform_name is None:
             return self.assets[0].get("browser_download_url")
-        
+
         # 平台名称映射
         platform_patterns = {
             "windows": ["windows", "win", "win32", "win64"],
             "linux": ["linux", "ubuntu", "debian"],
             "darwin": ["darwin", "macos", "mac", "osx"],
         }
-        
+
         patterns = platform_patterns.get(platform_name.lower(), [platform_name.lower()])
-        
+
         for asset in self.assets:
             name = asset.get("name", "").lower()
             for pattern in patterns:
                 if pattern in name:
                     return asset.get("browser_download_url")
-        
+
         return None
-    
+
     def get_file_size(self, platform_name: str | None = None) -> int:
         """
         获取下载文件大小（字节）
@@ -115,24 +115,24 @@ class ReleaseInfo:
         """
         if not self.assets:
             return 0
-        
+
         if platform_name is None:
             return self.assets[0].get("size", 0)
-        
+
         platform_patterns = {
             "windows": ["windows", "win", "win32", "win64"],
             "linux": ["linux", "ubuntu", "debian"],
             "darwin": ["darwin", "macos", "mac", "osx"],
         }
-        
+
         patterns = platform_patterns.get(platform_name.lower(), [platform_name.lower()])
-        
+
         for asset in self.assets:
             name = asset.get("name", "").lower()
             for pattern in patterns:
                 if pattern in name:
                     return asset.get("size", 0)
-        
+
         return 0
 
 
@@ -159,13 +159,13 @@ class VersionComparator:
     
     支持语义化版本比较（Semantic Versioning）
     """
-    
+
     # 版本号正则表达式
     VERSION_PATTERN = re.compile(
         r'^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-._]?(alpha|beta|rc|pre|post|dev|a|b|c)(?:[-._]?(\d+))?)?$',
         re.IGNORECASE
     )
-    
+
     @classmethod
     def parse_version(cls, version: str) -> tuple[int, int, int, str, int]:
         """
@@ -179,7 +179,7 @@ class VersionComparator:
         """
         # 清理版本字符串
         version = version.strip().lstrip('v')
-        
+
         match = cls.VERSION_PATTERN.match(version)
         if not match:
             # 尝试简单解析
@@ -188,16 +188,16 @@ class VersionComparator:
             minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
             patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
             return (major, minor, patch, "", 0)
-        
+
         major = int(match.group(1))
         minor = int(match.group(2)) if match.group(2) else 0
         patch = int(match.group(3)) if match.group(3) else 0
-        
+
         prerelease_type = match.group(4).lower() if match.group(4) else ""
         prerelease_num = int(match.group(5)) if match.group(5) else 0
-        
+
         return (major, minor, patch, prerelease_type, prerelease_num)
-    
+
     @classmethod
     def compare(cls, version1: str, version2: str) -> int:
         """
@@ -214,14 +214,14 @@ class VersionComparator:
         """
         v1 = cls.parse_version(version1)
         v2 = cls.parse_version(version2)
-        
+
         # 比较主版本号
         for i in range(3):
             if v1[i] < v2[i]:
                 return -1
             if v1[i] > v2[i]:
                 return 1
-        
+
         # 比较预发布版本
         # 正式版 > 预发布版
         prerelease_order = {
@@ -236,23 +236,23 @@ class VersionComparator:
             "post": 60,     # Post-release
             "dev": 10,      # Development
         }
-        
+
         v1_pre_type = prerelease_order.get(v1[3], 0)
         v2_pre_type = prerelease_order.get(v2[3], 0)
-        
+
         if v1_pre_type < v2_pre_type:
             return -1
         if v1_pre_type > v2_pre_type:
             return 1
-        
+
         # 比较预发布版本号
         if v1[4] < v2[4]:
             return -1
         if v1[4] > v2[4]:
             return 1
-        
+
         return 0
-    
+
     @classmethod
     def is_newer(cls, version1: str, version2: str) -> bool:
         """
@@ -274,7 +274,7 @@ class GitHubReleasesClient:
     
     处理与 GitHub API 的交互
     """
-    
+
     def __init__(
         self,
         repo_owner: str = GITHUB_REPO_OWNER,
@@ -293,7 +293,7 @@ class GitHubReleasesClient:
         self.repo_name = repo_name
         self.timeout = timeout
         self.base_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}"
-    
+
     def _make_request(self, url: str) -> dict[str, Any] | list[Any] | None:
         """
         发送 HTTP 请求
@@ -308,12 +308,12 @@ class GitHubReleasesClient:
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": f"FoxCode-Updater/{self._get_current_version()}",
         }
-        
+
         # 如果有 GitHub Token，添加到请求头
         github_token = os.environ.get("GITHUB_TOKEN")
         if github_token:
             headers["Authorization"] = f"token {github_token}"
-        
+
         try:
             request = Request(url, headers=headers)
             with urlopen(request, timeout=self.timeout) as response:
@@ -333,7 +333,7 @@ class GitHubReleasesClient:
         except Exception as e:
             logger.error(f"请求失败: {e}")
             return None
-    
+
     def _get_current_version(self) -> str:
         """获取当前版本"""
         try:
@@ -341,7 +341,7 @@ class GitHubReleasesClient:
             return __version__
         except ImportError:
             return "0.0.0"
-    
+
     def get_latest_release(self, include_prerelease: bool = False) -> ReleaseInfo | None:
         """
         获取最新发布版本
@@ -357,7 +357,7 @@ class GitHubReleasesClient:
             releases = self.get_releases(limit=10)
             if not releases:
                 return None
-            
+
             # 过滤掉草稿，找到最新的
             for release in releases:
                 if not release.draft:
@@ -367,12 +367,12 @@ class GitHubReleasesClient:
             # 获取最新正式版本
             url = f"{self.base_url}/releases/latest"
             data = self._make_request(url)
-            
+
             if data and isinstance(data, dict):
                 return self._parse_release(data)
-            
+
             return None
-    
+
     def get_releases(self, limit: int = 10) -> list[ReleaseInfo]:
         """
         获取发布版本列表
@@ -385,18 +385,18 @@ class GitHubReleasesClient:
         """
         url = f"{self.base_url}/releases?per_page={limit}"
         data = self._make_request(url)
-        
+
         if not data or not isinstance(data, list):
             return []
-        
+
         releases = []
         for item in data:
             release = self._parse_release(item)
             if release:
                 releases.append(release)
-        
+
         return releases
-    
+
     def get_release_by_tag(self, tag: str) -> ReleaseInfo | None:
         """
         根据标签获取发布版本
@@ -409,12 +409,12 @@ class GitHubReleasesClient:
         """
         url = f"{self.base_url}/releases/tags/{tag}"
         data = self._make_request(url)
-        
+
         if data and isinstance(data, dict):
             return self._parse_release(data)
-        
+
         return None
-    
+
     def _parse_release(self, data: dict[str, Any]) -> ReleaseInfo | None:
         """
         解析 release 数据
@@ -448,7 +448,7 @@ class UpdateDownloader:
     
     处理更新包的下载和验证
     """
-    
+
     def __init__(
         self,
         download_dir: Path | None = None,
@@ -466,10 +466,10 @@ class UpdateDownloader:
         self.download_dir = download_dir or Path(tempfile.gettempdir()) / "foxcode_updates"
         self.chunk_size = chunk_size
         self.timeout = timeout
-        
+
         # 确保下载目录存在
         self.download_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def download(
         self,
         url: str,
@@ -489,34 +489,34 @@ class UpdateDownloader:
         """
         if filename is None:
             filename = url.split('/')[-1] or "update.zip"
-        
+
         filepath = self.download_dir / filename
-        
+
         try:
             request = Request(
                 url,
                 headers={"User-Agent": "FoxCode-Updater"},
             )
-            
+
             with urlopen(request, timeout=self.timeout) as response:
                 total_size = int(response.headers.get('Content-Length', 0))
                 downloaded = 0
-                
+
                 with open(filepath, 'wb') as f:
                     while True:
                         chunk = response.read(self.chunk_size)
                         if not chunk:
                             break
-                        
+
                         f.write(chunk)
                         downloaded += len(chunk)
-                        
+
                         if progress_callback:
                             progress_callback(downloaded, total_size)
-            
+
             logger.info(f"下载完成: {filepath}")
             return filepath
-            
+
         except HTTPError as e:
             logger.error(f"下载失败 (HTTP {e.code}): {e.reason}")
             return None
@@ -529,7 +529,7 @@ class UpdateDownloader:
             if filepath.exists():
                 filepath.unlink()
             return None
-    
+
     def verify_checksum(self, filepath: Path, expected_hash: str | None = None) -> bool:
         """
         验证文件校验和
@@ -544,24 +544,24 @@ class UpdateDownloader:
         if not expected_hash:
             logger.warning("未提供校验和，跳过验证")
             return True
-        
+
         try:
             import hashlib
-            
+
             sha256_hash = hashlib.sha256()
             with open(filepath, 'rb') as f:
                 for chunk in iter(lambda: f.read(self.chunk_size), b''):
                     sha256_hash.update(chunk)
-            
+
             actual_hash = sha256_hash.hexdigest()
-            
+
             if actual_hash.lower() == expected_hash.lower():
                 logger.info("文件校验和验证通过")
                 return True
             else:
                 logger.error(f"文件校验和不匹配: 期望 {expected_hash}, 实际 {actual_hash}")
                 return False
-                
+
         except Exception as e:
             logger.error(f"校验和验证失败: {e}")
             return False
@@ -573,7 +573,7 @@ class UpdateInstaller:
     
     处理更新包的解压和安装
     """
-    
+
     def __init__(self, backup_dir: Path | None = None):
         """
         初始化安装器
@@ -583,7 +583,7 @@ class UpdateInstaller:
         """
         self.backup_dir = backup_dir or Path(tempfile.gettempdir()) / "foxcode_backup"
         self.backup_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def install(
         self,
         archive_path: Path,
@@ -607,7 +607,7 @@ class UpdateInstaller:
                 backup_path = self._create_backup(target_dir)
                 if not backup_path:
                     logger.warning("创建备份失败，继续安装")
-            
+
             # 解压更新包
             if archive_path.suffix.lower() == '.zip':
                 success = self._extract_zip(archive_path, target_dir)
@@ -616,16 +616,16 @@ class UpdateInstaller:
             else:
                 logger.error(f"不支持的压缩格式: {archive_path.suffix}")
                 return False
-            
+
             if success:
                 logger.info(f"更新安装成功: {target_dir}")
-            
+
             return success
-            
+
         except Exception as e:
             logger.error(f"安装更新失败: {e}")
             return False
-    
+
     def _create_backup(self, target_dir: Path) -> Path | None:
         """
         创建备份
@@ -639,16 +639,16 @@ class UpdateInstaller:
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = self.backup_dir / f"foxcode_backup_{timestamp}"
-            
+
             shutil.copytree(target_dir, backup_path)
             logger.info(f"备份创建成功: {backup_path}")
-            
+
             return backup_path
-            
+
         except Exception as e:
             logger.error(f"创建备份失败: {e}")
             return None
-    
+
     def _extract_zip(self, archive_path: Path, target_dir: Path) -> bool:
         """
         解压 ZIP 文件
@@ -668,19 +668,19 @@ class UpdateInstaller:
                     if member_path.is_absolute() or '..' in member:
                         logger.error(f"检测到不安全的路径: {member}")
                         return False
-                
+
                 # 解压文件
                 zf.extractall(target_dir)
-            
+
             return True
-            
+
         except zipfile.BadZipFile as e:
             logger.error(f"无效的 ZIP 文件: {e}")
             return False
         except Exception as e:
             logger.error(f"解压失败: {e}")
             return False
-    
+
     def _extract_tar(self, archive_path: Path, target_dir: Path) -> bool:
         """
         解压 TAR 文件
@@ -694,22 +694,22 @@ class UpdateInstaller:
         """
         try:
             import tarfile
-            
+
             with tarfile.open(archive_path, 'r:*') as tf:
                 # 安全检查
                 for member in tf.getmembers():
                     if member.name.startswith('/') or '..' in member.name:
                         logger.error(f"检测到不安全的路径: {member.name}")
                         return False
-                
+
                 tf.extractall(target_dir)
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"解压 TAR 文件失败: {e}")
             return False
-    
+
     def restore_backup(self, backup_path: Path, target_dir: Path) -> bool:
         """
         从备份恢复
@@ -724,12 +724,12 @@ class UpdateInstaller:
         try:
             if target_dir.exists():
                 shutil.rmtree(target_dir)
-            
+
             shutil.copytree(backup_path, target_dir)
             logger.info(f"从备份恢复成功: {backup_path}")
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"恢复备份失败: {e}")
             return False
@@ -741,7 +741,7 @@ class SourceCodeInstaller:
     
     从 GitHub 下载源码并在本地安装
     """
-    
+
     def __init__(self, working_dir: Path | None = None):
         """
         初始化源码安装器
@@ -751,7 +751,7 @@ class SourceCodeInstaller:
         """
         self.working_dir = working_dir or Path(tempfile.gettempdir()) / "foxcode_source"
         self.working_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def download_source(
         self,
         tag: str = "main",
@@ -776,37 +776,37 @@ class SourceCodeInstaller:
         if tag.startswith("v"):
             # 如果是版本标签，使用 tags 路径
             archive_url = f"https://github.com/{repo_owner}/{repo_name}/archive/refs/tags/{tag}.zip"
-        
+
         filename = f"{repo_name}-{tag}.zip"
         filepath = self.working_dir / filename
-        
+
         logger.info(f"正在下载源码: {archive_url}")
-        
+
         try:
             request = Request(
                 archive_url,
                 headers={"User-Agent": "FoxCode-Updater"},
             )
-            
+
             with urlopen(request, timeout=300) as response:
                 total_size = int(response.headers.get('Content-Length', 0))
                 downloaded = 0
-                
+
                 with open(filepath, 'wb') as f:
                     while True:
                         chunk = response.read(8192)
                         if not chunk:
                             break
-                        
+
                         f.write(chunk)
                         downloaded += len(chunk)
-                        
+
                         if progress_callback:
                             progress_callback(downloaded, total_size)
-            
+
             logger.info(f"源码下载完成: {filepath}")
             return filepath
-            
+
         except HTTPError as e:
             logger.error(f"下载源码失败 (HTTP {e.code}): {e.reason}")
             return None
@@ -818,7 +818,7 @@ class SourceCodeInstaller:
             if filepath.exists():
                 filepath.unlink()
             return None
-    
+
     def extract_source(self, archive_path: Path) -> Path | None:
         """
         解压源码
@@ -832,11 +832,11 @@ class SourceCodeInstaller:
         try:
             # 解压到同一目录
             extract_dir = archive_path.parent / f"extracted_{archive_path.stem}"
-            
+
             # 如果目录已存在，先删除
             if extract_dir.exists():
                 shutil.rmtree(extract_dir)
-            
+
             with zipfile.ZipFile(archive_path, 'r') as zf:
                 # 安全检查：防止路径穿越攻击
                 for member in zf.namelist():
@@ -844,27 +844,27 @@ class SourceCodeInstaller:
                     if member_path.is_absolute() or '..' in member:
                         logger.error(f"检测到不安全的路径: {member}")
                         return None
-                
+
                 # 解压文件
                 zf.extractall(extract_dir)
-            
+
             # 找到解压后的实际源码目录（通常是一个子目录）
             subdirs = list(extract_dir.iterdir())
             if len(subdirs) == 1 and subdirs[0].is_dir():
                 source_dir = subdirs[0]
             else:
                 source_dir = extract_dir
-            
+
             logger.info(f"源码解压完成: {source_dir}")
             return source_dir
-            
+
         except zipfile.BadZipFile as e:
             logger.error(f"无效的 ZIP 文件: {e}")
             return None
         except Exception as e:
             logger.error(f"解压源码失败: {e}")
             return None
-    
+
     def install_from_source(
         self,
         source_dir: Path,
@@ -883,31 +883,31 @@ class SourceCodeInstaller:
             (是否成功, 输出信息, 是否需要退出后更新)
         """
         import subprocess
-        
+
         # 检查源码目录是否存在
         if not source_dir.exists():
             return False, f"源码目录不存在: {source_dir}", False
-        
+
         # 检查是否有 setup.py 或 pyproject.toml
         has_setup = (source_dir / "setup.py").exists()
         has_pyproject = (source_dir / "pyproject.toml").exists()
-        
+
         if not has_setup and not has_pyproject:
             return False, "源码目录中没有找到 setup.py 或 pyproject.toml", False
-        
+
         # 构建 pip install 命令
         cmd = [sys.executable, "-m", "pip", "install"]
-        
+
         if upgrade:
             cmd.append("--upgrade")
-        
+
         if editable:
             cmd.extend(["-e", str(source_dir)])
         else:
             cmd.append(str(source_dir))
-        
+
         logger.info(f"正在执行安装命令: {' '.join(cmd)}")
-        
+
         try:
             result = subprocess.run(
                 cmd,
@@ -915,13 +915,13 @@ class SourceCodeInstaller:
                 text=True,
                 timeout=300,  # 5分钟超时
             )
-            
+
             if result.returncode == 0:
                 logger.info("源码安装成功")
                 return True, result.stdout, False
             else:
                 error_msg = result.stderr
-                
+
                 # 检测是否是自更新问题（文件被占用）
                 is_self_update_error = (
                     "WinError 32" in error_msg or
@@ -929,7 +929,7 @@ class SourceCodeInstaller:
                     "being used by another process" in error_msg.lower() or
                     "foxcode.exe" in error_msg
                 )
-                
+
                 if is_self_update_error:
                     logger.warning("检测到自更新问题，需要退出后更新")
                     # 生成更新脚本
@@ -938,14 +938,14 @@ class SourceCodeInstaller:
                 else:
                     logger.error(f"源码安装失败: {error_msg}")
                     return False, error_msg, False
-                
+
         except subprocess.TimeoutExpired:
             logger.error("安装超时")
             return False, "安装超时，请检查网络连接或手动安装", False
         except Exception as e:
             logger.error(f"安装失败: {e}")
             return False, str(e), False
-    
+
     def _generate_update_script(self, source_dir: Path, upgrade: bool = True) -> Path:
         """
         生成更新脚本，供用户退出后执行
@@ -963,7 +963,7 @@ class SourceCodeInstaller:
             cmd_parts.append("--upgrade")
         cmd_parts.append(str(source_dir))
         cmd_str = " ".join(cmd_parts)
-        
+
         # 生成 Windows 批处理脚本
         bat_script = f'''@echo off
 chcp 65001 >nul
@@ -991,7 +991,7 @@ if %errorlevel% equ 0 (
 echo.
 pause
 '''
-        
+
         # 生成 Unix/Linux/Mac shell 脚本
         sh_script = f'''#!/bin/bash
 echo "========================================"
@@ -1018,32 +1018,32 @@ fi
 echo
 read -p "按回车键退出..."
 '''
-        
+
         # 保存脚本
         script_dir = self.working_dir / "update_scripts"
         script_dir.mkdir(parents=True, exist_ok=True)
-        
+
         bat_path = script_dir / "update_foxcode.bat"
         sh_path = script_dir / "update_foxcode.sh"
-        
+
         # 写入 Windows 脚本
         with open(bat_path, "w", encoding="utf-8") as f:
             f.write(bat_script)
-        
+
         # 写入 Unix 脚本
         with open(sh_path, "w", encoding="utf-8") as f:
             f.write(sh_script)
-        
+
         # 设置 Unix 脚本可执行权限
         try:
             os.chmod(sh_path, 0o755)
         except Exception:
             pass
-        
+
         logger.info(f"已生成更新脚本: {bat_path}")
-        
+
         return bat_path
-    
+
     def cleanup(self) -> None:
         """清理临时文件"""
         try:
@@ -1062,7 +1062,7 @@ class FoxCodeUpdater:
     支持从本地配置文件读取和保存版本配置。
     支持源码下载和本地安装。
     """
-    
+
     def __init__(
         self,
         current_version: str | None = None,
@@ -1088,33 +1088,33 @@ class FoxCodeUpdater:
         self.auto_backup = auto_backup
         self.working_dir = working_dir or Path.cwd()
         self.use_source_install = use_source_install
-        
+
         # 配置文件路径
         self.config_path = config_path or self._find_config_file()
-        
+
         # 加载本地配置
         self._update_config = self._load_update_config()
-        
+
         # 如果配置中指定了预发布版本，使用配置中的设置
         if self._update_config.get("include_prerelease", False):
             self.include_prerelease = True
-        
+
         # 从配置获取 GitHub 仓库
         github_repo = self._update_config.get("github_repo", "wuhulab/FoxCode")
         if "/" in github_repo:
             repo_owner, repo_name = github_repo.split("/", 1)
         else:
             repo_owner, repo_name = "wuhulab", "FoxCode"
-        
+
         self.client = GitHubReleasesClient(repo_owner=repo_owner, repo_name=repo_name)
         self.downloader = UpdateDownloader()
         self.installer = UpdateInstaller()
         self.source_installer = SourceCodeInstaller()
-        
+
         # 状态
         self._latest_release: ReleaseInfo | None = None
         self._download_progress: float = 0.0
-    
+
     def _get_current_version(self) -> str:
         """获取当前版本"""
         try:
@@ -1122,7 +1122,7 @@ class FoxCodeUpdater:
             return __version__
         except ImportError:
             return "0.0.0"
-    
+
     def _get_platform_name(self) -> str:
         """获取当前平台名称"""
         system = platform.system().lower()
@@ -1132,7 +1132,7 @@ class FoxCodeUpdater:
             return "darwin"
         else:
             return "linux"
-    
+
     def _find_config_file(self) -> Path:
         """
         查找配置文件
@@ -1150,14 +1150,14 @@ class FoxCodeUpdater:
             self.working_dir / "foxcode.toml",
             Path.home() / ".foxcode" / "config.toml",
         ]
-        
+
         for path in search_paths:
             if path.exists():
                 return path
-        
+
         # 默认使用工作目录下的 .foxcode.toml
         return self.working_dir / ".foxcode.toml"
-    
+
     def _load_update_config(self) -> dict[str, Any]:
         """
         从配置文件加载更新配置
@@ -1167,21 +1167,21 @@ class FoxCodeUpdater:
         """
         if not self.config_path.exists():
             return {}
-        
+
         try:
             if sys.version_info >= (3, 11):
                 import tomllib
             else:
                 import tomli as tomllib
-            
+
             with open(self.config_path, "rb") as f:
                 config = tomllib.load(f)
-            
+
             return config.get("update", {})
         except Exception as e:
             logger.warning(f"加载更新配置失败: {e}")
             return {}
-    
+
     def _save_update_config(self, updates: dict[str, Any]) -> bool:
         """
         保存更新配置到配置文件
@@ -1201,18 +1201,18 @@ class FoxCodeUpdater:
                         import tomllib
                     else:
                         import tomli as tomllib
-                    
+
                     with open(self.config_path, "rb") as f:
                         existing_config = tomllib.load(f)
                 except Exception:
                     existing_config = {}
-            
+
             # 更新 update 配置
             if "update" not in existing_config:
                 existing_config["update"] = {}
-            
+
             existing_config["update"].update(updates)
-            
+
             # 写入配置文件
             try:
                 import tomli_w
@@ -1222,11 +1222,11 @@ class FoxCodeUpdater:
             except ImportError:
                 # 如果没有 tomli_w，使用简单格式写入
                 return self._write_simple_config(existing_config)
-            
+
         except Exception as e:
             logger.error(f"保存更新配置失败: {e}")
             return False
-    
+
     def _write_simple_config(self, config: dict) -> bool:
         """
         简单的 TOML 配置写入（不依赖 tomli_w）
@@ -1240,28 +1240,28 @@ class FoxCodeUpdater:
         try:
             # 确保目录存在
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             with open(self.config_path, "w", encoding="utf-8") as f:
                 f.write('# FoxCode 配置文件\n')
                 f.write(f'# 自动更新于 {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n')
-                
+
                 # 先写入顶级字段
                 for key, value in config.items():
                     if not isinstance(value, dict):
                         self._write_toml_value(f, key, value)
-                
+
                 # 再写入节
                 for key, value in config.items():
                     if isinstance(value, dict):
                         f.write(f'\n[{key}]\n')
                         for k, v in value.items():
                             self._write_toml_value(f, k, v, indent="    ")
-            
+
             return True
         except Exception as e:
             logger.error(f"写入配置失败: {e}")
             return False
-    
+
     def _write_toml_value(self, f, key: str, value, indent: str = "") -> None:
         """
         写入单个 TOML 值
@@ -1290,7 +1290,7 @@ class FoxCodeUpdater:
             pass
         else:
             f.write(f'{indent}{key} = "{str(value)}"\n')
-    
+
     def should_check_update(self) -> bool:
         """
         检查是否应该执行更新检查
@@ -1303,12 +1303,12 @@ class FoxCodeUpdater:
         # 检查是否启用自动检查
         if not self._update_config.get("auto_check", True):
             return False
-        
+
         # 检查是否锁定版本
         locked_version = self._update_config.get("locked_version", "")
         if locked_version:
             return False
-        
+
         # 检查上次检查时间
         last_check = self._update_config.get("last_check_time", "")
         if last_check:
@@ -1320,9 +1320,9 @@ class FoxCodeUpdater:
                     return False
             except Exception:
                 pass
-        
+
         return True
-    
+
     def is_version_skipped(self, version: str) -> bool:
         """
         检查版本是否被跳过
@@ -1335,7 +1335,7 @@ class FoxCodeUpdater:
         """
         skip_version = self._update_config.get("skip_version", "")
         return skip_version == version
-    
+
     def is_version_locked(self) -> bool:
         """
         检查是否锁定版本
@@ -1344,7 +1344,7 @@ class FoxCodeUpdater:
             是否锁定版本
         """
         return bool(self._update_config.get("locked_version", ""))
-    
+
     def get_locked_version(self) -> str | None:
         """
         获取锁定的版本
@@ -1354,7 +1354,7 @@ class FoxCodeUpdater:
         """
         locked = self._update_config.get("locked_version", "")
         return locked if locked else None
-    
+
     def skip_version(self, version: str) -> bool:
         """
         跳过指定版本
@@ -1366,7 +1366,7 @@ class FoxCodeUpdater:
             是否成功
         """
         return self._save_update_config({"skip_version": version})
-    
+
     def lock_version(self, version: str) -> bool:
         """
         锁定到指定版本
@@ -1378,7 +1378,7 @@ class FoxCodeUpdater:
             是否成功
         """
         return self._save_update_config({"locked_version": version})
-    
+
     def unlock_version(self) -> bool:
         """
         解除版本锁定
@@ -1387,7 +1387,7 @@ class FoxCodeUpdater:
             是否成功
         """
         return self._save_update_config({"locked_version": ""})
-    
+
     def check_for_updates(self) -> UpdateResult:
         """
         检查更新
@@ -1397,7 +1397,7 @@ class FoxCodeUpdater:
         """
         try:
             logger.info("正在检查更新...")
-            
+
             # 检查是否锁定版本
             locked_version = self.get_locked_version()
             if locked_version:
@@ -1408,12 +1408,12 @@ class FoxCodeUpdater:
                     latest_version=locked_version,
                     message=f"版本已锁定: {locked_version}",
                 )
-            
+
             # 获取最新版本
             latest_release = self.client.get_latest_release(
                 include_prerelease=self.include_prerelease
             )
-            
+
             if not latest_release:
                 return UpdateResult(
                     status=UpdateStatus.CHECK_FAILED,
@@ -1421,15 +1421,15 @@ class FoxCodeUpdater:
                     message="无法获取最新版本信息",
                     error="GitHub API 请求失败",
                 )
-            
+
             self._latest_release = latest_release
-            
+
             # 保存检查结果到配置文件
             self._save_update_config({
                 "last_check_time": datetime.now().isoformat(),
                 "last_known_version": latest_release.version,
             })
-            
+
             # 检查是否跳过该版本
             if self.is_version_skipped(latest_release.version):
                 return UpdateResult(
@@ -1439,7 +1439,7 @@ class FoxCodeUpdater:
                     release_info=latest_release,
                     message=f"已跳过版本: {latest_release.version}",
                 )
-            
+
             # 比较版本
             if VersionComparator.is_newer(latest_release.version, self.current_version):
                 return UpdateResult(
@@ -1457,7 +1457,7 @@ class FoxCodeUpdater:
                     release_info=latest_release,
                     message="当前已是最新版本",
                 )
-                
+
         except Exception as e:
             logger.error(f"检查更新失败: {e}")
             return UpdateResult(
@@ -1466,7 +1466,7 @@ class FoxCodeUpdater:
                 message="检查更新失败",
                 error=str(e),
             )
-    
+
     def download_update(
         self,
         progress_callback: Callable[[int, int], None] | None = None,
@@ -1484,16 +1484,16 @@ class FoxCodeUpdater:
             check_result = self.check_for_updates()
             if check_result.status != UpdateStatus.UPDATE_AVAILABLE:
                 return check_result
-        
+
         release = self._latest_release
         platform_name = self._get_platform_name()
-        
+
         # 获取下载链接
         download_url = release.get_download_url(platform_name)
         if not download_url:
             # 尝试获取通用包
             download_url = release.get_download_url()
-        
+
         if not download_url:
             return UpdateResult(
                 status=UpdateStatus.UPDATE_FAILED,
@@ -1502,19 +1502,19 @@ class FoxCodeUpdater:
                 message="未找到适合当前平台的更新包",
                 error=f"平台 {platform_name} 没有对应的更新包",
             )
-        
+
         # 下载文件
         file_size = release.get_file_size(platform_name)
         filename = download_url.split('/')[-1]
-        
+
         logger.info(f"正在下载更新: {filename} ({file_size / 1024 / 1024:.1f} MB)")
-        
+
         download_path = self.downloader.download(
             download_url,
             filename,
             progress_callback,
         )
-        
+
         if not download_path:
             return UpdateResult(
                 status=UpdateStatus.NETWORK_ERROR,
@@ -1523,7 +1523,7 @@ class FoxCodeUpdater:
                 message="下载更新失败",
                 error="网络错误或下载中断",
             )
-        
+
         return UpdateResult(
             status=UpdateStatus.UPDATE_DOWNLOADING,
             current_version=self.current_version,
@@ -1532,7 +1532,7 @@ class FoxCodeUpdater:
             message="下载完成",
             download_path=download_path,
         )
-    
+
     def install_update(
         self,
         download_path: Path | None = None,
@@ -1560,12 +1560,12 @@ class FoxCodeUpdater:
                     error="请先下载更新",
                 )
             download_path = max(downloads, key=lambda p: p.stat().st_mtime)
-        
+
         # 确定目标目录
         if not target_dir:
             # 自动检测安装目录
             target_dir = self._detect_install_dir()
-        
+
         if not target_dir:
             return UpdateResult(
                 status=UpdateStatus.UPDATE_FAILED,
@@ -1573,16 +1573,16 @@ class FoxCodeUpdater:
                 message="无法确定安装目录",
                 error="请手动指定目标目录",
             )
-        
+
         # 安装更新
         logger.info(f"正在安装更新到: {target_dir}")
-        
+
         success = self.installer.install(
             download_path,
             target_dir,
             create_backup=self.auto_backup,
         )
-        
+
         if success:
             return UpdateResult(
                 status=UpdateStatus.UPDATE_SUCCESS,
@@ -1598,7 +1598,7 @@ class FoxCodeUpdater:
                 message="安装更新失败",
                 error="解压或安装过程中出错",
             )
-    
+
     def _detect_install_dir(self) -> Path | None:
         """
         检测 FoxCode 安装目录
@@ -1620,15 +1620,15 @@ class FoxCodeUpdater:
                 current = current.parent
         except Exception:
             pass
-        
+
         # 尝试从 sys.path 检测
         for path_str in sys.path:
             path = Path(path_str)
             if (path / "foxcode").is_dir():
                 return path
-        
+
         return None
-    
+
     def update(
         self,
         progress_callback: Callable[[str, float], None] | None = None,
@@ -1645,40 +1645,40 @@ class FoxCodeUpdater:
         # 1. 检查更新
         if progress_callback:
             progress_callback("检查更新...", 0.0)
-        
+
         check_result = self.check_for_updates()
-        
+
         if check_result.status == UpdateStatus.UP_TO_DATE:
             return check_result
-        
+
         if check_result.status != UpdateStatus.UPDATE_AVAILABLE:
             return check_result
-        
+
         # 2. 下载更新
         if progress_callback:
             progress_callback("下载更新...", 0.3)
-        
+
         def download_progress(downloaded: int, total: int):
             if progress_callback and total > 0:
                 progress = 0.3 + (downloaded / total) * 0.5
                 progress_callback("下载更新...", progress)
-        
+
         download_result = self.download_update(download_progress)
-        
+
         if download_result.status != UpdateStatus.UPDATE_DOWNLOADING:
             return download_result
-        
+
         # 3. 安装更新
         if progress_callback:
             progress_callback("安装更新...", 0.9)
-        
+
         install_result = self.install_update(download_result.download_path)
-        
+
         if progress_callback:
             progress_callback("完成", 1.0)
-        
+
         return install_result
-    
+
     def update_from_source(
         self,
         progress_callback: Callable[[str, float], None] | None = None,
@@ -1699,35 +1699,35 @@ class FoxCodeUpdater:
         # 1. 检查更新
         if progress_callback:
             progress_callback("检查更新...", 0.0)
-        
+
         check_result = self.check_for_updates()
-        
+
         if check_result.status == UpdateStatus.UP_TO_DATE:
             return check_result
-        
+
         if check_result.status != UpdateStatus.UPDATE_AVAILABLE:
             return check_result
-        
+
         # 获取版本标签
         if self._latest_release:
             tag = self._latest_release.tag_name
         else:
             tag = branch
-        
+
         # 2. 下载源码
         if progress_callback:
             progress_callback("下载源码...", 0.2)
-        
+
         def download_progress(downloaded: int, total: int):
             if progress_callback and total > 0:
                 progress = 0.2 + (downloaded / total) * 0.4
                 progress_callback("下载源码...", progress)
-        
+
         archive_path = self.source_installer.download_source(
             tag=tag,
             progress_callback=download_progress,
         )
-        
+
         if not archive_path:
             return UpdateResult(
                 status=UpdateStatus.NETWORK_ERROR,
@@ -1736,13 +1736,13 @@ class FoxCodeUpdater:
                 message="下载源码失败",
                 error="网络错误或下载中断",
             )
-        
+
         # 3. 解压源码
         if progress_callback:
             progress_callback("解压源码...", 0.65)
-        
+
         source_dir = self.source_installer.extract_source(archive_path)
-        
+
         if not source_dir:
             return UpdateResult(
                 status=UpdateStatus.UPDATE_FAILED,
@@ -1751,17 +1751,17 @@ class FoxCodeUpdater:
                 message="解压源码失败",
                 error="无法解压下载的源码包",
             )
-        
+
         # 4. 安装源码
         if progress_callback:
             progress_callback("安装源码...", 0.75)
-        
+
         success, output, needs_exit_update = self.source_installer.install_from_source(
             source_dir,
             upgrade=True,
             editable=False,
         )
-        
+
         # 处理自更新情况
         if needs_exit_update and output.startswith("SELF_UPDATE_REQUIRED:"):
             script_path = output.split(":", 1)[1]
@@ -1773,7 +1773,7 @@ class FoxCodeUpdater:
                 message=f"需要退出后更新。已生成更新脚本: {script_path}",
                 error=f"FoxCode 正在运行，无法覆盖可执行文件。\n请退出 FoxCode 后运行更新脚本:\n  {script_path}",
             )
-        
+
         if not success:
             return UpdateResult(
                 status=UpdateStatus.UPDATE_FAILED,
@@ -1782,16 +1782,16 @@ class FoxCodeUpdater:
                 message="安装源码失败",
                 error=output,
             )
-        
+
         # 5. 清理临时文件
         if progress_callback:
             progress_callback("清理临时文件...", 0.95)
-        
+
         self.source_installer.cleanup()
-        
+
         if progress_callback:
             progress_callback("完成", 1.0)
-        
+
         return UpdateResult(
             status=UpdateStatus.UPDATE_SUCCESS,
             current_version=self.current_version,
@@ -1800,7 +1800,7 @@ class FoxCodeUpdater:
             message="源码安装成功，请重启 FoxCode",
             installed=True,
         )
-    
+
     def get_update_info(self) -> dict[str, Any]:
         """
         获取更新信息摘要
@@ -1816,7 +1816,7 @@ class FoxCodeUpdater:
             "download_size": None,
             "download_url": None,
         }
-        
+
         if self._latest_release:
             release = self._latest_release
             info["latest_version"] = release.version
@@ -1826,7 +1826,7 @@ class FoxCodeUpdater:
             info["release_notes"] = release.body[:500] if release.body else None
             info["download_size"] = release.get_file_size(self._get_platform_name())
             info["download_url"] = release.get_download_url(self._get_platform_name())
-        
+
         return info
 
 
@@ -1872,10 +1872,10 @@ class BackgroundUpdateChecker:
     在后台线程中执行更新检查，不阻塞主程序启动。
     使用线程安全的方式存储检查结果，供主程序后续获取。
     """
-    
+
     _instance: BackgroundUpdateChecker | None = None
     _lock = threading.Lock()
-    
+
     def __init__(self):
         """初始化后台更新检查器"""
         self._result: UpdateResult | None = None
@@ -1883,7 +1883,7 @@ class BackgroundUpdateChecker:
         self._is_checking = False
         self._result_callbacks: list[Callable[[UpdateResult], None]] = []
         self._check_complete = threading.Event()
-    
+
     @classmethod
     def get_instance(cls) -> BackgroundUpdateChecker:
         """
@@ -1897,7 +1897,7 @@ class BackgroundUpdateChecker:
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
-    
+
     def start_background_check(
         self,
         callback: Callable[[UpdateResult], None] | None = None,
@@ -1920,14 +1920,14 @@ class BackgroundUpdateChecker:
         if self._is_checking and not force:
             logger.debug("更新检查已在进行中，跳过")
             return False
-        
+
         # 注册回调
         if callback:
             self._result_callbacks.append(callback)
-        
+
         # 重置状态
         self._check_complete.clear()
-        
+
         # 创建并启动后台线程
         self._check_thread = threading.Thread(
             target=self._check_in_thread,
@@ -1936,10 +1936,10 @@ class BackgroundUpdateChecker:
             name="FoxCode-UpdateChecker",
         )
         self._check_thread.start()
-        
+
         logger.debug("后台更新检查已启动")
         return True
-    
+
     def _check_in_thread(self, force: bool = False) -> None:
         """
         在后台线程中执行更新检查
@@ -1948,11 +1948,11 @@ class BackgroundUpdateChecker:
             force: 是否强制检查
         """
         self._is_checking = True
-        
+
         try:
             # 创建更新器实例
             updater = FoxCodeUpdater()
-            
+
             # 检查是否应该执行更新检查（根据配置的检查间隔）
             if not force and not updater.should_check_update():
                 logger.debug("根据检查间隔配置，跳过本次更新检查")
@@ -1965,7 +1965,7 @@ class BackgroundUpdateChecker:
                 # 执行更新检查
                 logger.info("正在后台检查更新...")
                 self._result = updater.check_for_updates()
-                
+
                 # 记录检查结果
                 if self._result.status == UpdateStatus.UPDATE_AVAILABLE:
                     logger.info(
@@ -1976,14 +1976,14 @@ class BackgroundUpdateChecker:
                     logger.debug("当前已是最新版本")
                 else:
                     logger.warning(f"更新检查失败: {self._result.message}")
-            
+
             # 调用注册的回调函数
             for callback in self._result_callbacks:
                 try:
                     callback(self._result)
                 except Exception as e:
                     logger.error(f"更新检查回调执行失败: {e}")
-            
+
         except Exception as e:
             logger.error(f"后台更新检查异常: {e}")
             self._result = UpdateResult(
@@ -1995,7 +1995,7 @@ class BackgroundUpdateChecker:
         finally:
             self._is_checking = False
             self._check_complete.set()
-    
+
     def get_result(self, timeout: float | None = None) -> UpdateResult | None:
         """
         获取更新检查结果
@@ -2009,9 +2009,9 @@ class BackgroundUpdateChecker:
         if timeout is not None:
             # 等待检查完成
             self._check_complete.wait(timeout)
-        
+
         return self._result
-    
+
     def is_checking(self) -> bool:
         """
         检查是否正在进行更新检查
@@ -2020,7 +2020,7 @@ class BackgroundUpdateChecker:
             是否正在检查
         """
         return self._is_checking
-    
+
     def add_callback(self, callback: Callable[[UpdateResult], None]) -> None:
         """
         添加检查完成回调函数
@@ -2029,7 +2029,7 @@ class BackgroundUpdateChecker:
             callback: 回调函数，接收 UpdateResult 参数
         """
         self._result_callbacks.append(callback)
-    
+
     def wait_for_completion(self, timeout: float | None = None) -> bool:
         """
         等待更新检查完成

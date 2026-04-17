@@ -578,7 +578,7 @@ class Config(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     output_topic: OutputTopic = Field(
-        default=OutputTopic.DEFAULT,
+        default=OutputTopic.MINIMALISM,
         description="输出主题模式: default, debug, minimalism"
     )
 

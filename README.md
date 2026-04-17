@@ -4,14 +4,28 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19433875.svg)](https://zenodo.org/records/19433875)
 
+### 贡献
+
+#### 我们欢迎对 FoxCode 的贡献！您可以通过以下方式贡献：
+1,贡献代码 您可以提交新功能或者修复bug，优化代码
+2，贡献文档 您可以为 FoxCode 编写文档，包括用户手册、开发指南、API 文档等。
+3，维护问题：帮助管理 GitHub 问题，包括修复 bug、优化性能、添加新功能等。
+
+#### 怎么做
+克隆到本地：克隆您的 Fork 仓库到本地。
+创建新分支：在本地创建一个新的分支，用于您的贡献。
+提交贡献：在您的分支上进行贡献，提交到您的 Fork 仓库。
+创建 Pull Request：创建一个 Pull Request 到 FoxCode 仓库，描述您的贡献内容，请求您的贡献被合并。
+
+
 ### News
 
 #### 2026
-4.8 shunian 我需要一个foxcode的启动自动检查更新
+4.8 shunian 我需要一个foxcode的启动自动检查更新 ok
 
-4.8 shunian 在每次工程完成后记录反思存在的问题，下次加入上下文中，可以大大提高效率，减少犯错
+4.8 shunian 在每次工程完成后记录反思存在的问题，下次加入上下文中，可以大大提高效率，减少犯错 ok?
 
-4.6 shunian 如果使用/mcp url就可以直接安装mcp，或许可以极大地推动mcp的发展
+4.6 shunian 如果使用/mcp url就可以直接安装mcp，或许可以极大地推动mcp的发展 ok
 
 ### 请注意，foxcode遵循AGPLv3，但不更改本软件代码不触发AGPLv3
 

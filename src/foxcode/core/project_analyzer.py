@@ -784,12 +784,22 @@ class ProjectAnalyzer:
             if code_files:
                 score.test_coverage = len(test_files) / len(code_files) * 100
 
+            # 计算平均文件大小，处理文件可能不存在的情况
+            total_size = 0
+            valid_files = 0
+            for f in code_files:
+                try:
+                    total_size += f.stat().st_size
+                    valid_files += 1
+                except OSError:
+                    logger.debug(f"文件不存在或无法访问: {f}")
+                    continue
+
             score.details = {
                 "files_analyzed": len(code_files),
                 "test_files": len(test_files),
                 "avg_file_size": (
-                    sum(f.stat().st_size for f in code_files) / len(code_files)
-                    if code_files else 0
+                    total_size / valid_files if valid_files else 0
                 ),
             }
 

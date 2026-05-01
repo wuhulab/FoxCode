@@ -1,7 +1,35 @@
 """
-FoxCode 文件操作工具
+FoxCode 文件操作工具 - 安全的文件系统操作
 
-提供文件读写、搜索、管理等功能
+这个文件提供所有文件相关的操作工具：
+1. 文件读写：read_file, write_file, edit_file
+2. 目录操作：list_directory, create_directory
+3. 文件搜索：glob, grep
+4. 文件管理：delete_file, copy_file, move_file
+
+安全特性：
+- 路径验证：防止路径穿越攻击
+- 权限检查：确保有权限访问文件
+- 敏感信息保护：错误消息不泄露路径
+- 沙箱限制：限制在允许的目录内操作
+
+使用方式：
+    # 这些工具通过agent自动调用
+    # AI会根据需要选择合适的工具
+    
+    # 例如读取文件：
+    # <function=read_file>
+    # <parameter=file_path>/path/to/file.py</parameter>
+    # </function>
+
+关键工具：
+- ReadFileTool: 读取文件内容（支持多种编码）
+- WriteFileTool: 写入文件（覆盖模式）
+- EditFileTool: 编辑文件（查找替换）
+- ListDirectoryTool: 列出目录内容
+- GlobTool: 文件模式匹配
+- GrepTool: 内容搜索
+- DeleteFileTool: 删除文件（危险操作）
 """
 
 from __future__ import annotations
@@ -32,31 +60,39 @@ logger = logging.getLogger(__name__)
 
 def _safe_error_message(operation: str, error: Exception, include_details: bool = False) -> str:
     """
-    生成安全的错误消息
+    生成安全的错误消息 - 保护敏感信息不泄露
     
-    对用户显示通用错误消息，详细错误记录到日志。
-    防止敏感路径和系统信息泄露。
+    为什么需要安全错误消息？
+    1. 错误消息可能包含完整路径，泄露系统结构
+    2. 可能暴露用户名、目录结构等敏感信息
+    3. 给攻击者提供系统信息
+    
+    处理策略：
+    - 详细错误记录到日志（管理员可见）
+    - 用户看到通用错误消息（安全）
+    - 调试模式下显示部分信息（脱敏后）
     
     Args:
-        operation: 操作类型
-        error: 原始异常
-        include_details: 是否包含详细信息（仅用于调试模式）
+        operation: 操作类型（如"读取文件"、"写入文件"）
+        error: 原始异常对象
+        include_details: 是否包含详细信息（仅调试模式）
         
     Returns:
-        安全的错误消息
+        安全的错误消息（不包含敏感路径）
     """
-    # 记录详细错误到日志
+    # 记录详细错误到日志（管理员可以查看）
     logger.error(f"{operation} 失败: {error}")
 
     if include_details:
         # 调试模式下返回详细信息（但仍然脱敏路径）
         error_str = str(error)
-        # 脱敏路径信息
+        # 脱敏Windows路径：C:\Users\xxx\... -> ***PATH***
         error_str = re.sub(r'[A-Za-z]:\\[^\s<>:"|?*]+', '***PATH***', error_str)
+        # 脱敏Unix路径：/home/xxx/... -> ***PATH***
         error_str = re.sub(r'/[^\s<>:"|?*]+/[^\s<>:"|?*]+', '***PATH***', error_str)
         return f"{operation} 失败: {error_str}"
 
-    # 返回通用错误消息
+    # 返回通用错误消息（用户友好且安全）
     error_type = type(error).__name__
     generic_messages = {
         'FileNotFoundError': "文件不存在或无法访问",
@@ -75,33 +111,72 @@ def _safe_error_message(operation: str, error: Exception, include_details: bool 
 @dataclass
 class PathSecurityConfig:
     """
-    路径安全配置
+    路径安全配置 - 控制文件操作的访问权限
     
-    控制文件操作的路径访问权限
+    为什么需要路径安全？
+    1. 防止路径穿越攻击（../../../etc/passwd）
+    2. 限制AI只能访问项目目录
+    3. 保护系统关键文件不被修改
+    
+    安全策略：
+    - 白名单：只允许访问指定目录
+    - 黑名单：禁止访问系统关键目录
+    - 符号链接：控制是否跟随符号链接
+    
+    默认黑名单目录：
+    - Windows: C:\Windows, C:\Program Files, C:\Users
+    - Unix: /etc, /var, /root, /home
     """
-    enabled: bool = True
-    allowed_directories: list[str] = field(default_factory=list)
+    enabled: bool = True  # 是否启用安全检查
+    allowed_directories: list[str] = field(default_factory=list)  # 允许的目录
     denied_directories: list[str] = field(default_factory=lambda: [
+        # Unix系统目录
         "/etc", "/var", "/root", "/home",
+        # Windows系统目录
         "C:\\Windows", "C:\\Program Files", "C:\\ProgramData",
         "C:\\Users", "\\Windows", "\\Program Files",
     ])
-    allow_symlinks: bool = False
-    max_symlink_depth: int = 5
-    follow_symlinks_in_allowed_dirs: bool = True
+    allow_symlinks: bool = False  # 是否允许符号链接
+    max_symlink_depth: int = 5  # 最大符号链接深度
+    follow_symlinks_in_allowed_dirs: bool = True  # 在允许目录内是否跟随符号链接
 
 
 class PathSecurityValidator:
     """
-    路径安全验证器
+    路径安全验证器 - 防止路径穿越攻击
     
-    验证文件路径是否在允许的工作目录范围内，防止路径穿越攻击
+    这是文件操作的安全守门员，负责：
+    1. 验证路径是否在允许的目录内
+    2. 检测并阻止路径穿越攻击
+    3. 处理符号链接的安全问题
+    4. 记录安全审计日志
+    
+    攻击防护：
+    - 路径穿越：../etc/passwd
+    - 绝对路径：/etc/passwd
+    - 符号链接：link -> /etc/passwd
+    - 驱动器穿越：C:\Windows\System32
+    
+    使用示例：
+        validator = PathSecurityValidator()
+        validator.initialize(working_dir="/project")
+        
+        # 验证路径
+        is_safe, reason, resolved = validator.validate_path("/project/file.txt")
+        if not is_safe:
+            raise PermissionError(reason)
     """
 
     def __init__(self, config: PathSecurityConfig | None = None):
+        """
+        初始化验证器
+        
+        Args:
+            config: 安全配置，None则使用默认配置
+        """
         self.config = config or PathSecurityConfig()
-        self._allowed_paths: list[Path] = []
-        self._denied_paths: list[Path] = []
+        self._allowed_paths: list[Path] = []  # 允许的路径列表
+        self._denied_paths: list[Path] = []  # 禁止的路径列表
         self._initialized = False
 
     def initialize(self, working_dir: Path | str | None = None) -> None:

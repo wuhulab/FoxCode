@@ -1,7 +1,42 @@
 """
-FoxCode 统计模块
+FoxCode 统计模块 - 跟踪使用情况和计算成本
 
-提供工具使用统计和 API 成本计算功能
+这个文件负责统计和分析FoxCode的使用情况：
+1. 工具调用统计（次数、成功率、耗时）
+2. API调用统计（token数、成本）
+3. 生成使用报告
+
+主要功能：
+- 记录每次工具调用的详细信息
+- 记录每次API调用的token消耗和成本
+- 计算不同模型的成本（基于官方定价）
+- 生成统计报告
+
+使用方式：
+    from foxcode.utils.statistics import stats_manager
+    
+    # 记录工具使用
+    stats_manager.record_tool_usage(
+        tool_name="read_file",
+        success=True,
+        duration=0.5
+    )
+    
+    # 记录API使用
+    cost = stats_manager.record_api_usage(
+        model="gpt-4o",
+        input_tokens=1000,
+        output_tokens=500
+    )
+    
+    # 获取统计报告
+    report = stats_manager.get_full_report()
+
+关键特性：
+- 自动计算API成本（基于各模型官方定价）
+- 参数脱敏（保护敏感信息）
+- 支持多种AI模型的定价
+- 生成详细的使用报告
 """
 
 from __future__ import annotations
@@ -15,10 +50,23 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# 各模型的定价（美元/千 tokens）
+# ==================== 模型定价表 ====================
+# 各模型的定价（美元/千tokens）
 # 数据来源：各模型官方定价页面（2024年价格）
+# 
+# 定价说明：
+# - input: 输入token的价格（提示词）
+# - output: 输出token的价格（AI生成的回复）
+# - 价格单位：美元/千tokens
+#
+# 为什么需要定价表？
+# 1. 帮助用户了解API使用成本
+# 2. 优化提示词以降低成本
+# 3. 选择性价比高的模型
+
 MODEL_PRICING = {
     # OpenAI 模型
+    # GPT-4o：最新旗舰模型，性价比高
     "gpt-4o": {"input": 0.0025, "output": 0.01},
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
     "gpt-4-turbo": {"input": 0.01, "output": 0.03},
@@ -26,6 +74,7 @@ MODEL_PRICING = {
     "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
 
     # Anthropic 模型
+    # Claude：擅长长文本和代码
     "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
     "claude-opus-4-20250514": {"input": 0.015, "output": 0.075},
     "claude-3-sonnet": {"input": 0.003, "output": 0.015},
@@ -33,23 +82,41 @@ MODEL_PRICING = {
     "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
 
     # DeepSeek 模型
+    # DeepSeek：性价比极高，适合大量使用
     "deepseek-chat": {"input": 0.00014, "output": 0.00028},
     "deepseek-coder": {"input": 0.00014, "output": 0.00028},
 
     # StepFun 模型
+    # Step：国产模型，中文能力强
     "step-1-8k": {"input": 0.002, "output": 0.002},
     "step-1-32k": {"input": 0.004, "output": 0.004},
     "step-2-16k": {"input": 0.004, "output": 0.004},
     "step-3.5-flash": {"input": 0.0004, "output": 0.0004},
 
     # 默认定价（未知模型）
+    # 使用保守估计的价格
     "default": {"input": 0.001, "output": 0.002},
 }
 
 
 @dataclass
 class ToolUsageRecord:
-    """工具使用记录"""
+    """
+    工具使用记录 - 记录一次工具调用的详细信息
+    
+    记录内容：
+    - 工具名称和调用时间
+    - 执行结果（成功/失败）
+    - 执行耗时
+    - 错误信息（如果失败）
+    - 参数（已脱敏，保护隐私）
+    - 结果大小
+    
+    用途：
+    - 分析工具使用频率
+    - 识别性能瓶颈
+    - 调试失败原因
+    """
     tool_name: str                    # 工具名称
     timestamp: float                   # 时间戳
     success: bool                      # 是否成功
@@ -61,11 +128,24 @@ class ToolUsageRecord:
 
 @dataclass
 class APIUsageRecord:
-    """API 使用记录"""
+    """
+    API使用记录 - 记录一次API调用的详细信息
+    
+    记录内容：
+    - 模型名称和调用时间
+    - Token消耗（输入和输出）
+    - 成本（美元）
+    - 响应时长
+    
+    用途：
+    - 跟踪API使用成本
+    - 分析token使用效率
+    - 优化提示词降低成本
+    """
     model: str                         # 模型名称
     timestamp: float                   # 时间戳
-    input_tokens: int                  # 输入 tokens
-    output_tokens: int                 # 输出 tokens
+    input_tokens: int                  # 输入tokens
+    output_tokens: int                 # 输出tokens
     cost: float                        # 成本（美元）
     duration: float = 0.0              # 响应时长（秒）
 
@@ -96,9 +176,40 @@ class SessionStats:
 
 class StatisticsManager:
     """
-    统计管理器
+    统计管理器 - 跟踪使用情况和计算成本
     
-    跟踪工具使用和 API 调用情况，计算成本
+    这是统计系统的核心，负责：
+    1. 记录工具调用和API调用
+    2. 计算成本（基于模型定价）
+    3. 生成统计报告
+    4. 参数脱敏（保护隐私）
+    
+    使用示例：
+        # 获取全局实例
+        from foxcode.utils.statistics import stats_manager
+        
+        # 记录工具使用
+        stats_manager.record_tool_usage(
+            tool_name="read_file",
+            success=True,
+            duration=0.5
+        )
+        
+        # 记录API使用
+        cost = stats_manager.record_api_usage(
+            model="gpt-4o",
+            input_tokens=1000,
+            output_tokens=500
+        )
+        
+        # 获取报告
+        report = stats_manager.get_full_report()
+        print(report)
+    
+    数据管理：
+    - 最多保存1000条记录（避免内存占用过大）
+    - 自动清理旧记录
+    - 支持重置统计
     """
 
     def __init__(self, max_records: int = 1000):
@@ -106,7 +217,7 @@ class StatisticsManager:
         初始化统计管理器
         
         Args:
-            max_records: 最大保存的记录数量
+            max_records: 最大保存的记录数量，超过则删除旧记录
         """
         self._session_stats = SessionStats()
         self._max_records = max_records
@@ -381,16 +492,26 @@ class StatisticsManager:
 
     def _sanitize_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """
-        脱敏参数
+        脱敏参数 - 移除敏感信息，保护隐私
         
-        移除敏感信息，如 API key、密码等
+        为什么需要脱敏？
+        1. 参数可能包含API密钥、密码等敏感信息
+        2. 日志和统计记录不应暴露敏感信息
+        3. 防止敏感信息泄露到报告或日志中
+        
+        脱敏规则：
+        - 敏感字段（api_key、password等）替换为***REDACTED***
+        - 长字符串截断（避免日志过长）
+        - 递归处理嵌套字典
         
         Args:
-            params: 原始参数
+            params: 原始参数字典
             
         Returns:
-            脱敏后的参数
+            脱敏后的参数字典
         """
+        # 敏感字段的关键词列表
+        # 包含这些关键词的字段会被脱敏
         sensitive_keys = {
             "api_key", "apikey", "password", "passwd", "secret",
             "token", "auth", "credential", "private_key",
@@ -399,12 +520,15 @@ class StatisticsManager:
         sanitized = {}
         for key, value in params.items():
             key_lower = key.lower()
+            
+            # 检查是否是敏感字段
             if any(sensitive in key_lower for sensitive in sensitive_keys):
                 sanitized[key] = "***REDACTED***"
             elif isinstance(value, dict):
+                # 递归处理嵌套字典
                 sanitized[key] = self._sanitize_params(value)
             elif isinstance(value, str) and len(value) > 100:
-                # 截断长字符串
+                # 截断长字符串，避免日志过长
                 sanitized[key] = value[:100] + "..."
             else:
                 sanitized[key] = value

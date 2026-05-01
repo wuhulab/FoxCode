@@ -1,9 +1,35 @@
 """
-FoxCode CLI 入口
+FoxCode CLI入口 - 命令行界面的主入口
 
-命令行界面主入口
+这个文件是FoxCode的启动入口，负责：
+1. 解析命令行参数
+2. 初始化配置和代理
+3. 启动交互式对话
+4. 处理信号和异常
+5. 管理优雅退出
 
-包含全局异常处理、信号管理和优雅退出机制
+启动流程：
+命令行输入 -> 解析参数 -> 加载配置 -> 创建代理 -> 启动对话 -> 处理退出
+
+使用方式：
+    # 启动交互模式
+    foxcode
+    
+    # 指定模型
+    foxcode --model claude
+    
+    # YOLO模式（自动执行）
+    foxcode --yolo
+    
+    # 规划模式（只读）
+    foxcode --plan
+
+关键特性：
+- 支持多种运行模式（默认、YOLO、规划模式）
+- 支持后台更新检查
+- 支持优雅退出（Ctrl+C）
+- 支持全局异常处理
+- 支持Windows GBK编码环境
 """
 
 from __future__ import annotations
@@ -41,12 +67,15 @@ from foxcode.core.updater import (
 )
 
 # ==================== 全局状态管理 ====================
-_shutdown_requested = False
-_current_agent: FoxCodeAgent | None = None
-_watchdog: ProcessWatchdog | None = None
-_update_checker_started = False  # 标记更新检查器是否已启动
+# 这些全局变量用于管理程序的状态和生命周期
+
+_shutdown_requested = False  # 是否请求关闭
+_current_agent: FoxCodeAgent | None = None  # 当前代理实例
+_watchdog: ProcessWatchdog | None = None  # 进程看门狗
+_update_checker_started = False  # 更新检查器是否已启动
 
 # 确保日志目录存在
+# 日志文件位置：~/.foxcode/foxcode.log
 log_dir = Path.home() / ".foxcode"
 log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -56,19 +85,25 @@ def _on_update_check_complete(result: UpdateResult) -> None:
     更新检查完成回调函数
     
     当后台更新检查完成时调用，显示更新提示信息。
+    这个函数在后台线程中执行，不阻塞主程序。
+    
+    处理逻辑：
+    1. 有新版本 -> 显示更新提示面板
+    2. 已是最新 -> 仅调试模式记录
+    3. 检查失败 -> 仅调试模式记录
     
     Args:
-        result: 更新检查结果
+        result: 更新检查结果，包含版本信息、发布说明等
     """
     global _update_checker_started
 
     try:
         if result.status == UpdateStatus.UPDATE_AVAILABLE:
-            # 有新版本可用，显示提示
+            # 有新版本可用，显示醒目的更新提示
             release_info = result.release_info
             release_notes = ""
             if release_info and release_info.body:
-                # 截取前200字符的发布说明
+                # 截取前200字符的发布说明，避免太长
                 release_notes = release_info.body[:200]
                 if len(release_info.body) > 200:
                     release_notes += "..."
@@ -119,13 +154,40 @@ def _start_background_update_checker() -> None:
 
 class SafeStreamHandler(logging.StreamHandler):
     """
-    安全的流处理器
+    安全的流处理器 - 解决Windows GBK编码问题
     
-    在Windows GBK编码环境下，自动处理无法编码的Unicode字符，
-    避免UnicodeEncodeError导致程序崩溃
+    为什么需要这个类？
+    Windows默认使用GBK编码，无法处理emoji和某些Unicode字符。
+    如果直接输出会导致UnicodeEncodeError，程序崩溃。
+    
+    解决方案：
+    1. 尝试正常输出
+    2. 如果编码错误，替换emoji为ASCII文本
+    3. 如果还是失败，输出简化的错误信息
+    
+    使用示例：
+        handler = SafeStreamHandler()
+        logger.addHandler(handler)
+    
+    效果：
+        ✅ -> [OK]
+        ❌ -> [FAIL]
+        ⚠️ -> [WARN]
     """
 
     def emit(self, record: logging.LogRecord) -> None:
+        """
+        输出日志记录（带编码错误处理）
+        
+        处理流程：
+        1. 尝试正常输出
+        2. 捕获UnicodeEncodeError
+        3. 替换emoji为ASCII文本后重试
+        4. 如果还是失败，输出简化信息
+        
+        Args:
+            record: 日志记录对象
+        """
         try:
             # 尝试正常输出
             super().emit(record)
@@ -153,18 +215,24 @@ class SafeStreamHandler(logging.StreamHandler):
     @staticmethod
     def _make_safe(text: str) -> str:
         """
-        将文本转换为安全格式
+        将文本转换为安全格式（GBK编码兼容）
         
         移除可能导致GBK编码失败的字符：
-        - 特殊Unicode符号
+        - 特殊Unicode符号（emoji等）
         - 保留：中文、英文、数字、常用标点
+        
+        Args:
+            text: 原始文本
+            
+        Returns:
+            安全的文本（GBK编码兼容）
         """
-
         # 常见emoji和特殊符号的Unicode范围
         # 移除这些范围的字符
         result = text
 
         # 定义要替换的常见emoji映射
+        # 将emoji替换为ASCII文本，保持可读性
         emoji_replacements = {
             '✅': '[OK]',
             '❌': '[FAIL]',
@@ -223,17 +291,33 @@ console = Console()
 
 class MinimalismOutputBuffer:
     """
-    极简模式输出缓冲器
+    极简模式输出缓冲器 - 过滤干扰信息，只显示核心内容
     
-    简化输出格式：
-    - [tool] tool_name key_param - 工具调用
-    - [result]...[/result] - 命令结果（仅 shell 类工具）
+    为什么需要极简模式？
+    AI在调用工具时会输出大量XML格式的工具调用代码，这些对用户来说是无意义的干扰。
+    极简模式过滤掉这些技术细节，只显示用户关心的内容。
+    
+    输出格式：
+    - [tool] tool_name key_param - 工具调用（简洁）
+    - [result]...[/result] - 命令结果（仅shell类工具）
     - [error] message - 错误信息
-    - [say] text... - AI 回复文本（只输出一次）
+    - [say] text... - AI回复文本（只输出一次）
     - [work_end] - 工作完成
+    
+    过滤的内容：
+    - XML工具调用标签（<function>、<parameter>等）
+    - 工具执行提示（🔧 Executing tool等）
+    - 特殊字符（╭─、╰─等）
+    
+    工作原理：
+    1. 缓冲输出片段
+    2. 识别并过滤XML内容
+    3. 只输出有意义的文本
+    4. 添加简洁的标记（[tool]、[say]等）
     """
 
     # 需要过滤的模式（正则表达式）
+    # 这些是AI输出的XML工具调用格式，对用户无意义
     FILTER_PATTERNS = [
         r"<function[^>]*>.*?</function>",  # <function>...</function>
         r"<function[^>]*/>",  # <function ... />
@@ -258,14 +342,15 @@ class MinimalismOutputBuffer:
     ]
 
     def __init__(self):
+        """初始化缓冲器"""
         self.buffer: list[str] = []
-        self.in_result_block = False
-        self.result_buffer: list[str] = []
-        self.text_buffer = ""
-        self.say_printed = False
-        self.text_buffer_size = 30
-        self.in_xml_context = False
-        self.xml_buffer = ""
+        self.in_result_block = False  # 是否在[result]块中
+        self.result_buffer: list[str] = []  # 结果缓冲区
+        self.text_buffer = ""  # 文本缓冲区
+        self.say_printed = False  # 是否已输出[say]标记
+        self.text_buffer_size = 30  # 文本缓冲区大小阈值
+        self.in_xml_context = False  # 是否在XML上下文中
+        self.xml_buffer = ""  # XML缓冲区
 
     def _filter_xml_content(self, text: str) -> str:
         """

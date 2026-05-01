@@ -1,7 +1,43 @@
 """
-FoxCode Shell 执行工具
+FoxCode Shell执行工具 - 安全的命令行操作
 
-提供命令行执行功能，支持长时间运行命令的管理
+这个文件提供Shell命令执行功能：
+1. 同步执行：等待命令完成后返回结果
+2. 异步执行：后台运行，可以查询状态
+3. 命令管理：启动、停止、查询状态
+4. 安全沙箱：限制危险命令
+
+安全特性：
+- 命令过滤：阻止危险命令（rm -rf /等）
+- 环境变量脱敏：隐藏API密钥等敏感信息
+- 沙箱模式：黑名单/白名单控制
+- 超时保护：防止命令无限运行
+
+使用方式：
+    # 这些工具通过agent自动调用
+    # AI会根据需要选择合适的工具
+    
+    # 例如执行命令：
+    # <function=run_command>
+    # <parameter=command>npm install</parameter>
+    # </function>
+    
+    # 异步执行：
+    # <function=run_command>
+    # <parameter=command>npm start</parameter>
+    # <parameter=blocking>false</parameter>
+    # </function>
+
+关键工具：
+- RunCommandTool: 执行命令（同步/异步）
+- CheckCommandStatusTool: 查询命令状态
+- StopCommandTool: 停止运行中的命令
+
+危险命令防护：
+- rm -rf /: 删除整个系统
+- dd if=/dev/zero: 覆盖磁盘
+- :(){ :|:& };:: Fork炸弹
+- chmod -R 777: 危险权限设置
 """
 
 from __future__ import annotations
@@ -32,34 +68,60 @@ from foxcode.tools.base import (
 logger = logging.getLogger(__name__)
 
 
+# ==================== 敏感环境变量检测 ====================
+# 这些是常见的敏感环境变量名称
+# 在输出环境变量时会自动脱敏，防止泄露
+
 SENSITIVE_ENV_PATTERNS = [
+    # API密钥
     'API_KEY', 'APIKEY', 'API_SECRET', 'APISECRET',
     'SECRET', 'SECRET_KEY', 'SECRETKEY',
+    # 密码
     'PASSWORD', 'PASSWD', 'PWD',
+    # Token
     'TOKEN', 'ACCESS_TOKEN', 'REFRESH_TOKEN', 'AUTH_TOKEN',
+    # 私钥
     'PRIVATE_KEY', 'PRIVATEKEY',
+    # AWS
     'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN',
+    # 数据库
     'DATABASE_URL', 'DB_URL', 'DB_PASSWORD',
+    # AI服务
     'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY',
+    # 版本控制
     'GITHUB_TOKEN', 'GITLAB_TOKEN',
+    # 通讯工具
     'SLACK_TOKEN', 'DISCORD_TOKEN',
+    # 支付
     'STRIP_API_KEY', 'STRIPE_SECRET_KEY',
+    # 邮件
     'SENDGRID_API_KEY', 'MAILGUN_API_KEY',
+    # CDN
     'CLOUDFLARE_API_KEY', 'CLOUDFLARE_API_TOKEN',
+    # 云服务
     'AZURE_CLIENT_SECRET', 'AZURE_SUBSCRIPTION_KEY',
     'GOOGLE_API_KEY', 'GOOGLE_CLIENT_SECRET',
     'HEROKU_API_KEY', 'VERCEL_TOKEN',
+    # 包管理
     'NPM_TOKEN', 'PYPI_TOKEN',
+    # 容器
     'DOCKER_PASSWORD', 'KUBERNETES_TOKEN',
+    # SSH
     'SSH_PRIVATE_KEY', 'SSH_KEY',
+    # 加密
     'GPG_KEY', 'PGP_KEY',
     'ENCRYPTION_KEY', 'ENCRYPT_KEY',
     'SIGNING_KEY', 'SIGN_KEY',
+    # OAuth
     'OAUTH_SECRET', 'OAUTH_TOKEN',
+    # JWT
     'JWT_SECRET', 'JWT_TOKEN',
+    # Session
     'SESSION_SECRET', 'SESSION_KEY',
     'COOKIE_SECRET', 'CSRF_TOKEN',
+    # 验证码
     'RECAPTCHA_SECRET', 'RECAPTCHA_KEY',
+    # 其他服务
     'MAILCHIMP_API_KEY', 'TWILIO_AUTH_TOKEN',
     'ALGOLIA_API_KEY', 'ELASTICSEARCH_PASSWORD',
     'MONGO_URL', 'REDIS_URL', 'RABBITMQ_URL',
@@ -82,11 +144,13 @@ SENSITIVE_ENV_PATTERNS = [
     'GOOGLE_DRIVE_API_KEY', 'ICLOUD_API_KEY',
 ]
 
+# 敏感关键词（用于模糊匹配）
 SENSITIVE_KEYWORDS = [
     'KEY', 'SECRET', 'TOKEN', 'PASSWORD', 'PASSWD', 'PWD',
     'CREDENTIAL', 'PRIVATE', 'AUTH', 'API_KEY',
 ]
 
+# 敏感值长度阈值（超过此长度的值可能是密钥）
 SENSITIVE_VALUE_LENGTH_THRESHOLD = 16
 
 
@@ -94,14 +158,25 @@ def _is_sensitive_by_keyword(key: str) -> bool:
     """
     通过关键词检测敏感变量
     
+    检测逻辑：
+    如果环境变量名包含敏感关键词（KEY、SECRET、TOKEN等），
+    则认为是敏感变量，需要脱敏。
+    
+    例如：
+    - MY_API_KEY -> 敏感（包含KEY）
+    - DATABASE_PASSWORD -> 敏感（包含PASSWORD）
+    - PATH -> 不敏感
+    
     Args:
         key: 环境变量名
         
     Returns:
         是否敏感
     """
+    # 标准化变量名：大写、替换连字符
     key_upper = key.upper().replace('-', '_')
 
+    # 检查是否包含敏感关键词
     for keyword in SENSITIVE_KEYWORDS:
         if keyword in key_upper:
             return True
@@ -113,25 +188,51 @@ def _is_sensitive_by_value(value: str) -> bool:
     """
     通过值特征检测敏感变量
     
+    检测逻辑：
+    分析值的格式特征，判断是否可能是密钥或token。
+    
+    特征检测：
+    1. 长度：超过16字符的随机字符串
+    2. 前缀：sk-（OpenAI）、ghp_（GitHub）等
+    3. 格式：Base64、十六进制、证书格式
+    
+    例如：
+    - "sk-xxxxxxxxxxxx" -> 敏感（OpenAI密钥格式）
+    - "ghp_xxxxxxxxxx" -> 敏感（GitHub token格式）
+    - "-----BEGIN RSA PRIVATE KEY-----" -> 敏感（私钥格式）
+    - "Hello World" -> 不敏感（普通文本）
+    
     Args:
         value: 环境变量值
         
     Returns:
         是否可能是敏感值
     """
+    # 空值或太短的值不可能是密钥
     if not value or len(value) < SENSITIVE_VALUE_LENGTH_THRESHOLD:
         return False
 
+    # 检查已知的密钥前缀
+    # OpenAI: sk-, Anthropic: sk-ant-
+    # GitHub: ghp_, gho_, ghu_, ghs_, ghr_
     if value.startswith(('sk-', 'sk-ant-', 'Bearer ', 'ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_')):
         return True
 
+    # 检查证书和Base64格式
+    # -----BEGIN: 证书格式
+    # eyJ: JWT token（Base64编码的JSON）
+    # AKIA/ASIA: AWS访问密钥
     if value.startswith(('-----BEGIN', 'eyJ', 'AKIA', 'ASIA')):
         return True
 
+    # 检查长随机字符串（可能是API密钥）
+    # 格式：20+字符的字母数字下划线连字符
     import re
     if re.match(r'^[A-Za-z0-9_-]{20,}$', value):
         return True
 
+    # 检查十六进制字符串（可能是哈希或密钥）
+    # 格式：32+字符的十六进制
     if re.match(r'^[a-f0-9]{32,}$', value, re.IGNORECASE):
         return True
 

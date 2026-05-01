@@ -1,7 +1,45 @@
 """
-FoxCode 上下文桥接模块
+FoxCode 上下文桥接模块 - 跨会话传递工作状态
 
-管理跨会话上下文传递，支持会话摘要生成、上下文注入和压缩
+这个文件负责在不同会话之间传递上下文信息：
+1. 生成会话摘要（完成的工作、遇到的问题、下一步计划）
+2. 保存和加载摘要
+3. 检测会话类型（初始化代理 vs 编码代理）
+4. 压缩和注入上下文
+
+主要功能：
+- 会话摘要：记录工作进度和状态
+- 上下文传递：新会话可以继续之前的工作
+- 会话类型检测：自动判断是初始化还是编码
+
+使用场景：
+- 长时间运行的项目：跨多个会话保持进度
+- 上下文重置后恢复：从摘要中恢复关键信息
+- 多代理协作：在代理间传递状态
+
+使用方式：
+    from foxcode.context.context_bridge import ContextBridge
+    
+    bridge = ContextBridge(working_dir=Path("."))
+    
+    # 生成摘要
+    summary = bridge.generate_summary(
+        session_id="xxx",
+        completed_work=["实现登录功能"],
+        next_steps=["实现注册功能"]
+    )
+    
+    # 保存摘要
+    bridge.save_summary(summary)
+    
+    # 加载摘要
+    summary = bridge.load_summary()
+
+关键特性：
+- 支持Markdown格式的摘要
+- 自动检测会话类型
+- 支持上下文压缩
+- 支持摘要历史记录
 """
 
 from __future__ import annotations
@@ -19,13 +57,43 @@ logger = logging.getLogger(__name__)
 
 
 class SessionType(str, Enum):
-    """会话类型枚举"""
-    INITIALIZER = "initializer"  # 初始化代理
-    CODER = "coder"              # 编码代理
+    """
+    会话类型 - 区分不同的工作阶段
+    
+    FoxCode有两种主要工作模式：
+    - INITIALIZER: 初始化代理，负责创建项目结构、功能列表
+    - CODER: 编码代理，负责实现具体功能
+    
+    为什么需要区分会话类型？
+    1. 不同阶段的任务不同
+    2. 需要加载不同的上下文
+    3. 生成不同的提示词
+    
+    检测方式：
+    - 检查.foxcode/features.md是否存在
+    - 存在则为CODER模式，否则为INITIALIZER模式
+    """
+    INITIALIZER = "initializer"  # 初始化代理：创建项目结构
+    CODER = "coder"              # 编码代理：实现功能
 
 
 class CompressionLevel(str, Enum):
-    """压缩级别枚举"""
+    """
+    压缩级别 - 控制上下文压缩的程度
+    
+    当上下文过长时，需要压缩以节省token。不同级别保留不同数量的细节。
+    
+    压缩策略：
+    - NONE: 不压缩，保留所有细节
+    - LIGHT: 轻度压缩，移除冗余信息
+    - MEDIUM: 中度压缩，保留关键信息
+    - AGGRESSIVE: 激进压缩，只保留核心要点
+    
+    为什么需要压缩？
+    1. 上下文窗口有限（通常128k tokens）
+    2. 长上下文增加API成本
+    3. 过多细节可能干扰AI判断
+    """
     NONE = "none"        # 不压缩
     LIGHT = "light"      # 轻度压缩
     MEDIUM = "medium"    # 中度压缩
@@ -35,11 +103,26 @@ class CompressionLevel(str, Enum):
 @dataclass
 class SessionSummary:
     """
-    会话摘要数据结构
+    会话摘要 - 记录一个会话的关键信息
     
-    记录一个会话的关键信息，用于跨会话传递上下文
+    这是跨会话传递状态的核心数据结构，包含：
+    - 完成的工作：已实现的功能
+    - 未完成的工作：待办事项
+    - 遇到的问题：错误、障碍
+    - 下一步建议：后续计划
+    - 关键决策：重要的技术选择
+    - 文件变更：修改了哪些文件
+    
+    使用场景：
+    1. 会话结束时保存状态
+    2. 新会话开始时恢复状态
+    3. 上下文重置后注入关键信息
+    
+    格式转换：
+    - to_markdown(): 转换为Markdown格式，便于阅读
+    - from_markdown(): 从Markdown解析，便于加载
     """
-    session_id: str                           # 会话 ID
+    session_id: str                           # 会话ID
     session_type: SessionType                 # 会话类型
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())  # 时间戳
 

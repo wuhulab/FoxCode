@@ -1,14 +1,46 @@
 """
-FoxCode Skill 技能系统模块
+FoxCode Skill技能系统模块 - 可扩展的能力系统
 
-实现可扩展的技能系统，支持动态加载和执行技能
-Skill 是一种封装好的能力，可以被 Agent 在特定场景下调用
+这个文件实现了FoxCode的技能系统，允许动态加载和执行技能：
+1. 技能注册：动态注册新技能
+2. 技能触发：根据关键词、模式自动触发
+3. 技能执行：执行技能逻辑并返回结果
+4. 技能管理：启用、禁用、查询技能
+
+技能是什么？
+技能是一种封装好的能力，可以在特定场景下自动激活。
+例如：
+- 代码审查技能：检测到代码时自动审查
+- 错误修复技能：检测到错误时自动修复
+- 文档生成技能：检测到函数时自动生成文档
 
 技能系统特点：
-1. 支持动态注册和发现
-2. 支持技能提示词注入
-3. 支持技能状态管理
-4. 支持技能依赖关系
+- 动态注册：运行时添加新技能
+- 多种触发：关键词、正则、手动
+- 提示词注入：技能可以注入提示词到AI
+- 状态管理：跟踪技能的执行状态
+
+使用方式：
+    from foxcode.core.skill import skill_manager, BaseSkill
+    
+    # 定义技能
+    class CodeReviewSkill(BaseSkill):
+        name = "code_review"
+        keywords = ["review", "审查"]
+        
+        async def execute(self, context):
+            # 技能逻辑
+            return SkillResult.ok("审查完成")
+    
+    # 注册技能
+    skill_manager.register(CodeReviewSkill())
+    
+    # 触发技能
+    results = await skill_manager.execute_triggered_skills(context)
+
+内置技能：
+- error_solver: 自动分析和修复错误
+- uop_coder: 按UOP规范生成代码
 """
 
 from __future__ import annotations
@@ -29,44 +61,105 @@ logger = logging.getLogger(__name__)
 
 
 class SkillState(str, Enum):
-    """技能状态"""
-    IDLE = "idle"              # 空闲状态
-    LOADING = "loading"        # 加载中
-    ACTIVE = "active"          # 活跃状态（正在执行）
-    ERROR = "error"            # 错误状态
-    DISABLED = "disabled"      # 禁用状态
+    """
+    技能状态 - 跟踪技能的生命周期
+    
+    状态转换：
+    IDLE -> LOADING -> ACTIVE -> IDLE
+                      ↓
+                   ERROR
+                      ↓
+                   DISABLED
+    
+    状态说明：
+    - IDLE: 技能空闲，等待触发
+    - LOADING: 技能正在加载资源
+    - ACTIVE: 技能正在执行
+    - ERROR: 技能执行出错
+    - DISABLED: 技能被禁用
+    """
+    IDLE = "idle"              # 空闲状态：等待触发
+    LOADING = "loading"        # 加载中：正在初始化
+    ACTIVE = "active"          # 活跃状态：正在执行
+    ERROR = "error"            # 错误状态：执行失败
+    DISABLED = "disabled"      # 禁用状态：不可用
 
 
 class SkillPriority(str, Enum):
-    """技能优先级"""
-    CRITICAL = "critical"      # 关键技能，必须成功
-    HIGH = "high"              # 高优先级
-    NORMAL = "normal"          # 正常优先级
-    LOW = "low"                # 低优先级
+    """
+    技能优先级 - 控制技能的执行顺序
+    
+    当多个技能同时触发时，按优先级执行：
+    CRITICAL > HIGH > NORMAL > LOW
+    
+    优先级说明：
+    - CRITICAL: 关键技能，必须成功，失败则终止
+    - HIGH: 高优先级，优先执行
+    - NORMAL: 正常优先级（默认）
+    - LOW: 低优先级，最后执行
+    
+    使用场景：
+    - CRITICAL: 安全检查、权限验证
+    - HIGH: 错误修复、紧急处理
+    - NORMAL: 常规功能
+    - LOW: 可选优化、辅助功能
+    """
+    CRITICAL = "critical"      # 关键技能：必须成功
+    HIGH = "high"              # 高优先级：优先执行
+    NORMAL = "normal"          # 正常优先级：默认
+    LOW = "low"                # 低优先级：最后执行
 
 
 class SkillTrigger(str, Enum):
-    """技能触发方式"""
-    MANUAL = "manual"          # 手动触发
-    KEYWORD = "keyword"        # 关键词触发
-    PATTERN = "pattern"        # 正则模式触发
-    AUTO = "auto"              # 自动触发（基于上下文）
+    """
+    技能触发方式 - 定义技能如何被激活
+    
+    触发方式：
+    - MANUAL: 用户手动触发（通过命令）
+    - KEYWORD: 检测到特定关键词时触发
+    - PATTERN: 匹配正则表达式时触发
+    - AUTO: 根据上下文自动判断
+    
+    示例：
+    - KEYWORD: 用户说"review"时触发代码审查技能
+    - PATTERN: 检测到错误堆栈时触发错误修复技能
+    - AUTO: AI判断需要某个技能时自动触发
+    """
+    MANUAL = "manual"          # 手动触发：用户命令
+    KEYWORD = "keyword"        # 关键词触发：检测关键词
+    PATTERN = "pattern"        # 正则模式触发：匹配模式
+    AUTO = "auto"              # 自动触发：AI判断
 
 
 @dataclass
 class SkillContext:
     """
-    技能执行上下文
+    技能执行上下文 - 技能执行时的环境信息
     
-    包含技能执行时需要的所有信息
+    包含技能执行需要的所有信息：
+    - 用户输入：触发技能的原始输入
+    - 对话历史：之前的对话记录
+    - 工作目录：当前项目目录
+    - 配置：技能特定的配置
+    - 元数据：额外的上下文信息
+    
+    使用示例：
+        context = SkillContext(
+            user_input="帮我审查这段代码",
+            conversation_history=[...],
+            working_dir=Path("/project")
+        )
+        
+        result = await skill.execute(context)
     """
-    user_input: str                                    # 用户输入
+    user_input: str                                    # 用户输入：触发技能的文本
     conversation_history: list[dict[str, Any]] = field(default_factory=list)  # 对话历史
     working_dir: Path = field(default_factory=Path.cwd)  # 工作目录
-    config: dict[str, Any] = field(default_factory=dict)  # 配置
-    metadata: dict[str, Any] = field(default_factory=dict)  # 元数据
+    config: dict[str, Any] = field(default_factory=dict)  # 技能配置
+    metadata: dict[str, Any] = field(default_factory=dict)  # 额外元数据
 
     def to_dict(self) -> dict[str, Any]:
+        """转换为字典格式，便于序列化"""
         return {
             "user_input": self.user_input,
             "conversation_history": self.conversation_history,
@@ -77,7 +170,31 @@ class SkillContext:
 
 
 class SkillResult(BaseModel):
-    """技能执行结果"""
+    """
+    技能执行结果 - 技能执行后的返回值
+    
+    结果类型：
+    1. 成功：技能执行成功，返回输出
+    2. 失败：技能执行失败，返回错误信息
+    3. 重定向：修改用户输入后继续对话
+    
+    字段说明：
+    - success: 是否成功
+    - output: 输出内容（显示给用户）
+    - error: 错误信息（失败时）
+    - should_continue: 是否继续正常对话流程
+    - modified_input: 修改后的用户输入（重定向时）
+    
+    使用示例：
+        # 成功结果
+        return SkillResult.ok("审查完成，发现3个问题")
+        
+        # 失败结果
+        return SkillResult.fail("无法解析代码")
+        
+        # 重定向（修改用户输入）
+        return SkillResult.redirect("修复这个错误", "已检测到错误")
+    """
     success: bool = Field(description="是否成功")
     output: str = Field(default="", description="输出内容")
     error: str | None = Field(default=None, description="错误信息")
@@ -87,17 +204,23 @@ class SkillResult(BaseModel):
 
     @classmethod
     def ok(cls, output: str = "", **kwargs) -> SkillResult:
-        """创建成功结果"""
+        """创建成功结果 - 技能执行成功"""
         return cls(success=True, output=output, **kwargs)
 
     @classmethod
     def fail(cls, error: str, output: str = "") -> SkillResult:
-        """创建失败结果"""
+        """创建失败结果 - 技能执行失败"""
         return cls(success=False, error=error, output=output)
 
     @classmethod
     def redirect(cls, modified_input: str, output: str = "") -> SkillResult:
-        """创建重定向结果（修改用户输入后继续）"""
+        """
+        创建重定向结果 - 修改用户输入后继续
+        
+        使用场景：
+        技能处理后，希望AI继续处理修改后的输入。
+        例如：错误修复技能检测到错误后，修改输入为"修复这个错误"。
+        """
         return cls(
             success=True,
             output=output,
@@ -124,9 +247,40 @@ class SkillConfig(BaseModel):
 
 class BaseSkill(ABC):
     """
-    技能基类
+    技能基类 - 所有技能的父类
     
-    所有技能必须继承此类并实现相应方法
+    这是技能系统的核心，定义了技能的基本结构：
+    1. 技能信息：名称、描述、版本
+    2. 触发条件：关键词、正则模式
+    3. 执行逻辑：execute方法
+    4. 提示词注入：get_prompt_injection方法
+    
+    开发技能的步骤：
+    1. 继承BaseSkill
+    2. 定义name、description等类属性
+    3. 实现execute方法
+    4. 可选：实现get_prompt_injection方法
+    5. 注册到skill_manager
+    
+    使用示例：
+        class CodeReviewSkill(BaseSkill):
+            name = "code_review"
+            description = "代码审查技能"
+            keywords = ["review", "审查"]
+            
+            async def execute(self, context: SkillContext) -> SkillResult:
+                # 审查逻辑
+                return SkillResult.ok("审查完成")
+        
+        # 注册
+        skill_manager.register(CodeReviewSkill())
+    
+    技能生命周期：
+    1. 注册：skill_manager.register(skill)
+    2. 初始化：await skill.initialize()
+    3. 触发：检测关键词或模式
+    4. 执行：await skill.execute(context)
+    5. 清理：await skill.cleanup()
     """
 
     # 子类必须定义的类属性
@@ -135,16 +289,16 @@ class BaseSkill(ABC):
     version: str = "1.0.0"
     priority: SkillPriority = SkillPriority.NORMAL
     trigger: SkillTrigger = SkillTrigger.MANUAL
-    keywords: list[str] = []
-    patterns: list[str] = []
-    dependencies: list[str] = []
+    keywords: list[str] = []  # 触发关键词
+    patterns: list[str] = []  # 触发正则模式
+    dependencies: list[str] = []  # 依赖的其他技能
 
     def __init__(self, config: dict[str, Any] | None = None):
         """
         初始化技能
         
         Args:
-            config: 技能配置
+            config: 技能配置字典
         """
         self._config = config or {}
         self._state = SkillState.IDLE

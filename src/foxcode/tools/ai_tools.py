@@ -1,7 +1,40 @@
 """
-AI 工具模块
+FoxCode AI工具模块 - AI相关功能的工具集
 
-提供与 AI 相关的工具
+这个文件提供与AI相关的工具：
+1. AIChatTool: 与AI模型对话
+2. AICodeTool: 生成代码
+3. 其他AI辅助工具
+
+工具用途：
+- 让AI调用其他AI模型（多模型协作）
+- 生成代码片段
+- AI辅助决策
+
+使用方式：
+    # 这些工具通过agent自动调用
+    # AI会根据需要选择合适的工具
+    
+    # 例如与AI对话：
+    # <function=ai_chat>
+    # <parameter=message>请分析这段代码</parameter>
+    # </function>
+
+关键工具：
+- AIChatTool: 通用AI对话工具
+  - 支持多种AI模型
+  - 可自定义温度参数
+  - 用于多模型协作
+  
+- AICodeTool: 代码生成工具
+  - 支持多种编程语言
+  - 可指定AI模型
+  - 用于生成代码片段
+
+使用场景：
+- 多模型协作：主模型调用专家模型
+- 代码生成：快速生成样板代码
+- AI辅助：让AI帮助分析和决策
 """
 
 from typing import Any
@@ -11,9 +44,28 @@ from foxcode.tools import BaseTool, ToolParameter, ToolResult, ToolCategory, too
 
 @tool
 class AIChatTool(BaseTool):
-    """AI 聊天工具
+    """
+    AI聊天工具 - 与AI模型进行对话
     
-    用于与 AI 模型进行对话
+    这个工具允许AI调用其他AI模型进行对话，实现多模型协作。
+    
+    为什么需要AI调用AI？
+    1. 专家模型：主模型可以调用专家模型处理特定任务
+    2. 第二意见：获取其他模型的意见
+    3. 能力互补：利用不同模型的优势
+    
+    使用示例：
+        # 调用GPT-4进行分析
+        <function=ai_chat>
+        <parameter=message>请分析这段代码的时间复杂度</parameter>
+        <parameter=model>gpt-4</parameter>
+        </function>
+        
+        # 使用低温度生成确定性回复
+        <function=ai_chat>
+        <parameter=message>请解释什么是递归</parameter>
+        <parameter=temperature>0.3</parameter>
+        </function>
     """
     name = "ai_chat"
     description = "与 AI 模型进行对话"
@@ -35,7 +87,7 @@ class AIChatTool(BaseTool):
         ToolParameter(
             name="temperature",
             type="number",
-            description="生成温度",
+            description="生成温度（0-1，越低越确定）",
             required=False,
             default=0.7
         ),

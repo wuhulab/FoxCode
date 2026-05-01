@@ -1,7 +1,41 @@
 """
-命令管理命令
+FoxCode 命令管理模块 - 命令行命令的管理和调度
 
-用于管理和操作命令
+这个文件实现了FoxCode的命令系统：
+1. 命令注册：注册新的命令行命令
+2. 命令发现：自动发现可用的命令
+3. 命令调度：根据用户输入调度到对应的命令处理器
+4. 命令别名：支持命令的短名称
+
+命令类型：
+- LOCAL: 本地命令，在本地执行
+- PROMPT: 提示词命令，生成提示词
+- JSX: JSX命令，生成JSX代码
+
+使用方式：
+    # 命令行使用
+    foxcode command --list          # 列出所有命令
+    foxcode command --type local    # 列出本地命令
+    foxcode command --find test     # 查找包含test的命令
+
+命令开发：
+    1. 定义命令类
+    2. 实现execute方法
+    3. 注册到命令管理器
+    
+    class MyCommand:
+        name = 'my_command'
+        description = '我的命令'
+        
+        def execute(self, *args):
+            # 命令逻辑
+            return "执行完成"
+
+关键特性：
+- 支持命令别名
+- 支持命令过滤和搜索
+- 支持多种命令类型
+- 自动命令发现
 """
 
 import click

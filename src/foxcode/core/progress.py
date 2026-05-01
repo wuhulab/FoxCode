@@ -1,8 +1,49 @@
 """
-FoxCode 进度追踪模块
+FoxCode 进度追踪模块 - 持久化的工作进度管理
 
-提供持久化的进度追踪功能，记录代理的工作历史和当前状态。
-支持跨会话的上下文传递，帮助长时间运行的任务保持连续性。
+这个文件提供进度追踪功能，记录代理的工作历史和当前状态：
+1. 进度记录：记录每个任务的完成情况
+2. 状态持久化：保存进度到文件，跨会话保持
+3. Markdown支持：支持Markdown格式的读写
+4. 进度可视化：生成进度报告
+
+为什么需要进度追踪？
+长时间运行的任务需要记录进度：
+- 跟踪已完成的工作
+- 记录待办事项
+- 跨会话保持连续性
+- 生成进度报告
+
+使用场景：
+- 长时间运行模式：跨多个会话的大项目
+- 任务管理：管理待办事项列表
+- 进度报告：向用户展示工作进度
+
+使用方式：
+    from foxcode.core.progress import ProgressManager, ProgressEntry
+    
+    manager = ProgressManager(working_dir=Path("."))
+    
+    # 添加任务
+    entry = manager.add_entry("实现用户登录功能", priority="high")
+    
+    # 标记进行中
+    entry.mark_in_progress()
+    
+    # 标记完成
+    entry.mark_completed()
+    
+    # 保存进度
+    manager.save()
+    
+    # 生成Markdown报告
+    markdown = manager.to_markdown()
+
+关键特性：
+- 支持优先级管理
+- 支持Markdown格式
+- 自动时间戳
+- 跨会话持久化
 """
 
 from __future__ import annotations

@@ -1,8 +1,53 @@
 """
-FoxCode 会话切换产物模块
+FoxCode 会话切换产物模块 - 跨会话传递工作状态
 
-实现 HandoffArtifact 数据结构，用于在上下文重置或会话切换时传递状态。
-支持完整的序列化和反序列化，以及生成可注入系统提示词的上下文。
+这个文件实现了HandoffArtifact数据结构，用于在会话切换时传递状态：
+1. 状态保存：保存当前会话的工作状态
+2. 状态恢复：在新会话中恢复工作状态
+3. 任务传递：传递未完成的任务列表
+4. 上下文注入：生成可注入系统提示词的上下文
+
+为什么需要HandoffArtifact？
+当上下文重置或会话切换时，需要保存当前的工作状态：
+- 已完成的工作
+- 未完成的任务
+- 遇到的问题
+- 下一步计划
+这样新会话可以无缝继续工作。
+
+使用场景：
+- 上下文重置：上下文窗口满了，需要开启新会话
+- 会话切换：用户切换到其他项目
+- 错误恢复：从错误状态恢复时
+
+使用方式：
+    from foxcode.core.handoff import HandoffArtifact, TaskItem
+    
+    # 创建任务
+    task = TaskItem(
+        id="TASK-001",
+        title="实现登录功能",
+        status="in_progress"
+    )
+    
+    # 创建切换产物
+    artifact = HandoffArtifact(
+        session_id="xxx",
+        tasks=[task],
+        completed_work=["已完成数据库设计"]
+    )
+    
+    # 保存
+    artifact.save(Path(".foxcode/handoff.json"))
+    
+    # 加载
+    loaded = HandoffArtifact.load(Path(".foxcode/handoff.json"))
+
+关键特性：
+- 完整的序列化和反序列化
+- 支持任务依赖关系
+- 支持验证标准
+- 生成上下文注入文本
 """
 
 from __future__ import annotations

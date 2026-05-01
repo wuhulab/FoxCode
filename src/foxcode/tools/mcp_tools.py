@@ -1,8 +1,41 @@
 """
-FoxCode MCP 工具包装器
+FoxCode MCP工具包装器 - 将MCP工具包装为内置工具
 
-将 MCP 工具包装为 FoxCode 内置工具
-使得 MCP 工具可以像内置工具一样被调用
+这个文件实现了MCP工具的包装器，让MCP工具可以像内置工具一样被调用：
+1. 工具发现：自动发现MCP服务器提供的工具
+2. 工具包装：将MCP工具包装为FoxCode工具格式
+3. 参数映射：将JSON Schema映射为工具参数
+4. 统一调用：使用统一的接口调用MCP工具
+
+什么是MCP工具？
+MCP (Model Context Protocol) 工具是外部工具服务器提供的工具。
+通过MCP协议，FoxCode可以调用各种外部工具，如：
+- 文件系统工具
+- 数据库工具
+- Web爬虫工具
+- 自定义工具
+
+为什么需要包装器？
+MCP工具的接口格式与FoxCode内置工具不同，需要包装器进行转换：
+- 统一的工具接口
+- 统一的参数格式
+- 统一的调用方式
+- 统一的错误处理
+
+使用方式：
+    # MCP工具会自动注册，无需手动操作
+    # AI可以直接调用MCP工具
+    
+    # 例如调用文件系统工具：
+    # <function=mcp_filesystem_read_file>
+    # <parameter=path>/path/to/file</parameter>
+    # </function>
+
+关键特性：
+- 自动工具发现
+- 自动参数映射
+- 统一的调用接口
+- 支持所有MCP工具类型
 """
 
 from __future__ import annotations

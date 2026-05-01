@@ -1,14 +1,43 @@
 """
-FoxCode 上下文智能压缩器
+FoxCode 上下文智能压缩器 - 减少token使用，保留关键信息
 
-提供对话历史和代码上下文的智能压缩功能。
-支持知识蒸馏，从对话中提取关键知识点。
+这个文件提供对话历史和代码上下文的智能压缩功能：
+1. 对话压缩：将长对话压缩为简短摘要
+2. 代码压缩：提取代码的关键信息
+3. 知识蒸馏：从对话中提取关键知识点
+4. Token估算：估算压缩前后的token数
 
-主要功能：
-- 对话历史智能摘要
-- 代码上下文压缩
-- 知识蒸馏
-- Token 估算
+为什么需要上下文压缩？
+上下文窗口有限，长对话会消耗大量token：
+- 成本：token越多，API调用越贵
+- 性能：上下文越长，响应越慢
+- 限制：模型有最大上下文长度限制
+
+压缩策略：
+- LOW: 保留大部分细节，压缩比低
+- MEDIUM: 平衡细节和压缩比
+- HIGH: 只保留关键信息
+- AGGRESSIVE: 最大压缩，只保留核心要点
+
+使用方式：
+    from foxcode.context.context_compressor import ContextCompressor
+    
+    compressor = ContextCompressor()
+    
+    # 压缩对话
+    compressed = compressor.compress_conversation(
+        messages=conversation_history,
+        level=CompressionLevel.MEDIUM
+    )
+    
+    print(f"压缩比: {compressed.compression_ratio}")
+    print(f"摘要: {compressed.summary}")
+
+关键特性：
+- 智能提取关键信息
+- 保留重要实体（函数名、类名）
+- 支持多种压缩级别
+- Token使用估算
 """
 
 from __future__ import annotations

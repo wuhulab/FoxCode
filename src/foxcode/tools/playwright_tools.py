@@ -1,7 +1,49 @@
 """
-FoxCode Playwright 浏览器自动化工具
+FoxCode Playwright浏览器自动化工具 - 网页测试和自动化
 
-提供浏览器自动化、页面操作和测试功能
+这个文件提供浏览器自动化功能：
+1. 浏览器控制：启动和控制浏览器
+2. 页面操作：导航、点击、输入、截图
+3. 元素查找：通过选择器查找页面元素
+4. 测试功能：自动化测试、性能分析
+
+为什么需要浏览器自动化？
+- Web测试：自动化测试网页功能
+- 数据抓取：抓取动态网页内容
+- 截图：生成网页截图
+- 性能分析：分析网页加载性能
+
+支持的浏览器：
+- Chromium: Chrome、Edge等
+- Firefox: 火狐浏览器
+- WebKit: Safari等
+
+使用方式：
+    # 这些工具通过agent自动调用
+    # AI会根据需要选择合适的工具
+    
+    # 例如打开网页：
+    # <function=playwright_navigate>
+    # <parameter=url>https://example.com</parameter>
+    # </function>
+    
+    # 例如截图：
+    # <function=playwright_screenshot>
+    # <parameter=name>homepage</parameter>
+    # </function>
+
+关键工具：
+- PlaywrightNavigateTool: 导航到URL
+- PlaywrightClickTool: 点击元素
+- PlaywrightFillTool: 填写表单
+- PlaywrightScreenshotTool: 截取屏幕
+- PlaywrightEvaluateTool: 执行JavaScript
+
+关键特性：
+- 支持多浏览器
+- 支持无头模式
+- 支持移动端模拟
+- 支持网络拦截
 """
 
 from __future__ import annotations

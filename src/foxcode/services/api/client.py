@@ -1,7 +1,50 @@
 """
-API 客户端模块
+FoxCode API客户端模块 - 统一的API服务接口
 
-管理不同服务提供商的 API 客户端
+这个文件管理不同服务提供商的API客户端：
+1. 客户端管理：创建和管理不同提供商的客户端
+2. 统一接口：为不同API提供统一的调用接口
+3. 配置管理：管理API密钥、端点等配置
+4. 错误处理：统一的错误处理和重试机制
+
+支持的服务提供商：
+- OpenAI: GPT系列模型
+- Anthropic: Claude系列模型
+- Bedrock: AWS Bedrock
+- Vertex: Google Vertex AI
+- Foundry: 自定义服务
+- Custom: 自定义API
+
+为什么需要统一的API客户端？
+不同提供商的API差异很大：
+- 不同的认证方式
+- 不同的请求格式
+- 不同的响应格式
+- 不同的错误处理
+
+统一接口的好处：
+- 一套代码支持多个提供商
+- 轻松切换提供商
+- 统一的错误处理
+- 简化上层代码
+
+使用方式：
+    from foxcode.services.api.client import OpenAIClient, ServiceConfig
+    
+    config = ServiceConfig(
+        provider=ServiceProvider.OPENAI,
+        api_key="sk-...",
+        model="gpt-4o"
+    )
+    
+    client = OpenAIClient(config)
+    response = await client.chat_completion(messages)
+
+关键特性：
+- 支持多种服务提供商
+- 统一的调用接口
+- 自动错误处理
+- 支持流式响应
 """
 
 from __future__ import annotations

@@ -1,7 +1,50 @@
 """
-FoxCode 功能列表管理模块
+FoxCode 功能列表管理模块 - 项目功能的规划和跟踪
 
-管理功能需求列表，支持功能的添加、更新、验证和持久化
+这个文件管理项目的功能需求列表：
+1. 功能规划：定义和管理功能需求
+2. 状态跟踪：跟踪功能的实现状态
+3. 验收标准：定义功能的验收标准
+4. 依赖管理：管理功能之间的依赖关系
+
+为什么需要功能列表？
+初始化代理创建项目时会生成功能列表：
+- 明确项目范围
+- 跟踪实现进度
+- 管理功能依赖
+- 验证功能完成
+
+功能生命周期：
+PENDING -> IN_PROGRESS -> COMPLETED
+                    \-> FAILED
+                    \-> BLOCKED
+
+使用方式：
+    from foxcode.core.feature_list import FeatureList, Feature, FeatureStatus
+    
+    # 创建功能列表
+    feature_list = FeatureList(working_dir=Path("."))
+    
+    # 添加功能
+    feature = Feature(
+        id="FEATURE-001",
+        title="用户登录",
+        description="实现用户登录功能",
+        acceptance_criteria=["支持邮箱登录", "支持密码登录"]
+    )
+    feature_list.add_feature(feature)
+    
+    # 更新状态
+    feature_list.update_status("FEATURE-001", FeatureStatus.IN_PROGRESS)
+    
+    # 保存
+    feature_list.save()
+
+关键特性：
+- 支持优先级管理
+- 支持验收标准
+- 支持依赖关系
+- 自动生成功能文档
 """
 
 from __future__ import annotations

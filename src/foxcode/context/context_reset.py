@@ -1,15 +1,43 @@
 """
-FoxCode 上下文重置管理模块
+FoxCode 上下文重置管理模块 - 解决AI的"上下文焦虑"问题
 
-实现上下文重置机制，在上下文窗口接近限制时自动保存状态并启动新会话。
-解决模型的"上下文焦虑"问题，支持长时间运行的代理任务。
+这个文件实现了上下文重置机制，解决长时间运行时的上下文窗口限制问题：
+1. 检测重置时机：监控token使用率，在接近限制时触发
+2. 焦虑检测：识别AI因上下文过长而想提前结束任务的行为
+3. 状态保存：保存当前工作状态到HandoffArtifact
+4. 会话恢复：在新会话中恢复工作状态，继续任务
 
-核心功能：
-- 检测是否需要重置（基于 token 使用率）
-- 检测上下文焦虑行为（过早结束任务）
-- 创建状态传递产物（HandoffArtifact）
-- 从产物恢复状态
-- 完整的重置流程管理
+什么是"上下文焦虑"？
+当上下文窗口快满时，AI会表现出"焦虑"行为：
+- 过早地说"任务完成"
+- 声称"已经完成了所有工作"
+- 不愿意继续执行更多操作
+这是因为AI担心上下文不够用，想尽快结束对话。
+
+解决方案：
+1. 检测焦虑行为：识别AI的提前结束模式
+2. 自动重置：保存状态，开启新会话
+3. 状态传递：通过HandoffArtifact传递工作状态
+4. 无缝继续：新会话从断点继续工作
+
+使用方式：
+    from foxcode.core.context_reset import ContextResetManager
+    
+    manager = ContextResetManager(config)
+    
+    # 检查是否需要重置
+    if manager.should_reset(session):
+        # 执行重置
+        result = await manager.perform_reset(session)
+        
+    # 检测焦虑行为
+    is_anxious, reason = manager.detect_anxiety(ai_output)
+
+关键特性：
+- 自动检测重置时机
+- 智能识别焦虑行为
+- 完整的状态保存和恢复
+- 支持多次重置的长任务
 """
 
 from __future__ import annotations

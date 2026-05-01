@@ -1,10 +1,43 @@
 """
-FoxCode 配置模块
+FoxCode 配置模块 - 管理所有配置选项
 
-管理应用程序配置，支持多种配置来源：
-- 环境变量
-- 配置文件 (.foxcode.toml, foxcode.toml)
-- 命令行参数
+这个文件是FoxCode的配置中心，负责：
+1. 定义所有配置选项（模型、工具、UI、运行模式等）
+2. 从多个来源加载配置（文件、环境变量、命令行）
+3. 验证配置的正确性
+4. 保存配置到文件
+
+配置优先级（从高到低）：
+1. 命令行参数
+2. 环境变量（FOXCODE_XXX）
+3. 项目配置文件（.foxcode.toml）
+4. 用户配置文件（~/.foxcode/config.toml）
+5. 默认值
+
+主要类：
+- Config: 主配置类
+- ModelConfig: 模型配置
+- ToolConfig: 工具配置
+- LongRunningConfig: 长时间运行配置
+
+使用方式：
+    # 创建配置（自动加载）
+    config = Config.create()
+    
+    # 创建配置（指定参数）
+    config = Config.create(
+        model=ModelConfig(model_name="gpt-4o"),
+        run_mode=RunMode.YOLO
+    )
+    
+    # 验证配置
+    is_valid, errors, warnings = config.validate()
+
+关键特性：
+- 支持多种AI模型（OpenAI、Anthropic、DeepSeek等）
+- 支持多种运行模式（默认、YOLO、规划模式）
+- 支持沙箱安全机制
+- 支持MCP工具和Skill技能系统
 """
 
 from __future__ import annotations
@@ -38,11 +71,24 @@ class ModelProvider(str, Enum):
 
 
 class RunMode(str, Enum):
-    """运行模式"""
-    DEFAULT = "default"          # 默认模式，需要确认
-    YOLO = "yolo"                # 自动执行所有操作
+    """
+    运行模式 - 控制代理的行为方式
+    
+    不同的运行模式适用于不同的场景：
+    - DEFAULT: 适合新手，每次操作都需要确认
+    - YOLO: 适合熟练用户，自动执行所有操作
+    - ACCEPT_EDITS: 适合代码编辑场景，自动接受文件修改
+    - PLAN: 适合规划阶段，只分析不执行
+    
+    安全性：
+    - DEFAULT最安全，所有危险操作都需要确认
+    - YOLO最快，但可能执行危险操作
+    - PLAN最安全，只读不写
+    """
+    DEFAULT = "default"          # 默认模式：危险操作需要确认
+    YOLO = "yolo"                # YOLO模式：自动执行所有操作
     ACCEPT_EDITS = "accept_edits" # 自动接受文件编辑
-    PLAN = "plan"                # 规划模式，只读
+    PLAN = "plan"                # 规划模式：只读，不执行操作
 
 
 class OutputTopic(str, Enum):
@@ -77,7 +123,32 @@ class AgentRole(str, Enum):
 
 
 class ModelConfig(BaseModel):
-    """模型配置"""
+    """
+    模型配置 - AI模型的连接和参数设置
+    
+    配置AI模型的各个方面：
+    - 提供者：OpenAI、Anthropic、DeepSeek等
+    - 模型名称：gpt-4o、claude-sonnet等
+    - API密钥：从环境变量或配置文件读取
+    - 参数：温度、最大token数、超时时间
+    
+    模型别名：
+    支持简短的模型别名，如"claude"映射到"claude-sonnet-4-20250514"
+    
+    使用示例：
+        # 使用默认配置
+        config = ModelConfig()
+        
+        # 指定模型
+        config = ModelConfig(model_name="claude")
+        
+        # 自定义参数
+        config = ModelConfig(
+            model_name="gpt-4o",
+            temperature=0.5,
+            max_tokens=8192
+        )
+    """
     model_config = ConfigDict(protected_namespaces=())
 
     provider: ModelProvider = ModelProvider.OPENAI
@@ -89,6 +160,7 @@ class ModelConfig(BaseModel):
     timeout: int = Field(default=120, ge=1)
 
     # 模型别名映射（类变量）
+    # 简化模型名称输入，提供更好的用户体验
     MODEL_ALIASES: ClassVar[dict[str, tuple[ModelProvider, str]]] = {
         "claude": (ModelProvider.ANTHROPIC, "claude-sonnet-4-20250514"),
         "claude-sonnet": (ModelProvider.ANTHROPIC, "claude-sonnet-4-20250514"),
@@ -558,14 +630,41 @@ class UpdateConfig(BaseModel):
 
 class Config(BaseSettings):
     """
-    FoxCode 主配置类
+    FoxCode主配置类 - 所有配置的入口
+    
+    这是FoxCode配置的核心，整合了所有子配置：
+    - model: AI模型配置
+    - tools: 工具配置
+    - ui: UI配置
+    - long_running: 长时间运行配置
+    - sandbox: 沙箱安全配置
+    - mcp: MCP工具配置
+    - skills: 技能系统配置
     
     配置优先级（从高到低）：
-    1. 命令行参数
-    2. 环境变量
-    3. 项目配置文件 (.foxcode.toml)
-    4. 用户配置文件 (~/.foxcode/config.toml)
-    5. 默认值
+    1. 命令行参数 - 最高优先级
+    2. 环境变量 - FOXCODE_XXX格式
+    3. 项目配置文件 - .foxcode.toml
+    4. 用户配置文件 - ~/.foxcode/config.toml
+    5. 默认值 - 最低优先级
+    
+    使用示例：
+        # 创建配置（自动加载）
+        config = Config.create()
+        
+        # 创建配置（指定参数）
+        config = Config.create(
+            run_mode=RunMode.YOLO,
+            model=ModelConfig(model_name="claude")
+        )
+        
+        # 验证配置
+        is_valid, errors, warnings = config.validate()
+    
+    安全特性：
+    - 支持沙箱模式，限制危险操作
+    - 支持配置验证，防止错误配置
+    - 支持加密存储敏感信息
     """
     model_config = SettingsConfigDict(
         env_prefix="FOXCODE_",
@@ -595,7 +694,7 @@ class Config(BaseSettings):
     work_mode: WorkModeConfig = Field(default_factory=WorkModeConfig, description="Work模式配置（默认启用）")
     open_space: OpenSpaceConfig = Field(
         default_factory=OpenSpaceConfig,
-        description="OpenSpace 配置（AI 经验知识存储，默认启用）"
+        description="OpenSpace配置（AI经验知识存储，默认启用）"
     )
     update: UpdateConfig = Field(
         default_factory=UpdateConfig,
@@ -605,7 +704,7 @@ class Config(BaseSettings):
     # 工作目录
     working_dir: Path = Field(default_factory=lambda: Path.cwd())
 
-    # 会话配置 - 默认在工作目录下的 .foxcode 目录
+    # 会话配置 - 默认在工作目录下的.foxcode目录
     session_dir: Path | None = Field(default=None)
     auto_save_session: bool = True
     max_history: int = Field(default=100, ge=0)

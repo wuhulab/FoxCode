@@ -1,7 +1,34 @@
 """
-FoxCode 工具系统模块
+FoxCode 工具系统模块 - 工具的基础架构
 
-定义工具基类和工具注册管理
+这个文件定义了工具系统的核心架构：
+1. BaseTool: 所有工具的基类
+2. ToolRegistry: 工具注册表，管理所有工具
+3. ToolResult: 工具执行结果
+4. ConfirmationManager: 危险操作确认管理器
+
+工具生命周期：
+定义 -> 注册 -> 获取实例 -> 验证参数 -> 执行 -> 返回结果
+
+使用方式：
+    # 定义工具
+    @tool
+    class MyTool(BaseTool):
+        name = "my_tool"
+        description = "我的工具"
+        
+        async def execute(self, param: str) -> ToolResult:
+            # 工具逻辑
+            return ToolResult(success=True, output="完成")
+    
+    # 使用工具
+    result = await registry.execute("my_tool", param="value")
+
+关键特性：
+- 支持参数验证和类型检查
+- 支持危险操作确认
+- 支持工具分类和搜索
+- 支持工具使用统计
 """
 
 from __future__ import annotations
@@ -20,7 +47,25 @@ logger = logging.getLogger(__name__)
 
 
 class ToolCategory(str, Enum):
-    """工具类别"""
+    """
+    工具类别 - 工具的分类标签
+    
+    用于组织和过滤工具，方便用户查找和管理。
+    每个工具都属于一个主要类别。
+    
+    类别说明：
+    - FILE: 文件操作（读、写、编辑、删除）
+    - SHELL: Shell命令执行
+    - SEARCH: 代码搜索（grep、glob等）
+    - CODE: 代码分析和生成
+    - WEB: 网页相关（搜索、抓取）
+    - SYSTEM: 系统操作（进程、环境变量）
+    - AI: AI相关功能
+    - DATABASE: 数据库操作
+    - NETWORK: 网络操作
+    - SECURITY: 安全相关
+    - TESTING: 测试相关
+    """
     FILE = "file"
     SHELL = "shell"
     SEARCH = "search"
@@ -46,13 +91,37 @@ class ToolParameter(BaseModel):
 
 @dataclass
 class ToolResult:
-    """工具执行结果"""
+    """
+    工具执行结果 - 统一的结果格式
+    
+    所有工具执行后都返回这个统一格式，方便：
+    1. 判断执行是否成功
+    2. 获取输出内容
+    3. 处理错误信息
+    4. 获取额外数据
+    
+    使用示例：
+        # 成功结果
+        result = ToolResult(
+            success=True,
+            output="文件已读取",
+            data={"lines": 100}
+        )
+        
+        # 失败结果
+        result = ToolResult(
+            success=False,
+            output="",
+            error="文件不存在"
+        )
+    """
     success: bool
     output: str
     error: str | None = None
     data: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        """转换为字典格式"""
         return {
             "success": self.success,
             "output": self.output,
@@ -61,6 +130,7 @@ class ToolResult:
         }
 
     def __str__(self) -> str:
+        """字符串表示：成功显示输出，失败显示错误"""
         if self.success:
             return self.output
         return f"错误: {self.error}\n{self.output}"
@@ -268,16 +338,49 @@ def set_confirmation_manager(manager: ConfirmationManager) -> None:
 
 class BaseTool(abc.ABC):
     """
-    工具基类
+    工具基类 - 所有工具的父类
     
-    所有工具必须继承此类并实现 execute 方法
+    这是工具系统的核心，定义了工具的基本结构：
+    1. 工具名称和描述
+    2. 工具类别
+    3. 参数定义
+    4. 执行方法
+    
+    工具开发流程：
+    1. 继承BaseTool
+    2. 定义name、description、category、parameters
+    3. 实现execute方法
+    4. 使用@tool装饰器注册
+    
+    使用示例：
+        @tool
+        class ReadFileTool(BaseTool):
+            name = "read_file"
+            description = "读取文件内容"
+            category = ToolCategory.FILE
+            parameters = [
+                ToolParameter(name="file_path", type="string", required=True)
+            ]
+            
+            async def execute(self, file_path: str) -> ToolResult:
+                try:
+                    with open(file_path) as f:
+                        content = f.read()
+                    return ToolResult(success=True, output=content)
+                except Exception as e:
+                    return ToolResult(success=False, output="", error=str(e))
+    
+    安全特性：
+    - 参数验证：自动验证参数类型和必需性
+    - 危险标记：dangerous=True的工具需要确认
+    - 错误处理：统一捕获异常并返回错误结果
     """
 
     name: str = "base_tool"
     description: str = "基础工具"
     category: ToolCategory = ToolCategory.SYSTEM
     parameters: list[ToolParameter] = []
-    dangerous: bool = False  # 是否为危险操作
+    dangerous: bool = False  # 是否为危险操作（需要用户确认）
 
     def __init__(self, config: Any = None):
         self.config = config
@@ -286,13 +389,21 @@ class BaseTool(abc.ABC):
     @abc.abstractmethod
     async def execute(self, **kwargs: Any) -> ToolResult:
         """
-        执行工具
+        执行工具 - 子类必须实现此方法
+        
+        这是工具的核心方法，实现具体的工具逻辑。
         
         Args:
-            **kwargs: 工具参数
+            **kwargs: 工具参数，已通过验证
             
         Returns:
-            执行结果
+            ToolResult: 执行结果
+            
+        注意：
+        - 参数已经过验证，可以直接使用
+        - 应该捕获所有异常并返回错误结果
+        - 成功时返回success=True
+        - 失败时返回success=False和error信息
         """
         pass
 
@@ -473,26 +584,62 @@ class BaseTool(abc.ABC):
 
 class ToolRegistry:
     """
-    工具注册表
+    工具注册表 - 管理所有可用工具
     
-    管理所有可用工具
+    这是工具系统的中心，负责：
+    1. 注册工具类
+    2. 创建工具实例
+    3. 执行工具
+    4. 列出和搜索工具
+    
+    工具注册流程：
+    定义工具 -> @tool装饰器 -> 注册到registry -> 可以使用
+    
+    使用示例：
+        # 注册工具
+        @tool
+        class MyTool(BaseTool):
+            ...
+        
+        # 获取工具实例
+        tool = registry.get_tool("my_tool")
+        
+        # 执行工具
+        result = await registry.execute("my_tool", param="value")
+        
+        # 列出所有工具
+        tools = registry.list_tools()
+    
+    懒加载机制：
+    - 工具类注册后不会立即创建实例
+    - 第一次使用时才创建实例
+    - 节省内存和启动时间
     """
 
     def __init__(self):
-        self._tools: dict[str, type[BaseTool]] = {}
-        self._instances: dict[str, BaseTool] = {}
+        self._tools: dict[str, type[BaseTool]] = {}  # 工具类注册表
+        self._instances: dict[str, BaseTool] = {}  # 工具实例缓存
         self._config: Any = None
-        self._loaded_modules: set[str] = set()
+        self._loaded_modules: set[str] = set()  # 已加载的模块
 
     def register(self, tool_class: type[BaseTool]) -> type[BaseTool]:
         """
-        注册工具
+        注册工具类
         
         Args:
             tool_class: 工具类
             
         Returns:
             工具类（支持装饰器用法）
+            
+        使用示例：
+            # 装饰器方式
+            @tool
+            class MyTool(BaseTool):
+                ...
+            
+            # 直接调用
+            registry.register(MyTool)
         """
         self._tools[tool_class.name] = tool_class
         logger.debug(f"注册工具: {tool_class.name}")
@@ -667,16 +814,28 @@ class ToolRegistry:
 
     async def execute(self, name: str, **kwargs: Any) -> ToolResult:
         """
-        执行工具
+        执行工具 - 工具执行的主入口
+        
+        执行流程：
+        1. 获取工具实例
+        2. 验证参数
+        3. 执行工具
+        4. 记录统计
+        5. 返回结果
         
         Args:
             name: 工具名称
             **kwargs: 工具参数
             
         Returns:
-            执行结果
+            ToolResult: 执行结果
+            
+        异常处理：
+        - 参数验证失败：返回错误结果
+        - 工具执行异常：捕获并返回错误结果
+        - 工具不存在：抛出KeyError
         """
-        # 尝试从配置中加载工具
+        # 确保工具已加载
         self.load_tools_from_config()
         
         tool = self.get_tool(name)
@@ -684,7 +843,10 @@ class ToolRegistry:
         error_msg = None
 
         try:
+            # 验证参数
             validated_params = tool.validate_parameters(**kwargs)
+            
+            # 执行工具
             result = await tool.execute(**validated_params)
 
             duration = time.time() - start_time
@@ -695,7 +857,7 @@ class ToolRegistry:
                 logger.warning(f"工具 {name} 执行失败: {result.error}")
                 error_msg = result.error
 
-            # 记录统计
+            # 记录统计信息
             self._record_tool_usage(
                 tool_name=name,
                 success=result.success,
@@ -707,6 +869,7 @@ class ToolRegistry:
 
             return result
         except Exception as e:
+            # 捕获所有异常，返回错误结果
             duration = time.time() - start_time
             logger.error(f"工具 {name} 执行异常: {e}")
 

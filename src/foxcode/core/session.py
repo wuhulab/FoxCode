@@ -1,9 +1,28 @@
 """
-FoxCode 会话管理模块
+FoxCode 会话管理模块 - 管理对话历史和状态
 
-管理用户会话的持久化和恢复
-支持进度追踪和跨会话上下文传递
-支持会话数据加密存储
+这个文件负责会话的生命周期管理：
+1. 创建和保存会话（支持加密存储）
+2. 加载和恢复会话
+3. 管理对话历史
+4. 支持进度追踪和功能列表
+5. 支持上下文重置和工作流程
+
+主要类：
+- Session: 会话管理类
+
+使用方式：
+    config = Config.create()
+    session = Session(config)
+    session.add_user_message("你好")
+    session.add_assistant_message("你好！有什么可以帮你的？")
+    session.save()
+
+关键特性：
+- 会话数据加密存储，保护隐私
+- 支持跨会话的进度追踪
+- 支持上下文重置和恢复
+- 支持多代理协作状态管理
 """
 
 from __future__ import annotations
@@ -37,10 +56,31 @@ logger = logging.getLogger(__name__)
 
 class Session:
     """
-    会话管理类
+    会话管理类 - 管理对话历史和状态
     
-    负责会话的创建、保存、加载和管理
-    支持进度追踪和跨会话上下文传递
+    这是FoxCode会话的核心，负责：
+    1. 存储对话历史（用户消息、助手消息、工具调用）
+    2. 持久化会话到文件（支持加密）
+    3. 管理进度追踪和功能列表
+    4. 支持上下文重置和恢复
+    
+    会话生命周期：
+    创建 -> 添加消息 -> 保存 -> 加载 -> 继续
+    
+    使用示例：
+        # 创建新会话
+        session = Session(config)
+        session.add_user_message("分析项目")
+        session.save()
+        
+        # 加载已有会话
+        session = Session.load(config, "session_id")
+        print(session.conversation.messages)
+    
+    安全特性：
+    - 会话ID使用加密安全的随机数生成
+    - 会话数据支持加密存储
+    - 文件权限设置为仅所有者可读写
     """
 
     def __init__(self, config: Config, session_id: str | None = None):
@@ -48,9 +88,10 @@ class Session:
         初始化会话
         
         Args:
-            config: 配置实例
-            session_id: 会话 ID，如果为 None 则创建新会话
+            config: 配置实例，包含工作目录、会话目录等配置
+            session_id: 会话ID，None则自动生成新的安全ID
         """
+        # 基础配置
         self.config = config
         self.session_id = session_id or self._generate_session_id()
         self.conversation = Conversation()
@@ -59,7 +100,8 @@ class Session:
             "created_at": datetime.now().isoformat(),
         }
 
-        # 进度追踪相关属性
+        # 进度追踪相关属性（延迟初始化）
+        # 用于长时间运行模式下的进度管理
         self._progress_manager: ProgressManager | None = None
         self._feature_list: FeatureList | None = None
         self._context_bridge: ContextBridge | None = None
@@ -68,31 +110,43 @@ class Session:
         self._current_workflow: WorkflowInstance | None = None
 
         # 上下文重置相关属性
+        # 用于管理上下文窗口和代理角色
         self._context_reset_manager: ContextResetManager | None = None
         self._agent_role: AgentRole = AgentRole.GENERATOR
 
-        # 确保目录存在
+        # 确保会话目录存在
         config.ensure_directories()
 
     @staticmethod
     def _generate_session_id() -> str:
         """
-        生成安全的会话 ID
+        生成安全的会话ID
         
-        使用加密安全的随机数生成器创建会话 ID，
-        格式为: YYYYMMDD_HHMMSS_<32字节随机十六进制>
+        为什么需要安全的会话ID？
+        1. 防止会话ID被猜测，保护用户隐私
+        2. 避免会话冲突
+        3. 支持会话的加密和验证
+        
+        生成策略：
+        - 时间戳：便于排序和识别
+        - 随机数：使用加密安全的随机数生成器
+        - 格式：YYYYMMDD_HHMMSS_<32字符随机十六进制>
         
         安全说明：
-        - 使用 16 字节（128 位）的随机数，提供足够的安全性
-        - 使用 secrets.token_hex() 生成加密安全的随机数
-        - 会话 ID 难以被猜测或预测
+        - 使用16字节（128位）的随机数，提供足够的安全性
+        - 使用secrets.token_hex()生成加密安全的随机数
+        - 会话ID难以被猜测或预测
         
         Returns:
-            格式化的会话 ID 字符串
+            格式化的会话ID字符串
+            例如：20240101_120000_a1b2c3d4e5f6...
         """
+        # 时间戳部分：便于排序和识别
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # 使用 16 字节（128 位）随机数，生成 32 字符的十六进制字符串
+        
+        # 随机部分：16字节（128位）随机数，生成32字符的十六进制字符串
         random_suffix = secrets.token_hex(16)
+        
         return f"{timestamp}_{random_suffix}"
 
     @property
@@ -157,19 +211,40 @@ class Session:
         return message
 
     def save(self) -> None:
-        """保存会话到文件（加密存储）"""
+        """
+        保存会话到文件（支持加密存储）
+        
+        保存流程：
+        1. 序列化会话数据（ID、对话历史、元数据）
+        2. 如果启用加密，使用加密模块加密数据
+        3. 写入文件并设置安全权限
+        
+        安全措施：
+        - 数据加密：保护敏感信息
+        - 文件权限：设置为仅所有者可读写（0o600）
+        - 错误处理：权限设置失败会记录警告
+        
+        为什么需要加密？
+        会话中可能包含敏感信息：
+        - 代码内容
+        - API密钥
+        - 用户数据
+        """
         try:
+            # 准备会话数据
             data = {
                 "session_id": self.session_id,
                 "conversation": self.conversation.to_dict(),
                 "metadata": self.metadata,
             }
 
+            # 尝试加密数据
             try:
                 from foxcode.core.session_encryption import get_session_encryptor
                 encryptor = get_session_encryptor()
 
                 if encryptor.config.enabled:
+                    # 加密模式：数据会被加密
                     encrypted_data = encryptor.encrypt(data)
                     storage_data = {
                         "encrypted": True,
@@ -177,23 +252,26 @@ class Session:
                         "version": 1,
                     }
                 else:
+                    # 未加密模式：明文存储（不推荐）
                     storage_data = {
                         "encrypted": False,
                         "data": data,
                         "version": 1,
                     }
             except ImportError:
+                # 加密模块不可用：明文存储
                 storage_data = {
                     "encrypted": False,
                     "data": data,
                     "version": 1,
                 }
 
+            # 写入文件
             with open(self.session_path, "w", encoding="utf-8") as f:
                 json.dump(storage_data, f, ensure_ascii=False, indent=2)
 
             # 设置文件权限为仅所有者可读写（安全最佳实践）
-            # 在 Windows 上可能不支持，但不应静默忽略失败
+            # 在Windows上可能不支持，但不应静默忽略失败
             try:
                 os.chmod(self.session_path, 0o600)
             except PermissionError as e:
@@ -203,7 +281,7 @@ class Session:
                     "会话文件可能被其他用户读取。"
                 )
             except OSError as e:
-                # Windows 等系统可能不支持 chmod，记录调试信息
+                # Windows等系统可能不支持chmod，记录调试信息
                 logger.debug(f"设置文件权限不支持或失败: {e}")
 
             logger.debug(f"会话已保存: {self.session_path}")

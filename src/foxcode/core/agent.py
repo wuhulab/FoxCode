@@ -1,9 +1,27 @@
 """
-FoxCode Agent 模块
+FoxCode Agent 模块 - AI代理的核心实现
 
-核心 AI 代理实现
-支持初始化代理和编码代理双模式
-支持 MCP (Model Context Protocol) 和 Skill 技能系统
+这个文件是FoxCode的大脑，负责：
+1. 接收用户输入，调用AI模型生成响应
+2. 解析AI输出的工具调用，执行相应工具
+3. 管理会话状态、上下文重置、多代理协作
+
+主要类：
+- FoxCodeAgent: 核心代理类，所有交互的入口
+
+使用方式：
+    config = Config.create()
+    agent = FoxCodeAgent(config)
+    await agent.initialize()
+    
+    async for chunk in agent.chat("帮我分析项目结构"):
+        print(chunk, end="")
+
+关键特性：
+- 支持初始化代理和编码代理双模式
+- 支持MCP工具和Skill技能系统
+- 支持上下文自动重置和会话恢复
+- 支持多代理协作（规划器-生成器-评估器）
 """
 
 from __future__ import annotations
@@ -25,16 +43,22 @@ from foxcode.utils.statistics import stats_manager
 
 logger = logging.getLogger(__name__)
 
-# 重试配置
-MAX_RETRIES = 5  # 最大重试次数
-INITIAL_RETRY_DELAY = 2.0  # 初始重试延迟（秒）
-MAX_RETRY_DELAY = 60.0  # 最大重试延迟（秒）
-RETRY_BACKOFF_FACTOR = 2.0  # 退避因子
+# ==================== 重试配置 ====================
+# 当API调用失败时（如限流、超时），自动重试
+# 使用指数退避策略，避免加重服务器负担
+
+MAX_RETRIES = 5  # 最大重试次数，超过则报错
+INITIAL_RETRY_DELAY = 2.0  # 第一次重试等待2秒
+MAX_RETRY_DELAY = 60.0  # 最长等待60秒
+RETRY_BACKOFF_FACTOR = 2.0  # 每次重试等待时间翻倍（2s -> 4s -> 8s -> ...）
 
 
 def _is_retryable_error(error: Exception) -> bool:
     """
     检查错误是否可重试
+    
+    某些错误（如限流、超时）是临时的，等待后重试可能成功。
+    其他错误（如认证失败、参数错误）重试也没用，直接报错。
     
     Args:
         error: 异常对象
@@ -44,7 +68,8 @@ def _is_retryable_error(error: Exception) -> bool:
     """
     error_str = str(error).lower()
 
-    # 403 错误 - RPM 限制
+    # 403 错误 - RPM限制（每分钟请求数超限）
+    # 等待一段时间后可以继续
     if "403" in error_str:
         return True
     if "rpm limit" in error_str:
@@ -55,31 +80,45 @@ def _is_retryable_error(error: Exception) -> bool:
         return True
 
     # 429 错误 - 请求过多
+    # 服务器要求降低请求频率
     if "429" in error_str:
         return True
 
-    # 超时错误
+    # 超时错误 - 网络或服务器响应慢
+    # 等待后可能恢复
     if "timeout" in error_str:
         return True
 
-    # 连接错误
+    # 连接错误 - 网络不稳定
+    # 重试可能成功
     if "connection" in error_str:
         return True
 
+    # 其他错误不重试
     return False
 
 
 def _calculate_retry_delay(retry_count: int) -> float:
     """
-    计算重试延迟时间（指数退避）
+    计算重试延迟时间（指数退避策略）
+    
+    为什么用指数退避？
+    1. 避免频繁重试加重服务器负担
+    2. 给服务器恢复时间
+    3. 逐步增加等待时间，提高成功率
+    
+    例如：第1次等2秒，第2次等4秒，第3次等8秒...
     
     Args:
-        retry_count: 当前重试次数（从 0 开始）
+        retry_count: 当前重试次数（从0开始）
         
     Returns:
         延迟时间（秒）
     """
+    # 计算指数增长的延迟时间
     delay = INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count)
+    
+    # 不超过最大延迟时间
     return min(delay, MAX_RETRY_DELAY)
 
 
@@ -300,11 +339,27 @@ Run mode: {run_mode}
 
 class FoxCodeAgent:
     """
-    FoxCode AI 代理
+    FoxCode AI代理 - 核心代理类
     
-    核心代理类，负责处理用户请求、调用模型、执行工具
-    支持初始化代理和编码代理双模式
-    支持 MCP (Model Context Protocol) 和 Skill 技能系统
+    这是FoxCode的主要入口，负责协调所有组件工作：
+    1. 接收用户输入，调用AI模型
+    2. 解析AI输出的工具调用并执行
+    3. 管理会话状态和上下文
+    4. 支持多代理协作和技能系统
+    
+    工作流程：
+    用户输入 -> AI生成响应 -> 解析工具调用 -> 执行工具 -> 返回结果 -> 循环
+    
+    支持两种模式：
+    - 初始化代理：创建项目结构、功能列表
+    - 编码代理：实现具体功能
+    
+    使用示例：
+        config = Config.create()
+        agent = FoxCodeAgent(config)
+        await agent.initialize()
+        async for chunk in agent.chat("分析项目"):
+            print(chunk)
     """
 
     def __init__(self, config: Config, force_mode: str | None = None):
@@ -312,34 +367,40 @@ class FoxCodeAgent:
         初始化代理
         
         Args:
-            config: 配置实例
-            force_mode: 强制模式 ("initializer" 或 "coder")，None 则自动检测
+            config: 配置实例，包含模型、工具、运行模式等配置
+            force_mode: 强制模式 ("initializer" 或 "coder")
+                       None则根据项目状态自动检测
         """
+        # 基础配置
         self.config = config
         self.session = Session(config)
         self.model_provider: BaseModelProvider | None = None
         self._initialized = False
 
-        # 已执行的工具调用记录（用于防重复）
+        # 防重复调用机制
+        # 记录已执行的工具调用，避免AI重复调用同一工具
         # 格式: {(tool_name, frozenset(sorted_params)): execution_count}
         self._executed_tools: dict[tuple[str, frozenset], int] = {}
 
-        # 会话模式
+        # 会话模式（初始化代理 vs 编码代理）
         self._force_mode = force_mode
-        self._session_type = None  # 延迟检测
+        self._session_type = None  # 延迟检测，避免不必要的初始化
 
         # 设置工具配置
         registry.set_config(config.tools)
 
-        # MCP 管理器
+        # MCP工具管理器（Model Context Protocol）
+        # 允许加载外部工具服务器
         self._mcp_manager = None
         self._mcp_initialized = False
 
-        # Skill 管理器
+        # Skill技能管理器
+        # 支持加载和触发自定义技能
         self._skill_manager = None
         self._skills_initialized = False
 
-        # 多代理模式相关
+        # 多代理协作相关
+        # 支持规划器-生成器-评估器架构
         self._agent_role: AgentRole = AgentRole.GENERATOR
         self._orchestrator: MultiAgentOrchestrator | None = None
         self._context_reset_manager: ContextResetManager | None = None
@@ -522,23 +583,38 @@ class FoxCodeAgent:
         return self._orchestrator
 
     async def initialize(self) -> None:
-        """初始化代理"""
+        """
+        初始化代理
+        
+        初始化流程：
+        1. 创建模型提供者（OpenAI、Anthropic等）
+        2. 加载进度信息（长时间运行模式）
+        3. 初始化MCP工具系统
+        4. 初始化Skill技能系统
+        
+        初始化完成后才能调用chat方法
+        """
+        # 避免重复初始化
         if self._initialized:
             return
 
         try:
-            # 初始化模型提供者
+            # 1. 初始化模型提供者
+            # 根据配置创建对应的API客户端
             self.model_provider = create_model_provider(self.config.model)
             await self.model_provider.initialize()
 
-            # 如果启用长时间运行模式，加载进度信息
+            # 2. 如果启用长时间运行模式，加载进度信息
+            # 用于跨会话保持工作状态
             if self.config.long_running.enable_long_running_mode:
                 await self._load_progress_context()
 
-            # 初始化 MCP 系统
+            # 3. 初始化MCP工具系统
+            # 加载外部工具服务器
             await self._initialize_mcp()
 
-            # 初始化 Skill 系统
+            # 4. 初始化Skill技能系统
+            # 加载自定义技能
             await self._initialize_skills()
 
             self._initialized = True
@@ -949,21 +1025,32 @@ class FoxCodeAgent:
 
     async def chat(self, user_input: str) -> AsyncIterator[str]:
         """
-        处理用户输入并生成响应
+        处理用户输入并生成响应 - 核心对话方法
         
-        实现工具调用循环：当模型输出工具调用时，执行工具并将结果返回给模型
-        支持 Skill 技能触发和 MCP 工具调用
+        这是代理的主要工作方法，实现了完整的对话循环：
+        1. 检查并触发技能
+        2. 调用AI模型生成响应
+        3. 解析工具调用
+        4. 执行工具并返回结果
+        5. 循环直到AI不再调用工具
+        
+        工具调用循环：
+        用户输入 -> AI响应 -> 解析工具 -> 执行工具 -> 工具结果 -> AI响应 -> ...
+        
+        防重复机制：
+        记录已执行的工具调用，避免AI陷入重复调用循环
         
         Args:
-            user_input: 用户输入
+            user_input: 用户输入的文本
             
         Yields:
-            响应文本片段
+            响应文本片段（流式输出）
         """
+        # 确保已初始化
         if not self._initialized:
             await self.initialize()
 
-        # 检查并执行触发的技能
+        # ==================== 1. 检查并执行触发的技能 ====================
         if self._skills_initialized and self._skill_manager:
             skill_results = await self._process_skills(user_input)
             for skill_name, result in skill_results:
@@ -974,16 +1061,18 @@ class FoxCodeAgent:
                 if result.modified_input:
                     user_input = result.modified_input
 
-        # 添加用户消息
+        # 添加用户消息到会话
         self.session.add_user_message(user_input)
 
-        # 清空本次对话的工具执行记录
+        # 清空本次对话的工具执行记录（防重复）
         self._executed_tools.clear()
 
-        # 工具调用循环（无次数限制，通过防重复机制控制）
+        # ==================== 2. 工具调用循环 ====================
+        # AI可能会多次调用工具，直到完成任务
         total_response = ""
 
-        # 用于过滤 XML 工具调用的缓冲区
+        # 用于过滤XML工具调用的缓冲区
+        # 不让用户看到原始的XML工具调用代码
         xml_buffer = ""
         in_xml_tool_call = False
 
@@ -992,25 +1081,26 @@ class FoxCodeAgent:
             full_response = ""
             retry_count = 0
 
+            # 重试循环：处理API限流、超时等临时错误
             while retry_count < MAX_RETRIES:
                 try:
-                    # 流式获取响应
+                    # 流式获取响应（实时输出，不用等全部生成）
                     async for chunk in self.model_provider.stream_chat(
                         self.session.conversation,
                         system_prompt=self._get_system_prompt(),
                     ):
                         full_response += chunk
                         
-                        # 过滤 XML 工具调用内容
-                        # 将 chunk 添加到缓冲区
+                        # 过滤XML工具调用内容
+                        # 将chunk添加到缓冲区
                         xml_buffer += chunk
                         
-                        # 检测是否进入 XML 工具调用模式
+                        # 检测是否进入XML工具调用模式
                         if not in_xml_tool_call:
-                            # 检测 XML 开始标记
+                            # 检测XML开始标记
                             if "<function" in xml_buffer or "```xml" in xml_buffer:
                                 in_xml_tool_call = True
-                                # 输出 XML 标记之前的内容
+                                # 输出XML标记之前的内容
                                 idx = max(
                                     xml_buffer.find("<function") if "<function" in xml_buffer else -1,
                                     xml_buffer.find("```xml") if "```xml" in xml_buffer else -1
@@ -1019,11 +1109,11 @@ class FoxCodeAgent:
                                     yield xml_buffer[:idx]
                                 xml_buffer = xml_buffer[idx:]
                             elif len(xml_buffer) > 100:
-                                # 缓冲区足够长但没有检测到 XML，输出内容
+                                # 缓冲区足够长但没有检测到XML，输出内容
                                 yield xml_buffer
                                 xml_buffer = ""
                         else:
-                            # 在 XML 模式中，检测结束标记
+                            # 在XML模式中，检测结束标记
                             if "</function>" in xml_buffer:
                                 # 找到结束标记，输出之后的内容
                                 idx = xml_buffer.find("</function>") + len("</function>")
@@ -1031,10 +1121,10 @@ class FoxCodeAgent:
                                 in_xml_tool_call = False
                                 xml_buffer = ""
                                 if remaining.strip():
-                                    # 重新处理剩余内容（可能包含新的 XML）
+                                    # 重新处理剩余内容（可能包含新的XML）
                                     xml_buffer = remaining
                             elif "```" in xml_buffer and "```xml" not in xml_buffer:
-                                # 检测 ```xml 代码块结束
+                                # 检测```xml代码块结束
                                 if "```xml" in xml_buffer:
                                     idx = xml_buffer.rfind("```") + 3
                                     remaining = xml_buffer[idx:]
@@ -1057,13 +1147,13 @@ class FoxCodeAgent:
                         )
                         logger.info(f"Waiting {delay:.1f} seconds before retry...")
 
-                        # 极简格式：使用 [info] 标签，不会被 [say] 包裹
+                        # 极简格式：使用[info]标签，不会被[say]包裹
                         yield f"\n[info] 重试中 {delay:.1f}s ({retry_count}/{MAX_RETRIES})...\n"
 
                         await asyncio.sleep(delay)
                         full_response = ""  # 重置响应
-                        xml_buffer = ""  # 重置 XML 缓冲区
-                        in_xml_tool_call = False  # 重置 XML 状态
+                        xml_buffer = ""  # 重置XML缓冲区
+                        in_xml_tool_call = False  # 重置XML状态
                         continue
                     else:
                         # 不可重试或达到最大重试次数
@@ -1071,18 +1161,18 @@ class FoxCodeAgent:
                         yield f"\n[error] {str(e)}\n"
                         return
 
-            # 检查上下文重置
+            # ==================== 3. 检查上下文重置 ====================
             if await self.check_context_reset():
                 yield "\n[info] 上下文已重置，继续...\n"
 
-            # 检测上下文焦虑
+            # 检测上下文焦虑（AI因为上下文过长而想结束任务）
             if self.config.long_running.enable_long_running_mode:
                 is_anxious, anxiety_reason = self.detect_anxiety_in_output(full_response)
                 if is_anxious:
                     logger.warning(f"检测到上下文焦虑: {anxiety_reason}")
                     yield f"\n[warn] 检测到上下文焦虑: {anxiety_reason}\n"
 
-            # 检查是否有工具调用
+            # ==================== 4. 解析工具调用 ====================
             tool_name, tool_params, remaining_text = self._parse_tool_call(full_response)
 
             if tool_name is None:
@@ -1090,7 +1180,7 @@ class FoxCodeAgent:
                 logger.debug("No tool call detected, ending conversation")
                 break
 
-            # 检查是否重复调用
+            # ==================== 5. 检查重复调用 ====================
             tool_key = self._make_tool_key(tool_name, tool_params or {})
             execution_count = self._executed_tools.get(tool_key, 0)
 
@@ -1111,33 +1201,31 @@ class FoxCodeAgent:
                 self.session.add_user_message(repeat_msg)
                 continue
 
-            # 有工具调用，执行工具
+            # ==================== 6. 执行工具 ====================
             logger.info(f"Executing tool: {tool_name}, params: {tool_params}")
 
             # 记录工具调用
             self._executed_tools[tool_key] = execution_count + 1
 
             # 输出工具执行提示（极简格式）
-            # 提取关键参数用于简洁显示
             key_param = self._extract_key_param(tool_name, tool_params)
             yield f"\n[tool] {tool_name} {key_param}\n"
 
-            # 执行工具
             try:
                 result = await self.execute_tool(tool_name, **(tool_params or {}))
 
-                # 跟踪工具调用结果
+                # 跟踪工具调用结果（用于OpenSpace经验总结）
                 self._track_tool_result(tool_name, result)
 
                 # 根据工具类型决定是否输出结果
-                # shell/run 类工具需要输出结果，其他工具不输出
+                # shell/run类工具需要输出结果，其他工具不输出
                 if self._should_output_result(tool_name):
                     if result.success:
                         yield f"[result]\n{result.output}\n[/result]\n"
                     else:
                         yield f"[error] {result.error}\n"
 
-                # 将工具结果添加到对话，使用更清晰的格式
+                # 将工具结果添加到对话
                 tool_result_message = (
                     f"<tool_result>\n"
                     f"<tool_name>{tool_name}</tool_name>\n"
@@ -1169,11 +1257,11 @@ class FoxCodeAgent:
                 yield f"❌ Tool execution exception: {str(e)}\n\n"
                 self.session.add_user_message(error_msg)
 
-        # 计算 token 并保存助手消息
-        # 计算 input_tokens：包括整个对话历史 + system_prompt
+        # ==================== 7. 保存助手消息和统计 ====================
+        # 计算input_tokens：包括整个对话历史 + system_prompt
         input_tokens = self._calculate_conversation_tokens()
 
-        # 计算 output_tokens：使用模型提供者的 token 计数方法
+        # 计算output_tokens：使用模型提供者的token计数方法
         output_tokens = self.model_provider.count_tokens(total_response)
 
         self.session.add_assistant_message(
@@ -1182,7 +1270,7 @@ class FoxCodeAgent:
             output_tokens=output_tokens,
         )
 
-        # 记录 API 使用统计
+        # 记录API使用统计
         stats_manager.record_api_usage(
             model=self.config.model.model_name,
             input_tokens=input_tokens,

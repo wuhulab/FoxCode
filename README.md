@@ -79,7 +79,7 @@ FoxCode 是一个终端 AI 编码助手，使用 Python 编写。它支持多种
 
 ```bash
 # 从源码安装
-git clone https://github.com/foxcode/foxcode.git
+git clone https://github.com/wuhulab/foxcode.git
 cd foxcode
 pip install -e .
 

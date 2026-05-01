@@ -225,22 +225,85 @@ class MinimalismOutputBuffer:
     """
     极简模式输出缓冲器
     
-    用于收集和汇总输出，避免快速刷屏问题：
-    - 编辑文件时显示摘要（最多50字）
-    - 读取文件时显示摘要（最多50字）
-    - 运行命令时完整输出
-    - 其他输出进行缓冲后汇总显示
+    简化输出格式：
+    - [tool] tool_name key_param - 工具调用
+    - [result]...[/result] - 命令结果（仅 shell 类工具）
+    - [error] message - 错误信息
+    - [say] text... - AI 回复文本（只输出一次）
+    - [work_end] - 工作完成
     """
 
-    def __init__(self, max_summary_length: int = 50):
-        self.max_summary_length = max_summary_length
+    # 需要过滤的模式（正则表达式）
+    FILTER_PATTERNS = [
+        r"<function[^>]*>.*?</function>",  # <function>...</function>
+        r"<function[^>]*/>",  # <function ... />
+        r"</?function[^>]*>",  # <function> 或 </function>
+        r"<parameter[^>]*>.*?</parameter>",  # <parameter>...</parameter>
+        r"<parameter[^>]*/>",  # <parameter ... />
+        r"</?parameter[^>]*>",  # <parameter> 或 </parameter>
+        r"</?tool_result[^>]*>",  # <tool_result> 标签
+        r"</?tool_name[^>]*>",  # <tool_name> 标签
+        r"</?success[^>]*>",  # <success> 标签
+        r"</?output[^>]*>",  # <output> 标签
+        r"</?error[^>]*>",  # <error> 标签
+        r"</?hint[^>]*>",  # <hint> 标签
+        r"```xml\s*```",  # 空 xml 代码块
+        r"```xml",  # xml 代码块开始
+        r"```",  # 代码块标记（在 xml 上下文中）
+        r"🔧\s*Executing tool:",  # 工具执行提示
+        r"✅\s*Tool executed",  # 工具执行成功
+        r"❌\s*Tool execution",  # 工具执行失败
+        r"╭─+",  # 特殊字符
+        r"╰─+",  # 特殊字符
+    ]
+
+    def __init__(self):
         self.buffer: list[str] = []
-        self.current_tool: str | None = None
-        self.tool_output: list[str] = []
-        self.in_tool_execution = False
-        self.last_output_time = 0.0
-        self.text_buffer = ""  # 用于缓冲普通文本输出
-        self.text_buffer_size = 100  # 缓冲区大小
+        self.in_result_block = False
+        self.result_buffer: list[str] = []
+        self.text_buffer = ""
+        self.say_printed = False
+        self.text_buffer_size = 30
+        self.in_xml_context = False
+        self.xml_buffer = ""
+
+    def _filter_xml_content(self, text: str) -> str:
+        """
+        过滤 XML 工具调用相关内容
+        
+        使用正则表达式移除所有 XML 标签和相关内容
+        """
+        import re
+        
+        result = text
+        
+        # 先处理完整的 <function>...</function> 块
+        result = re.sub(r'<function[^>]*>.*?</function>', '', result, flags=re.DOTALL)
+        
+        # 处理其他 XML 标签
+        for pattern in self.FILTER_PATTERNS:
+            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+        
+        # 清理多余的空行
+        result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)
+        
+        return result.strip()
+
+    def _contains_xml_tag(self, text: str) -> bool:
+        """检查文本是否包含 XML 工具调用标签"""
+        xml_indicators = [
+            "<function", "</function>",
+            "<parameter", "</parameter>",
+            "```xml",
+            "🔧",
+            "╭─",
+            "╰─",
+        ]
+        text_lower = text.lower()
+        for indicator in xml_indicators:
+            if indicator.lower() in text_lower:
+                return True
+        return False
 
     def add_chunk(self, chunk: str) -> str | None:
         """
@@ -252,177 +315,126 @@ class MinimalismOutputBuffer:
         Returns:
             需要立即显示的内容，如果应该缓冲则返回 None
         """
-        import re
-
-        # 检测工具调用开始
-        if "🔧 Executing tool:" in chunk:
-            self.in_tool_execution = True
-            # 提取工具名
-            match = re.search(r"Executing tool:\s*(\w+)", chunk)
-            if match:
-                self.current_tool = match.group(1)
-            self.tool_output = [chunk]
+        # 处理 [result] 块：完整输出
+        if "[result]" in chunk:
+            self.in_result_block = True
+            self.result_buffer = [chunk]
             return None
-
-        # 检测工具调用结束
-        if self.in_tool_execution:
-            self.tool_output.append(chunk)
-
-            # 检测工具执行结果
-            if "✅ Tool executed successfully" in chunk or "❌" in chunk:
-                self.in_tool_execution = False
-                summary = self._summarize_tool_output()
-                self.current_tool = None
-                self.tool_output = []
-                return summary
-
+        
+        if self.in_result_block:
+            self.result_buffer.append(chunk)
+            if "[/result]" in chunk:
+                self.in_result_block = False
+                result = "".join(self.result_buffer)
+                self.result_buffer = []
+                return result
             return None
-
-        # 普通文本输出：缓冲处理
+        
+        # [tool] 标记：直接输出
+        if chunk.strip().startswith("[tool]"):
+            output = self._flush_text_buffer()
+            self.in_xml_context = True
+            self.xml_buffer = ""
+            return (output + chunk) if output else chunk
+        
+        # [error] 标记：直接输出
+        if chunk.strip().startswith("[error]"):
+            output = self._flush_text_buffer()
+            return (output + chunk) if output else chunk
+        
+        # [info] 标记：直接输出
+        if chunk.strip().startswith("[info]"):
+            output = self._flush_text_buffer()
+            return (output + chunk) if output else chunk
+        
+        # [warn] 标记：直接输出
+        if chunk.strip().startswith("[warn]"):
+            output = self._flush_text_buffer()
+            return (output + chunk) if output else chunk
+        
+        # 检测是否进入 XML 上下文
+        if self._contains_xml_tag(chunk):
+            self.in_xml_context = True
+            self.xml_buffer += chunk
+            return None
+        
+        # 在 XML 上下文中，收集内容直到遇到普通文本
+        if self.in_xml_context:
+            self.xml_buffer += chunk
+            # 检查是否 XML 块结束（遇到明显的非 XML 内容）
+            if chunk.strip() and not self._contains_xml_tag(chunk):
+                # 检查是否是真正的文本内容（不是标签片段）
+                if not chunk.strip().startswith("<") and not chunk.strip().startswith("```"):
+                    self.in_xml_context = False
+                    # 过滤 XML 缓冲区并丢弃
+                    self.xml_buffer = ""
+                    # 将这个普通文本加入缓冲
+                    self.text_buffer += chunk
+            return None
+        
+        # 普通文本：缓冲
         self.text_buffer += chunk
-
-        # 当缓冲区达到一定大小时，返回内容
+        
+        # 当缓冲区达到一定大小时，输出
         if len(self.text_buffer) >= self.text_buffer_size:
-            result = self.text_buffer
-            self.text_buffer = ""
-            return result
-
+            return self._flush_text_buffer()
+        
         return None
+
+    def _flush_text_buffer(self) -> str:
+        """刷新文本缓冲区，只在第一次添加 [say] 前缀"""
+        if not self.text_buffer.strip():
+            self.text_buffer = ""
+            return ""
+        
+        text = self.text_buffer
+        self.text_buffer = ""
+        
+        # 过滤 XML 内容
+        text = self._filter_xml_content(text)
+        
+        if not text.strip():
+            return ""
+        
+        # 只在第一次输出 [say]
+        if not self.say_printed:
+            self.say_printed = True
+            return f"[say] {text}"
+        
+        return text
 
     def flush(self) -> str:
         """刷新缓冲区，返回所有剩余内容"""
         result = ""
-
-        # 刷新文本缓冲区
-        if self.text_buffer:
-            result += self.text_buffer
-            self.text_buffer = ""
-
-        # 刷新工具输出缓冲区
-        if self.in_tool_execution and self.tool_output:
-            summary = self._summarize_tool_output()
-            result += summary
-            self.in_tool_execution = False
-            self.current_tool = None
-            self.tool_output = []
-
-        return result
-
-    def _summarize_tool_output(self) -> str:
-        """
-        汇总工具输出
         
-        根据工具类型生成简洁的摘要
-        """
-        full_output = "".join(self.tool_output)
-
-        # 编辑类工具：显示摘要
-        edit_tools = ["write_file", "edit_file", "search_replace", "create_file"]
-        # 读取类工具：显示摘要
-        read_tools = ["read_file", "search_codebase", "grep", "glob", "ls"]
-        # 运行类工具：完整输出
-        run_tools = ["run_command", "execute_command", "shell"]
-
-        if self.current_tool:
-            tool_lower = self.current_tool.lower()
-
-            # 编辑工具：显示简洁摘要
-            if any(t in tool_lower for t in edit_tools):
-                return self._summarize_edit_operation(full_output)
-
-            # 读取工具：显示简洁摘要
-            if any(t in tool_lower for t in read_tools):
-                return self._summarize_read_operation(full_output)
-
-            # 运行命令：完整输出
-            if any(t in tool_lower for t in run_tools):
-                return self._format_run_output(full_output)
-
-        # 其他工具：显示简洁摘要
-        return self._summarize_generic(full_output)
-
-    def _summarize_edit_operation(self, output: str) -> str:
-        """汇总编辑操作"""
-        import re
-
-        # 提取文件路径
-        path_match = re.search(r"file_path[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
-        if not path_match:
-            path_match = re.search(r"([a-zA-Z]:[\\\\/][\\w\\\\/\\-\\.]+)", output)
-
-        file_path = path_match.group(1) if path_match else "未知文件"
-
-        # 提取操作类型
-        if "✅" in output:
-            status = "✅"
-        elif "❌" in output:
-            status = "❌"
-        else:
-            status = "📝"
-
-        # 简化路径显示
-        if len(file_path) > 40:
-            file_path = "..." + file_path[-37:]
-
-        return f"\n[编辑] {status} {file_path}\n"
-
-    def _summarize_read_operation(self, output: str) -> str:
-        """汇总读取操作"""
-        import re
-
-        # 提取文件路径或搜索关键词
-        path_match = re.search(r"file_path[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
-        if not path_match:
-            path_match = re.search(r"([a-zA-Z]:[\\\\/][\\w\\\\/\\-\\.]+)", output)
-
-        # 提取行数信息
-        lines_match = re.search(r"(\d+)\s*lines?", output)
-
-        file_path = path_match.group(1) if path_match else ""
-
-        # 简化路径显示
-        if file_path and len(file_path) > 40:
-            file_path = "..." + file_path[-37:]
-
-        if "✅" in output:
-            status = "✅"
-            if lines_match:
-                return f"\n[读取] {status} {file_path} ({lines_match.group(1)}行)\n"
-            return f"\n[读取] {status} {file_path}\n"
-        elif "❌" in output:
-            return f"\n[读取] ❌ {file_path} - 失败\n"
-
-        return f"\n[读取] 📄 {file_path}\n"
-
-    def _format_run_output(self, output: str) -> str:
-        """格式化运行命令输出（保持完整）"""
-        # 提取命令
-        import re
-        cmd_match = re.search(r"command[\"']?\s*[:=]\s*[\"']([^\"']+)", output)
-
-        if cmd_match:
-            cmd = cmd_match.group(1)
-            if len(cmd) > 30:
-                cmd = cmd[:27] + "..."
-            return f"\n[运行] $ {cmd}\n{output}"
-
-        return f"\n[运行]\n{output}"
-
-    def _summarize_generic(self, output: str) -> str:
-        """通用摘要"""
-        # 截取前50个字符作为摘要
-        clean_output = output.replace("\n", " ").strip()
-        if len(clean_output) > self.max_summary_length:
-            return f"\n[工具] {clean_output[:self.max_summary_length]}...\n"
-        return f"\n[工具] {clean_output}\n"
+        # 清空 XML 缓冲区（丢弃）
+        if self.xml_buffer:
+            self.xml_buffer = ""
+            self.in_xml_context = False
+        
+        # 刷新文本缓冲区
+        text = self._flush_text_buffer()
+        if text:
+            result = text + "\n"
+        
+        # 刷新结果缓冲区
+        if self.in_result_block and self.result_buffer:
+            result += "".join(self.result_buffer)
+            self.in_result_block = False
+            self.result_buffer = []
+        
+        # 添加工作结束标记
+        result += "[work_end]\n"
+        
+        return result
 
 
 def _adjust_log_level_for_minimalism() -> None:
     """
     根据极简模式调整控制台日志级别
     
-    在极简模式下，将控制台日志级别设置为 WARNING，
-    避免显示 INFO 级别的初始化日志，保持输出简洁
+    在极简模式下，将控制台日志级别设置为 ERROR，
+    避免显示 WARNING 级别的日志，保持输出简洁
     """
     try:
         from foxcode.core.config import Config, OutputTopic
@@ -432,9 +444,9 @@ def _adjust_log_level_for_minimalism() -> None:
         output_topic = file_config.get("output_topic", OutputTopic.DEFAULT)
 
         if output_topic == OutputTopic.MINIMALISM:
-            # 极简模式：只将控制台 handler 的级别设置为 WARNING
+            # 极简模式：将控制台 handler 的级别设置为 ERROR
             # 文件日志保持 INFO 级别，用于调试
-            _stream_handler.setLevel(logging.WARNING)
+            _stream_handler.setLevel(logging.ERROR)
     except Exception:
         # 如果调整失败，不影响程序运行
         pass
@@ -709,7 +721,8 @@ def print_banner(config: Config | None = None) -> None:
     """打印欢迎横幅"""
     # 检查是否为极简模式
     if config and config.output_topic == OutputTopic.MINIMALISM:
-        print("[foxcode: 初始化完毕]")
+        print("[foxcode]")
+        return
 
     # 默认模式：完整横幅
     banner = """
@@ -1146,8 +1159,7 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
 
     # 极简模式输出
     if config and config.output_topic == OutputTopic.MINIMALISM:
-        print(f">>{prompt}")
-        print("[foxcode]", end="")
+        print(f">> {prompt}")
     else:
         console.print(f"\n[bold cyan]用户:[/bold cyan] {prompt}\n")
         console.print("[bold green]FoxCode:[/bold green]")
@@ -1174,14 +1186,14 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
             remaining = output_buffer.flush()
             if remaining:
                 print(remaining, end="")
-            print("\n[end]")
+            print(">>")
         else:
             console.print("\n")
 
     except KeyboardInterrupt:
         logger.warning("单次提示执行被用户中断")
         if config and config.output_topic == OutputTopic.MINIMALISM:
-            print("\n[中断]")
+            print("\n[interrupted]")
         else:
             console.print("\n[yellow]执行被中断[/yellow]")
     except Exception as e:
@@ -1189,7 +1201,7 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
         logger.error(f"单次提示执行失败: {type(e).__name__}: {e}")
         logger.debug(f"完整堆栈:\n{traceback.format_exc()}")
         if config and config.output_topic == OutputTopic.MINIMALISM:
-            print(f"\n[错误] {str(e)}")
+            print(f"\n[error] {str(e)}")
         else:
             console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
 
@@ -1215,7 +1227,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
     except Exception as e:
         logger.error(f"代理初始化失败: {e}")
         if config.output_topic == OutputTopic.MINIMALISM:
-            print(f"[错误] 初始化失败: {str(e)}")
+            print(f"[error] 初始化失败: {str(e)}")
         else:
             console.print(f"[red]初始化失败: {markup.escape(str(e))}[/red]")
         return
@@ -1238,7 +1250,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
 
         # 极简模式：简洁提示符
         if config.output_topic == OutputTopic.MINIMALISM:
-            return f"[FoxCode | 模型:{config.model.model_name}| Token:{total_tokens} | 模式: {config.run_mode.value}]\n>>"
+            return ">>"
 
         return (
             f"[bold cyan]FoxCode[/bold cyan] | "
@@ -1285,10 +1297,8 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                 continue
 
             # 发送到 AI（添加性能监控）
-            # 极简模式：简洁输出
-            if config.output_topic == OutputTopic.MINIMALISM:
-                print("[foxcode]", end="")
-            else:
+            # 极简模式：不需要额外输出，由缓冲器处理
+            if config.output_topic != OutputTopic.MINIMALISM:
                 console.print()
                 console.print("[bold green]FoxCode:[/bold green]")
 
@@ -1320,7 +1330,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                     remaining = output_buffer.flush()
                     if remaining:
                         print(remaining, end="")
-                    print("\n[end]")
+                    print(">>")
                 else:
                     console.print("\n")
 
@@ -1354,7 +1364,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
         except KeyboardInterrupt:
             logger.info("用户按下 Ctrl+C")
             if config.output_topic == OutputTopic.MINIMALISM:
-                print("\n[提示] 使用 /exit 退出")
+                print("\n[info] 使用 /exit 退出")
             else:
                 console.print("\n[yellow]使用 /exit 退出[/yellow]")
             continue
@@ -1367,7 +1377,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             logger.debug(f"错误堆栈:\n{traceback.format_exc()}")
 
             if config.output_topic == OutputTopic.MINIMALISM:
-                print(f"\n[错误] {str(e)}")
+                print(f"\n[error] {str(e)}")
             else:
                 console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
 
@@ -1375,8 +1385,8 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             if consecutive_errors >= max_consecutive_errors:
                 logger.critical(f"连续错误次数达到上限 ({max_consecutive_errors})，可能存在系统性问题")
                 if config.output_topic == OutputTopic.MINIMALISM:
-                    print(f"\n[警告] 连续出现 {max_consecutive_errors} 次错误")
-                    print("[提示] 建议保存会话并重启 FoxCode")
+                    print(f"\n[warn] 连续出现 {max_consecutive_errors} 次错误")
+                    print("[info] 建议保存会话并重启 FoxCode")
                 else:
                     console.print(f"\n[red]连续出现 {max_consecutive_errors} 次错误[/red]")
                     console.print("[yellow]建议保存会话并重启 FoxCode[/yellow]")
@@ -3432,7 +3442,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
 
     except Exception as e:
         if config.output_topic == OutputTopic.MINIMALISM:
-            print(f"[错误] 切换输出模式失败: {str(e)}")
+            print(f"[error] 切换输出模式失败: {str(e)}")
         else:
             console.print(f"[red]切换输出模式失败: {markup.escape(str(e))}[/red]")
 
@@ -3601,7 +3611,7 @@ def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
                 if is_minimalism:
                     print(f"[mcp] 安装成功: {result.message}")
                 else:
-                    console.print("[green]✅ 安装成功![/green]")
+                    console.print("[green]安装成功![/green]")
                     console.print(f"[dim]路径: {result.target_path}[/dim]")
 
                     if result.skills:

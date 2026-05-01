@@ -983,6 +983,10 @@ class FoxCodeAgent:
         # 工具调用循环（无次数限制，通过防重复机制控制）
         total_response = ""
 
+        # 用于过滤 XML 工具调用的缓冲区
+        xml_buffer = ""
+        in_xml_tool_call = False
+
         while True:
             # 获取模型响应
             full_response = ""
@@ -996,7 +1000,48 @@ class FoxCodeAgent:
                         system_prompt=self._get_system_prompt(),
                     ):
                         full_response += chunk
-                        yield chunk
+                        
+                        # 过滤 XML 工具调用内容
+                        # 将 chunk 添加到缓冲区
+                        xml_buffer += chunk
+                        
+                        # 检测是否进入 XML 工具调用模式
+                        if not in_xml_tool_call:
+                            # 检测 XML 开始标记
+                            if "<function" in xml_buffer or "```xml" in xml_buffer:
+                                in_xml_tool_call = True
+                                # 输出 XML 标记之前的内容
+                                idx = max(
+                                    xml_buffer.find("<function") if "<function" in xml_buffer else -1,
+                                    xml_buffer.find("```xml") if "```xml" in xml_buffer else -1
+                                )
+                                if idx > 0:
+                                    yield xml_buffer[:idx]
+                                xml_buffer = xml_buffer[idx:]
+                            elif len(xml_buffer) > 100:
+                                # 缓冲区足够长但没有检测到 XML，输出内容
+                                yield xml_buffer
+                                xml_buffer = ""
+                        else:
+                            # 在 XML 模式中，检测结束标记
+                            if "</function>" in xml_buffer:
+                                # 找到结束标记，输出之后的内容
+                                idx = xml_buffer.find("</function>") + len("</function>")
+                                remaining = xml_buffer[idx:]
+                                in_xml_tool_call = False
+                                xml_buffer = ""
+                                if remaining.strip():
+                                    # 重新处理剩余内容（可能包含新的 XML）
+                                    xml_buffer = remaining
+                            elif "```" in xml_buffer and "```xml" not in xml_buffer:
+                                # 检测 ```xml 代码块结束
+                                if "```xml" in xml_buffer:
+                                    idx = xml_buffer.rfind("```") + 3
+                                    remaining = xml_buffer[idx:]
+                                    in_xml_tool_call = False
+                                    xml_buffer = ""
+                                    if remaining.strip():
+                                        xml_buffer = remaining
 
                     total_response += full_response
                     break  # 成功获取响应，退出重试循环
@@ -1012,28 +1057,30 @@ class FoxCodeAgent:
                         )
                         logger.info(f"Waiting {delay:.1f} seconds before retry...")
 
-                        yield f"\n\n⏳ Request rate limited, retrying in {delay:.1f}s ({retry_count}/{MAX_RETRIES})...\n"
+                        # 极简格式：使用 [info] 标签，不会被 [say] 包裹
+                        yield f"\n[info] 重试中 {delay:.1f}s ({retry_count}/{MAX_RETRIES})...\n"
 
                         await asyncio.sleep(delay)
                         full_response = ""  # 重置响应
+                        xml_buffer = ""  # 重置 XML 缓冲区
+                        in_xml_tool_call = False  # 重置 XML 状态
                         continue
                     else:
                         # 不可重试或达到最大重试次数
                         logger.error(f"Failed to generate response: {e}")
-                        yield f"\n\n❌ Error: {str(e)}"
+                        yield f"\n[error] {str(e)}\n"
                         return
 
             # 检查上下文重置
             if await self.check_context_reset():
-                yield "\n\n⚠️ 上下文已重置，继续工作...\n\n"
+                yield "\n[info] 上下文已重置，继续...\n"
 
             # 检测上下文焦虑
             if self.config.long_running.enable_long_running_mode:
                 is_anxious, anxiety_reason = self.detect_anxiety_in_output(full_response)
                 if is_anxious:
                     logger.warning(f"检测到上下文焦虑: {anxiety_reason}")
-                    yield f"\n\n⚠️ 检测到可能的上下文焦虑: {anxiety_reason}\n"
-                    yield "请继续完成任务，不要过早结束。\n\n"
+                    yield f"\n[warn] 检测到上下文焦虑: {anxiety_reason}\n"
 
             # 检查是否有工具调用
             tool_name, tool_params, remaining_text = self._parse_tool_call(full_response)
@@ -1070,9 +1117,10 @@ class FoxCodeAgent:
             # 记录工具调用
             self._executed_tools[tool_key] = execution_count + 1
 
-            # 输出工具执行提示
-            yield f"\n\n🔧 Executing tool: {tool_name}\n"
-            yield f"   Params: {tool_params}\n\n"
+            # 输出工具执行提示（极简格式）
+            # 提取关键参数用于简洁显示
+            key_param = self._extract_key_param(tool_name, tool_params)
+            yield f"\n[tool] {tool_name} {key_param}\n"
 
             # 执行工具
             try:
@@ -1081,10 +1129,13 @@ class FoxCodeAgent:
                 # 跟踪工具调用结果
                 self._track_tool_result(tool_name, result)
 
-                if result.success:
-                    yield f"✅ Tool executed successfully:\n```\n{result.output}\n```\n\n"
-                else:
-                    yield f"❌ Tool execution failed: {result.error}\n\n"
+                # 根据工具类型决定是否输出结果
+                # shell/run 类工具需要输出结果，其他工具不输出
+                if self._should_output_result(tool_name):
+                    if result.success:
+                        yield f"[result]\n{result.output}\n[/result]\n"
+                    else:
+                        yield f"[error] {result.error}\n"
 
                 # 将工具结果添加到对话，使用更清晰的格式
                 tool_result_message = (
@@ -1435,6 +1486,67 @@ class FoxCodeAgent:
 
         except Exception as e:
             logger.error(f"Failed to save session summary: {e}")
+
+    def _extract_key_param(self, tool_name: str, params: dict | None) -> str:
+        """
+        提取工具的关键参数用于简洁显示
+        
+        Args:
+            tool_name: 工具名称
+            params: 工具参数
+            
+        Returns:
+            关键参数的字符串表示
+        """
+        if not params:
+            return ""
+        
+        # 读取类工具：显示文件路径
+        if tool_name in ["read_file", "read", "cat"]:
+            path = params.get("file_path") or params.get("path") or ""
+            return path if path else ""
+        
+        # 写入类工具：显示文件路径
+        if tool_name in ["write_file", "write", "edit_file", "search_replace"]:
+            path = params.get("file_path") or params.get("path") or ""
+            return path if path else ""
+        
+        # 列表类工具：显示目录路径
+        if tool_name in ["list_directory", "ls", "glob"]:
+            path = params.get("path") or params.get("directory") or ""
+            return path if path else ""
+        
+        # 搜索类工具：显示搜索模式
+        if tool_name in ["grep", "search", "search_codebase"]:
+            pattern = params.get("pattern") or params.get("query") or ""
+            return pattern if pattern else ""
+        
+        # 命令类工具：显示命令
+        if tool_name in ["run_command", "shell", "execute_command"]:
+            cmd = params.get("command") or params.get("cmd") or ""
+            return cmd if cmd else ""
+        
+        # 其他工具：不显示参数
+        return ""
+
+    def _should_output_result(self, tool_name: str) -> bool:
+        """
+        判断工具是否需要输出结果到终端
+        
+        只有 shell/命令类工具需要输出结果，其他工具（读取、编辑等）不需要
+        
+        Args:
+            tool_name: 工具名称
+            
+        Returns:
+            是否需要输出结果
+        """
+        # 需要输出结果的工具
+        output_tools = [
+            "run_command", "shell", "execute_command", "run",
+            "check_command_status", "stop_command",
+        ]
+        return tool_name.lower() in [t.lower() for t in output_tools]
 
     def _track_tool_result(self, tool_name: str, result: ToolResult) -> None:
         """

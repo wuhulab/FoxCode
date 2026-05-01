@@ -1,7 +1,39 @@
 """
-FoxCode AI 模型提供者模块
+FoxCode AI模型提供者模块 - 统一的AI模型接口
 
-支持多种 AI 模型提供者的统一接口
+这个文件是FoxCode与各种AI模型通信的桥梁，负责：
+1. 统一接口：为不同AI模型提供统一的调用方式
+2. 模型适配：适配OpenAI、Anthropic、DeepSeek等不同API
+3. 流式输出：支持实时流式响应
+4. Token计算：计算token消耗用于统计成本
+
+支持的模型提供者：
+- OpenAI: GPT-4、GPT-4o、GPT-3.5等
+- Anthropic: Claude系列
+- DeepSeek: DeepSeek Chat、DeepSeek Coder
+- StepFun: Step系列
+
+使用方式：
+    from foxcode.core.providers import create_model_provider
+    from foxcode.core.config import ModelConfig
+    
+    # 创建模型提供者
+    config = ModelConfig(model_name="gpt-4o")
+    provider = create_model_provider(config)
+    await provider.initialize()
+    
+    # 同步调用
+    response = await provider.chat(conversation, system_prompt="...")
+    
+    # 流式调用
+    async for chunk in provider.stream_chat(conversation):
+        print(chunk, end="")
+
+关键特性：
+- 统一的API接口，无需关心底层差异
+- 自动重试和错误处理
+- 支持流式输出，实时响应
+- 自动计算token消耗
 """
 
 from __future__ import annotations
@@ -20,7 +52,21 @@ logger = logging.getLogger(__name__)
 
 
 class ModelResponse:
-    """模型响应封装"""
+    """
+    模型响应封装 - 统一的响应格式
+    
+    封装AI模型的响应数据，包括：
+    - content: 生成的文本内容
+    - input_tokens: 输入token数
+    - output_tokens: 输出token数
+    - finish_reason: 结束原因（stop、length等）
+    - tool_calls: 工具调用列表
+    
+    使用示例：
+        response = await provider.chat(conversation)
+        print(f"生成内容: {response.content}")
+        print(f"消耗token: {response.total_tokens}")
+    """
 
     def __init__(
         self,
@@ -38,23 +84,65 @@ class ModelResponse:
 
     @property
     def total_tokens(self) -> int:
+        """总token数 = 输入 + 输出"""
         return self.input_tokens + self.output_tokens
 
 
 class BaseModelProvider(abc.ABC):
     """
-    模型提供者基类
+    模型提供者基类 - 所有AI模型接口的父类
     
-    定义所有模型提供者必须实现的接口
+    这是模型提供者的抽象基类，定义了统一的接口：
+    - initialize(): 初始化客户端
+    - chat(): 同步对话
+    - stream_chat(): 流式对话
+    - count_tokens(): 计算token数
+    
+    为什么需要统一接口？
+    1. 不同AI公司的API差异很大
+    2. 统一接口让上层代码不用关心底层差异
+    3. 方便添加新的模型提供者
+    
+    开发新的模型提供者：
+    1. 继承BaseModelProvider
+    2. 实现所有抽象方法
+    3. 在create_model_provider中注册
+    
+    使用示例：
+        class MyProvider(BaseModelProvider):
+            async def initialize(self):
+                self._client = MyClient(self.config.api_key)
+            
+            async def chat(self, conversation, system_prompt=None):
+                # 调用API
+                response = await self._client.chat(...)
+                return ModelResponse(content=response.text)
     """
 
     def __init__(self, config: ModelConfig):
+        """
+        初始化模型提供者
+        
+        Args:
+            config: 模型配置，包含API密钥、模型名称等
+        """
         self.config = config
-        self._client: Any = None
+        self._client: Any = None  # 具体的API客户端
 
     @abc.abstractmethod
     async def initialize(self) -> None:
-        """初始化模型客户端"""
+        """
+        初始化模型客户端 - 子类必须实现
+        
+        初始化流程：
+        1. 获取API密钥
+        2. 创建API客户端
+        3. 验证连接
+        
+        异常：
+        - ImportError: 未安装对应的SDK
+        - AuthenticationError: API密钥无效
+        """
         pass
 
     @abc.abstractmethod
@@ -64,14 +152,17 @@ class BaseModelProvider(abc.ABC):
         system_prompt: str | None = None,
     ) -> ModelResponse:
         """
-        发送聊天请求
+        发送聊天请求（同步模式） - 子类必须实现
+        
+        同步模式：等待AI完全生成响应后返回
+        适用场景：需要完整响应的场景
         
         Args:
-            conversation: 对话历史
-            system_prompt: 系统提示词
+            conversation: 对话历史，包含所有消息
+            system_prompt: 系统提示词，定义AI的角色和行为
             
         Returns:
-            模型响应
+            ModelResponse: 包含生成内容和token统计
         """
         pass
 
@@ -82,27 +173,40 @@ class BaseModelProvider(abc.ABC):
         system_prompt: str | None = None,
     ) -> AsyncIterator[str]:
         """
-        流式聊天请求
+        流式聊天请求 - 子类必须实现
+        
+        流式模式：实时返回生成的内容片段
+        适用场景：需要实时反馈的场景（推荐）
+        
+        为什么推荐流式？
+        1. 用户体验好，不用等待
+        2. 可以提前显示内容
+        3. 减少超时风险
         
         Args:
             conversation: 对话历史
             system_prompt: 系统提示词
             
         Yields:
-            响应文本片段
+            响应文本片段（逐字返回）
         """
         pass
 
     @abc.abstractmethod
     def count_tokens(self, text: str) -> int:
         """
-        计算 token 数量
+        计算token数量 - 子类必须实现
+        
+        不同模型的token计算方式不同：
+        - OpenAI: 使用tiktoken库
+        - Anthropic: 使用官方tokenizer
+        - 其他: 使用近似估算
         
         Args:
             text: 要计算的文本
             
         Returns:
-            token 数量
+            token数量
         """
         pass
 

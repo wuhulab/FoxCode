@@ -254,64 +254,119 @@ pre-commit run --all-files
 src/foxcode/
 ├── __init__.py              # 包入口
 ├── cli.py                   # CLI 入口
-│   ├── core/                    # 核心模块
-│   │   ├── agent.py             # AI 代理
-│   │   ├── config.py            # 配置管理
-│   │   ├── config_validator.py  # 配置验证
-│   │   ├── message.py           # 消息类型
-│   │   ├── providers.py         # 模型提供者
-│   │   ├── session.py           # 会话管理
-│   │   ├── session_encryption.py # 会话加密
-│   │   ├── tasks.py             # 任务管理
-│   │   ├── workflow.py          # 工作流程
-│   │   ├── skill.py             # 技能系统
-│   │   ├── mcp.py               # MCP 协议
-│   │   ├── sandbox.py           # 安全沙箱
-│   │   ├── security_filter.py   # 安全过滤
-│   │   ├── sensitive_masker.py  # 敏感信息屏蔽
-│   │   ├── company_mode.py      # 公司模式
-│   │   ├── company_mode_config.py # 公司模式配置
-│   │   ├── qqbot_service.py     # QQbot 服务
-│   │   ├── progress.py          # 进度管理
-│   │   ├── feature_list.py      # 功能列表
-│   │   ├── context_bridge.py    # 上下文桥接
-│   │   ├── context_reset.py     # 上下文重置
-│   │   ├── handoff.py           # 代理切换
-│   │   ├── evaluator.py         # 评估器
-│   │   ├── orchestrator.py      # 编排器
-│   │   ├── statistics.py        # 统计信息
-│   │   ├── encoding.py          # 编码处理
-│   │   ├── command_manager.py   # 命令管理
-│   │   ├── init_script.py       # 初始化脚本
-│   │   │
-│   │   │── 高级功能模块 (v2.0 新增) ──│
-│   │   ├── semantic_index.py    # 语义代码索引
-│   │   ├── knowledge_base.py    # 知识库管理
-│   │   ├── context_compressor.py # 上下文压缩
-│   │   ├── task_planner.py      # 智能任务规划
-│   │   ├── project_analyzer.py  # 项目结构分析
-│   │   ├── error_analyzer.py    # 错误分析
-│   │   ├── advanced_debugger.py # 高级调试器
-│   │   ├── performance_analyzer.py # 性能分析
-│   │   ├── security_scanner.py  # 安全扫描
-│   │   ├── code_formatter.py    # 代码格式化
-│   │   ├── refactoring_suggester.py # 重构建议
-│   │   ├── dependency_resolver.py # 依赖解析
-│   │   ├── test_generator.py    # 测试生成
-│   │   ├── doc_generator.py     # 文档生成
-│   │   ├── git_advanced_ops.py  # Git 高级操作
-│   │   ├── multimodal_processor.py # 多模态处理
-│   │   └── enhanced_tools.py    # 增强工具集成
-│   ├── tools/                   # 工具模块
-│   │   ├── base.py              # 工具基类
-│   │   ├── file_tools.py        # 文件操作
-│   │   ├── shell_tools.py       # Shell 执行
-│   │   ├── code_tools.py        # 代码分析
-│   │   ├── mcp_tools.py         # MCP 工具
-│   │   └── playwright_tools.py  # Playwright 工具
-│   └── tui/                     # TUI 界面
+│
+├── core/                    # 核心模块
+│   ├── __init__.py
+│   ├── agent.py             # AI 代理
+│   ├── config.py            # 配置管理
+│   ├── config_validator.py  # 配置验证
+│   ├── providers.py         # 模型提供者
+│   ├── session.py           # 会话管理
+│   ├── session_encryption.py # 会话加密
+│   ├── tasks.py             # 任务管理
+│   ├── workflow.py          # 工作流程
+│   ├── skill.py             # 技能系统
+│   ├── sandbox.py           # 安全沙箱
+│   ├── sensitive_masker.py  # 敏感信息屏蔽
+│   ├── progress.py          # 进度管理
+│   ├── feature_list.py      # 功能列表
+│   ├── handoff.py           # 代理切换
+│   ├── evaluator.py         # 评估器
+│   ├── orchestrator.py      # 编排器
+│   ├── command_manager.py   # 命令管理
+│   ├── init_script.py       # 初始化脚本
+│   ├── hooks.py             # 钩子管理
+│   ├── work_mode.py         # 工作模式
+│   ├── work_mode_config.py  # 工作模式配置
+│   ├── open_space.py        # 开放空间
+│   ├── process_watchdog.py  # 进程监控
+│   ├── updater.py           # 更新器
+│   │
+│   │── 高级功能模块 ──
+│   ├── semantic_index.py    # 语义代码索引
+│   ├── knowledge_base.py    # 知识库管理
+│   ├── task_planner.py      # 智能任务规划
+│   ├── project_analyzer.py  # 项目结构分析
+│   ├── error_analyzer.py    # 错误分析
+│   ├── advanced_debugger.py # 高级调试器
+│   ├── performance_analyzer.py # 性能分析
+│   ├── security_scanner.py  # 安全扫描
+│   ├── code_formatter.py    # 代码格式化
+│   ├── refactoring_suggester.py # 重构建议
+│   ├── dependency_resolver.py # 依赖解析
+│   ├── test_generator.py    # 测试生成
+│   ├── doc_generator.py     # 文档生成
+│   ├── git_advanced_ops.py  # Git 高级操作
+│   ├── multimodal_processor.py # 多模态处理
+│   ├── enhanced_tools.py    # 增强工具集成
+│   │
+│   └── hooks/               # 钩子模块
 │       ├── __init__.py
-│       └── app.py               # 终端应用
+│       ├── base.py          # 钩子基类
+│       ├── app_hooks.py     # 应用钩子
+│       ├── command_hooks.py # 命令钩子
+│       ├── config_hooks.py  # 配置钩子
+│       ├── service_hooks.py # 服务钩子
+│       ├── session_hooks.py # 会话钩子
+│       ├── skill_hooks.py   # 技能钩子
+│       ├── tool_hooks.py    # 工具钩子
+│       └── work_mode_hooks.py # 工作模式钩子
+│
+├── commands/                # 命令模块
+│   ├── __init__.py
+│   ├── command.py           # 命令基类
+│   ├── help.py              # 帮助命令
+│   ├── prompt.py            # 提示命令
+│   └── tool.py              # 工具命令
+│
+├── tools/                   # 工具模块
+│   ├── __init__.py
+│   ├── base.py              # 工具基类
+│   ├── ai_tools.py          # AI 工具
+│   ├── file_tools.py        # 文件操作
+│   ├── shell_tools.py       # Shell 执行
+│   ├── code_tools.py        # 代码分析
+│   ├── mcp_tools.py         # MCP 工具
+│   └── playwright_tools.py  # Playwright 工具
+│
+├── services/                # 服务模块
+│   ├── __init__.py
+│   ├── mcp.py               # MCP 协议
+│   ├── mcp_installer.py     # MCP 安装器
+│   └── api/                 # API 客户端
+│       ├── client.py        # API 客户端
+│       └── unified_client.py # 统一客户端
+│
+├── context/                 # 上下文模块
+│   ├── __init__.py
+│   ├── context_bridge.py    # 上下文桥接
+│   ├── context_compressor.py # 上下文压缩
+│   └── context_reset.py     # 上下文重置
+│
+├── tui/                     # TUI 界面
+│   ├── __init__.py
+│   └── app.py               # 终端应用
+│
+├── types/                   # 类型定义
+│   ├── __init__.py
+│   └── message.py           # 消息类型
+│
+├── utils/                   # 工具函数
+│   ├── __init__.py
+│   ├── encoding.py          # 编码处理
+│   └── statistics.py        # 统计信息
+│
+├── hooks/                   # 全局钩子
+│   └── __init__.py
+│
+├── constants/               # 常量定义
+│   └── __init__.py
+│
+├── components/              # 组件模块
+│   └── __init__.py
+│
+└── screens/                 # 屏幕模块
+    └── __init__.py
 ```
 
 ### 环境变量

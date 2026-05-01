@@ -1,8 +1,32 @@
 """
-FoxCode 多代理协调器模块
+FoxCode 多代理协调器模块 - 规划器-生成器-评估器协作系统
 
-实现规划器-生成器-评估器三代理协作模式。
-支持代理角色切换、任务分配、结果收集和代理间通信。
+这个文件实现了FoxCode的多代理协作模式，通过三个专业代理协作完成复杂任务：
+1. 规划器（PLANNER）：分解任务、制定计划、生成验收标准
+2. 生成器（GENERATOR）：执行具体编码任务、实现功能
+3. 评估器（EVALUATOR）：独立评估工作质量、提供反馈
+
+为什么需要多代理协作？
+1. 单个AI容易陷入局部最优
+2. 不同角色专注不同任务，提高质量
+3. 评估器独立审查，减少错误
+4. 模拟人类团队的协作模式
+
+工作流程：
+用户需求 -> 规划器分解任务 -> 生成器执行 -> 评估器评估 -> 反馈修订 -> 完成
+
+使用方式：
+    from foxcode.core.orchestrator import MultiAgentOrchestrator
+    
+    orchestrator = MultiAgentOrchestrator(config)
+    result = await orchestrator.execute_workflow(user_request)
+
+关键特性：
+- 自动任务分解和分配
+- 独立质量评估
+- 迭代修订机制
+- 代理间通信和协作
+- 上下文管理和重置
 """
 
 from __future__ import annotations

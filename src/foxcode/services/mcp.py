@@ -1,15 +1,46 @@
 """
-FoxCode MCP (Model Context Protocol) 模块
+FoxCode MCP服务模块 - Model Context Protocol实现
 
-实现 MCP 协议，支持与外部工具和资源服务器通信
-MCP 是一个标准化的协议，用于 AI 模型与外部工具之间的通信
+这个文件实现了MCP协议，允许FoxCode与外部工具服务器通信：
+1. 工具发现：自动发现MCP服务器提供的工具
+2. 工具调用：通过MCP协议调用外部工具
+3. 资源访问：访问MCP服务器提供的资源
 
-安全说明：
-- MCP 服务器命令需要验证，防止命令注入
-- 使用白名单机制限制可执行的命令
-- 对命令参数进行严格验证
+什么是MCP？
+MCP (Model Context Protocol) 是一个标准化的协议，用于AI模型与外部工具之间的通信。
+类似于语言服务器协议（LSP），但专注于工具和资源访问。
 
-参考: https://modelcontextprotocol.io/
+MCP的优势：
+1. 标准化：统一的工具接口，无需为每个工具写适配器
+2. 可扩展：可以轻松添加新的工具服务器
+3. 安全：通过白名单和验证机制保护系统安全
+4. 灵活：支持多种编程语言实现的工具服务器
+
+安全机制：
+- 命令白名单：只允许预定义的安全命令
+- 参数验证：检查参数中是否包含危险模式
+- 进程隔离：MCP服务器在独立进程中运行
+- 权限控制：限制文件系统和网络访问
+
+使用方式：
+    from foxcode.services.mcp import MCPManager
+    
+    manager = MCPManager(config)
+    await manager.initialize()
+    
+    # 列出可用工具
+    tools = await manager.list_tools()
+    
+    # 调用工具
+    result = await manager.call_tool("tool_name", params)
+
+支持的MCP服务器：
+- 文件系统服务器：提供文件访问能力
+- 数据库服务器：提供数据库查询能力
+- Web服务器：提供网页抓取能力
+- 自定义服务器：用户自己开发的服务器
+
+参考文档: https://modelcontextprotocol.io/
 """
 
 from __future__ import annotations

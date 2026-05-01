@@ -212,17 +212,50 @@ class BaseModelProvider(abc.ABC):
 
 
 class OpenAIProvider(BaseModelProvider):
-    """OpenAI 模型提供者"""
+    """
+    OpenAI模型提供者 - 支持GPT系列模型
+    
+    支持的模型：
+    - GPT-4o: 最新旗舰模型，性价比高
+    - GPT-4 Turbo: 性能强劲
+    - GPT-3.5 Turbo: 快速且便宜
+    
+    特性：
+    - 支持流式输出
+    - 支持自定义base_url（兼容第三方API）
+    - 自动token计算（使用tiktoken）
+    
+    使用示例：
+        config = ModelConfig(model_name="gpt-4o", api_key="sk-...")
+        provider = OpenAIProvider(config)
+        await provider.initialize()
+        
+        async for chunk in provider.stream_chat(conversation):
+            print(chunk, end="")
+    """
 
     async def initialize(self) -> None:
-        """初始化 OpenAI 客户端"""
+        """
+        初始化OpenAI客户端
+        
+        初始化流程：
+        1. 检查openai库是否安装
+        2. 获取API密钥
+        3. 创建AsyncOpenAI客户端
+        
+        异常：
+        - ImportError: 未安装openai库
+        """
         try:
             from openai import AsyncOpenAI
 
+            # 获取有效的API密钥
             api_key = self.config.get_effective_api_key()
+            
+            # 创建异步客户端
             self._client = AsyncOpenAI(
                 api_key=api_key,
-                base_url=self.config.base_url,
+                base_url=self.config.base_url,  # 支持自定义API地址
                 timeout=self.config.timeout,
             )
             logger.info("OpenAI 客户端初始化成功")

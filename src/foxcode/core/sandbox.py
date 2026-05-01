@@ -1,13 +1,39 @@
 """
-FoxCode 安全沙箱模块
+FoxCode 安全沙箱模块 - 保护系统安全的命令执行限制
 
-提供命令执行的安全限制，包括：
-- 目录穿透防护
-- 系统命令黑名单
-- 白名单模式
-- 安全审计日志
-- 编码绕过检测
-- 符号链接检查
+这个文件是FoxCode的安全守门员，负责：
+1. 命令过滤：阻止危险的系统命令
+2. 路径保护：防止目录穿越攻击
+3. 编码检测：识别各种编码绕过尝试
+4. 审计日志：记录所有安全事件
+
+为什么需要沙箱？
+AI可能会执行危险的命令（如rm -rf /），沙箱可以：
+1. 保护系统关键文件
+2. 防止误操作导致数据丢失
+3. 限制AI的权限范围
+4. 提供安全审计能力
+
+安全防护措施：
+- 黑名单模式：阻止已知的危险命令
+- 白名单模式：只允许安全的命令
+- 编码绕过检测：识别URL编码、Unicode等绕过尝试
+- 符号链接检查：防止通过符号链接访问受限文件
+
+使用方式：
+    from foxcode.core.sandbox import Sandbox
+    
+    sandbox = Sandbox(config)
+    result = sandbox.validate_command("rm -rf /")
+    
+    if not result.allowed:
+        print(f"命令被拦截: {result.error_message}")
+
+危险命令示例（会被拦截）：
+- rm -rf /: 删除整个系统
+- dd if=/dev/zero of=/dev/sda: 覆盖磁盘
+- :(){ :|:& };:: Fork炸弹
+- chmod -R 777 /: 危险权限设置
 """
 
 from __future__ import annotations
@@ -27,10 +53,24 @@ logger = logging.getLogger(__name__)
 
 
 class SandboxMode(str, Enum):
-    """沙箱模式"""
-    DISABLED = "disabled"       # 禁用沙箱
-    BLACKLIST = "blacklist"     # 黑名单模式（默认，阻止危险命令）
-    WHITELIST = "whitelist"     # 白名单模式（只允许白名单命令）
+    """
+    沙箱模式 - 控制命令执行的严格程度
+    
+    三种模式：
+    - DISABLED: 禁用沙箱，允许所有命令（危险，仅测试用）
+    - BLACKLIST: 黑名单模式，阻止已知的危险命令（默认）
+    - WHITELIST: 白名单模式，只允许预定义的安全命令（最安全）
+    
+    安全级别：WHITELIST > BLACKLIST > DISABLED
+    
+    使用建议：
+    - 生产环境：使用WHITELIST模式
+    - 开发环境：使用BLACKLIST模式
+    - 测试环境：可以使用DISABLED模式（谨慎）
+    """
+    DISABLED = "disabled"       # 禁用沙箱：允许所有命令（危险）
+    BLACKLIST = "blacklist"     # 黑名单模式：阻止危险命令（默认）
+    WHITELIST = "whitelist"     # 白名单模式：只允许安全命令
 
 
 @dataclass
@@ -65,32 +105,51 @@ class SandboxResult:
 
 class EncodingBypassDetector:
     """
-    编码绕过检测器
+    编码绕过检测器 - 识别各种编码绕过安全检查的尝试
     
-    检测各种编码方式绕过安全检查的尝试
+    为什么需要检测编码绕过？
+    攻击者可能使用各种编码方式绕过安全检查：
+    - URL编码：%2e%2e%2f 代替 ../
+    - 双重编码：%252e%252e 代替 ..
+    - Unicode编码：使用全角字符、相似字符
+    - HTML实体：&#46; 代替 .
+    
+    检测策略：
+    1. 正则匹配已知的编码模式
+    2. URL解码后检查
+    3. Unicode同形字符检查
+    
+    使用示例：
+        detector = EncodingBypassDetector()
+        issues = detector.detect_encoding_bypass("%2e%2e%2f")
+        if issues:
+            print(f"检测到编码绕过: {issues}")
     """
 
+    # 已知的编码绕过模式（正则表达式）
     ENCODING_PATTERNS = [
-        (r'%2e%2e[%2f%5c]', 'URL编码路径穿越'),
-        (r'%252e%252e', '双重URL编码路径穿越'),
-        (r'\\x2e\\x2e', '十六进制编码路径穿越'),
-        (r'\.\.%00', '空字节注入'),
-        (r'%c0%ae', 'UTF-8编码绕过'),
+        (r'%2e%2e[%2f%5c]', 'URL编码路径穿越'),  # %2e = .
+        (r'%252e%252e', '双重URL编码路径穿越'),  # 双重编码
+        (r'\\x2e\\x2e', '十六进制编码路径穿越'),  # \x2e = .
+        (r'\.\.%00', '空字节注入'),  # 空字节截断
+        (r'%c0%ae', 'UTF-8编码绕过'),  # UTF-8编码的.
         (r'%c1%9c', 'UTF-8编码绕过'),
-        (r'\\u002e\\u002e', 'Unicode转义路径穿越'),
-        (r'&#46;&#46;', 'HTML实体编码路径穿越'),
+        (r'\\u002e\\u002e', 'Unicode转义路径穿越'),  # \u002e = .
+        (r'&#46;&#46;', 'HTML实体编码路径穿越'),  # &#46; = .
         (r'&#x2e;&#x2e;', 'HTML十六进制实体编码'),
-        (r'%uff0e%uff0e', '宽字符编码绕过'),
+        (r'%uff0e%uff0e', '宽字符编码绕过'),  # 全角字符
         (r'\uff0e\uff0e', '全角字符绕过'),
     ]
 
+    # Unicode同形字符映射
+    # 攻击者可能用这些字符替代正常字符
     UNICODE_CONFUSABLES = {
-        '.': ['\u002e', '\uff0e', '\u2024', '\ufe52', '\uff61'],
-        '/': ['\u002f', '\uff0f', '\u2044', '\u2215', '\u29f8'],
-        '\\': ['\u005c', '\uff3c', '\u2216', '\u29f5', '\u29f9'],
+        '.': ['\u002e', '\uff0e', '\u2024', '\ufe52', '\uff61'],  # 各种形式的点
+        '/': ['\u002f', '\uff0f', '\u2044', '\u2215', '\u29f8'],  # 各种形式的斜杠
+        '\\': ['\u005c', '\uff3c', '\u2216', '\u29f5', '\u29f9'],  # 各种形式的反斜杠
         '-': ['\u002d', '\uff0d', '\u2010', '\u2011', '\u2012', '\u2013', '\u2212'],
-        'r': ['\u0072', '\uff52', '\u0280', '\u1d07'],
-        'm': ['\u006d', '\uff4d', '\u217f'],
+        'r': ['\u0072', '\uff52', '\u0280', '\u1d07'],  # rm命令中的r
+        'm': ['\u006d', '\uff4d', '\u217f'],  # rm命令中的m
     }
 
     def __init__(self):

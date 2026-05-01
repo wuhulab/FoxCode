@@ -1,10 +1,42 @@
 """
-FoxCode 工作流程管理模块
+FoxCode 工作流程管理模块 - 标准化的开发流程管理
 
-定义长期工作模式下的标准工作流程：
-设计规划 -> 编码 -> 完整测试 -> 拉取主分支合并 -> 测试 -> 推送分支
+这个文件定义了FoxCode在长时间运行模式下的标准工作流程：
+设计规划 -> 编码实现 -> 质量评估 -> 本地测试 -> 合并主分支 -> 集成测试 -> 推送分支
 
-支持工作流程的状态追踪、阶段转换和自动化操作
+为什么需要标准化工作流程？
+1. 保证代码质量：每个阶段都有明确的目标和验收标准
+2. 减少错误：测试和评估阶段可以及时发现问题
+3. 提高效率：自动化流程减少人工干预
+4. 可追溯性：记录每个阶段的状态和结果
+
+工作流程阶段：
+1. DESIGN: 设计规划 - 分析需求、设计方案
+2. CODING: 编码实现 - 编写代码、实现功能
+3. EVALUATION: 质量评估 - 代码审查、质量检查
+4. LOCAL_TEST: 本地测试 - 运行测试用例
+5. MERGE_MAIN: 合并主分支 - 拉取并合并最新代码
+6. INTEGRATION_TEST: 集成测试 - 测试整体功能
+7. PUSH: 推送分支 - 推送到远程仓库
+8. COMPLETED: 完成 - 工作流程结束
+
+使用方式：
+    from foxcode.core.workflow import WorkflowManager
+    
+    manager = WorkflowManager(config)
+    workflow = manager.create_workflow("实现用户登录功能")
+    
+    # 推进工作流程
+    await manager.advance_phase(workflow.id)
+    
+    # 获取当前状态
+    status = manager.get_status(workflow.id)
+
+关键特性：
+- 自动化阶段转换
+- 状态持久化
+- 失败重试机制
+- 进度可视化
 """
 
 from __future__ import annotations

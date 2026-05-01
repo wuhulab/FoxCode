@@ -1,7 +1,38 @@
 """
-FoxCode 代码分析工具
+FoxCode 代码分析工具 - 代码搜索和分析功能
 
-提供代码搜索、分析等功能
+这个文件提供代码相关的工具：
+1. GrepTool: 正则表达式搜索代码内容
+2. GlobTool: 文件模式匹配查找文件
+3. 其他代码分析工具
+
+工具用途：
+- 快速搜索代码中的关键字、函数名、类名
+- 查找特定模式的代码（如TODO、FIXME）
+- 分析代码结构和依赖关系
+
+使用方式：
+    # 这些工具通过agent自动调用
+    # AI会根据需要选择合适的工具
+    
+    # 例如搜索代码：
+    # <function=grep>
+    # <parameter=pattern>def.*login</parameter>
+    # <parameter=path>src/</parameter>
+    # </function>
+
+关键工具：
+- GrepTool: 强大的正则搜索工具
+  - 支持正则表达式
+  - 支持大小写敏感/不敏感
+  - 支持上下文显示
+  - 支持多种输出模式
+
+搜索技巧：
+- 查找函数定义: pattern="def function_name"
+- 查找类定义: pattern="class ClassName"
+- 查找TODO: pattern="TODO|FIXME"
+- 查找导入: pattern="import|from"
 """
 
 from __future__ import annotations
@@ -27,7 +58,37 @@ logger = logging.getLogger(__name__)
 
 @tool
 class GrepTool(BaseTool):
-    """Search in code"""
+    """
+    Grep工具 - 强大的代码搜索工具
+    
+    使用正则表达式在文件中搜索内容，类似于Unix的grep命令。
+    
+    功能特点：
+    - 支持正则表达式搜索
+    - 支持大小写敏感/不敏感
+    - 支持文件模式过滤（glob）
+    - 支持多种输出模式
+    - 支持上下文显示
+    
+    输出模式：
+    - content: 显示匹配的行内容
+    - files_with_matches: 只显示文件名
+    - count: 显示匹配次数
+    
+    使用示例：
+        # 搜索函数定义
+        <function=grep>
+        <parameter=pattern>def.*login</parameter>
+        <parameter=path>src/</parameter>
+        <parameter=output_mode>content</parameter>
+        </function>
+        
+        # 搜索TODO（忽略大小写）
+        <function=grep>
+        <parameter=pattern>todo|fixme</parameter>
+        <parameter=ignore_case>true</parameter>
+        </function>
+    """
 
     name = "grep"
     description = "Search content in files using regex"

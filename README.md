@@ -30,12 +30,6 @@
 
 我们计划在5月份发放赞助商api站点，参与有用贡献都会获得积分以奖励贡献者。
 
-### QFA
-
-如果你觉得终端内容太多了，怎么启用终端极简模式：
-
-/topic minimalism 
-
 ### 我的文档
 
 1. 更新 pyproject.toml 中的版本号
@@ -232,20 +226,7 @@ FoxCode 提供了标准化的开发工作流程：
 pip install -e ".[dev]"
 
 # 运行测试
-pytest
-
-# 代码检查
-ruff check src/
-
-# 类型检查
-mypy src/
-
-# 格式化代码
-black src/
-isort src/
-
-# 运行所有检查
-pre-commit run --all-files
+foxcode
 ```
 
 ### 项目结构
@@ -380,37 +361,32 @@ src/foxcode/
 | `FOXCODE_DEBUG` | 启用调试模式 |
 | `FOXCODE_LOG_LEVEL` | 日志级别 |
 
-### 常见问题
+### QFA
 
-**Q: 如何使用本地模型？**
+Q: 如果你觉得终端内容太多了，怎么启用终端极简模式：
+
+/topic minimalism 
+
+Q: 如何使用本地模型？
 
 ```bash
 foxcode --model local --base-url http://localhost:8000/v1
 ```
 
-**Q: 如何查看 Token 使用情况？**
+Q: 如何查看 Token 使用情况？
 
 在交互式会话中使用 `/token` 命令。
 
-**Q: 如何启用调试模式？**
+Q: 如何启用调试模式？
 
 ```bash
 foxcode --debug
 ```
 
-**Q: 配置文件放在哪里？**
+Q: 配置文件放在哪里？
 
 项目级配置放在项目根目录的 `.foxcode.toml`，用户级配置放在 `~/.foxcode/config.toml`。
 
-### 贡献
-
-欢迎贡献代码，用于修复bug或添加新功能！
-
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add some amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
 
 ### License
 

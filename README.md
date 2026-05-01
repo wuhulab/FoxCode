@@ -29,7 +29,13 @@
 
 ### QFA
 怎么启用终端极简模式：
+
 /topic minimalism 
+
+### 我的文档
+1. 更新 pyproject.toml 中的版本号为 0.1.5
+2. 更新 __init__.py 中的版本号为 0.1.5
+3. gh release create v0.1.5 --title "v0.1.5" --notes "Release notes here"
 
 ### News
 

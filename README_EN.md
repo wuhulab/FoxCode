@@ -1,6 +1,6 @@
 # FoxCode | English
 
-[简体中文](README.md)[English](README_EN.md)
+[简体中文](README.md) | [English](README_EN.md)
 
 **Warning: The English document is lacking in maintenance. Please refer to the simplified Chinese version for the latest maintained version.**
 

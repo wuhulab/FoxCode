@@ -1,14 +1,21 @@
 """
-FoxCode 版本更新模块
+FoxCode 版本更新模块 - 检查和执行版本更新
 
-处理版本检查、GitHub releases 获取和自动更新功能。
-支持从 GitHub releases 拉取最新版本并对比本地版本。
+这个文件处理 FoxCode 的版本更新:
+1. 版本检查：从 GitHub Releases 获取最新版本号
+2. 版本比较：语义化版本对比（major.minor.patch）
+3. 更新下载：自动下载更新包
+4. 更新安装：支持增量更新和完整更新
+5. 后台检查：不阻塞主程序的后台更新检查
 
-功能：
-- 从 GitHub API 获取最新 releases
-- 版本号比较（语义化版本）
-- 自动下载更新包
-- 支持增量更新和完整更新
+更新状态流转:
+UP_TO_DATE -> UPDATE_AVAILABLE -> DOWNLOADING -> INSTALLING -> SUCCESS / FAILED
+
+使用方式:
+    from foxcode.core.updater import start_background_update_check
+
+    # 启动后台更新检查
+    start_background_update_check(on_complete=show_update_prompt)
 """
 
 from __future__ import annotations

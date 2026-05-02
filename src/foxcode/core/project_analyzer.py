@@ -1,7 +1,22 @@
 """
-FoxCode 项目分析器模块
+FoxCode 项目分析器模块 - 项目结构分析、技术栈识别和代码质量评分
 
-提供项目结构分析、技术栈识别、依赖关系解析和代码质量评分功能。
+这个文件提供项目级别的分析功能:
+1. 项目结构分析：分析目录结构、模块划分
+2. 技术栈识别：识别使用的编程语言、框架、工具
+3. 依赖关系解析：解析项目依赖和版本
+4. 代码质量评分：评估代码质量并给出评分
+
+项目类型:
+- PYTHON / JAVASCRIPT / TYPESCRIPT / JAVA / GO / RUST / CPP 等
+
+使用方式:
+    from foxcode.core.project_analyzer import ProjectAnalyzer
+
+    analyzer = ProjectAnalyzer(working_dir=Path("."))
+    report = analyzer.analyze()
+    print(f"技术栈: {report.tech_stack}")
+    print(f"质量评分: {report.quality_score}")
 """
 
 from __future__ import annotations

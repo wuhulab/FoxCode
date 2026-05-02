@@ -1,13 +1,25 @@
 """
-FoxCode 依赖关系解析器
+FoxCode 依赖关系解析器 - 多语言依赖分析和冲突检测
 
-提供多语言依赖解析、版本冲突检测和过时依赖检测功能。
+这个文件提供多语言依赖解析功能:
+1. Python 依赖解析：解析 requirements.txt / pyproject.toml
+2. Node.js 依赖解析：解析 package.json
+3. 版本冲突检测：发现不兼容的依赖版本
+4. 过时依赖检测：识别需要更新的依赖
 
-主要功能：
-- Python 依赖解析 (requirements.txt, pyproject.toml)
-- Node.js 依赖解析 (package.json)
-- 依赖版本冲突检测
-- 过时依赖检测
+依赖类型:
+- PRODUCTION: 生产依赖（运行时必需）
+- DEVELOPMENT: 开发依赖（仅开发时需要）
+- OPTIONAL: 可选依赖
+- PEER: 同级依赖
+
+使用方式:
+    from foxcode.core.dependency_resolver import DependencyResolver
+
+    resolver = DependencyResolver(working_dir=Path("."))
+    deps = resolver.resolve_python()
+    conflicts = resolver.detect_conflicts(deps)
+    outdated = resolver.detect_outdated(deps)
 """
 
 from __future__ import annotations

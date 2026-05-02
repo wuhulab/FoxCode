@@ -1,13 +1,27 @@
 """
-FoxCode MCP 安装器模块
+FoxCode MCP 安装器模块 - 从 GitHub 安装 MCP 服务器和技能
 
-实现从 GitHub URL 安装 MCP 服务器和 Skills 的功能
-支持自动克隆、检测和安装
+这个文件实现了从 GitHub URL 安装 MCP 服务器和 Skills 的功能:
+1. URL 验证：只允许从 GitHub.com 克隆仓库
+2. 自动克隆：克隆仓库到指定目录
+3. 类型检测：自动检测是 MCP 服务器还是 Skill
+4. 依赖安装：自动安装依赖
 
-安全说明：
+安全限制:
 - 只允许从 GitHub.com 克隆仓库
 - 对 URL 进行严格验证
 - 限制克隆目标目录
+
+安装状态流转:
+PENDING -> CLONING -> DETECTING -> INSTALLING -> COMPLETED
+                                              \-> FAILED
+                                              \-> ALREADY_EXISTS
+
+使用方式:
+    from foxcode.services.mcp_installer import MCPInstaller
+
+    installer = MCPInstaller(config)
+    result = await installer.install("https://github.com/user/mcp-server")
 """
 
 from __future__ import annotations

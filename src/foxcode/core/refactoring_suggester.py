@@ -1,13 +1,27 @@
 """
-FoxCode 重构建议工具
+FoxCode 重构建议工具 - 代码异味检测和重构建议
 
-提供代码异味检测、设计模式建议和重构功能。
+这个文件提供代码重构建议功能:
+1. 代码异味检测：识别过长方法、重复代码、魔法数字等
+2. 设计模式建议：推荐适合的设计模式
+3. 代码简化建议：简化复杂逻辑
+4. 一键重构：自动执行重构操作
 
-主要功能：
-- 代码异味检测
-- 设计模式建议
-- 代码简化建议
-- 一键重构功能
+代码异味类型:
+- LONG_METHOD: 过长方法
+- LONG_CLASS: 过大类
+- DUPLICATE_CODE: 重复代码
+- DEAD_CODE: 死代码
+- MAGIC_NUMBER: 魔法数字
+- NESTED_IF: 嵌套 if
+- GOD_CLASS: 上帝类
+
+使用方式:
+    from foxcode.core.refactoring_suggester import RefactoringSuggester
+
+    suggester = RefactoringSuggester()
+    smells = suggester.detect_smells(code)
+    suggestions = suggester.suggest_refactoring(smells)
 """
 
 from __future__ import annotations

@@ -1,14 +1,26 @@
 """
-FoxCode 智能错误分析器
+FoxCode 智能错误分析器 - 错误堆栈解析和修复建议
 
-提供错误堆栈解析、根因定位和修复建议功能。
-支持多种编程语言的错误分析。
+这个文件提供智能错误分析功能:
+1. 错误堆栈解析：解析多语言错误堆栈，定位根因
+2. 错误分类：按严重程度和类别分类错误
+3. 修复建议：自动生成修复建议
+4. 预防检测：检测潜在的错误风险
 
-主要功能：
-- 错误堆栈解析和根因定位
-- 错误模式匹配和分类
-- 自动修复建议生成
-- 错误预防性检测
+错误严重程度:
+- CRITICAL: 严重错误，程序无法继续
+- HIGH: 高严重度，主要功能受影响
+- MEDIUM: 中等严重度，部分功能受影响
+- LOW: 低严重度，小问题
+- WARNING: 警告，不影响功能
+
+使用方式:
+    from foxcode.core.error_analyzer import ErrorAnalyzer
+
+    analyzer = ErrorAnalyzer()
+    report = analyzer.analyze(error_text="Traceback ...", language="python")
+    print(f"根因: {report.root_cause}")
+    print(f"修复建议: {report.fix_suggestions}")
 """
 
 from __future__ import annotations

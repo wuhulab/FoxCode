@@ -1,8 +1,27 @@
 """
-FoxCode 评估器代理模块
+FoxCode 评估器代理模块 - 独立评估生成器的工作质量
 
-实现独立的评估器代理，用于评估生成器代理的工作质量。
-支持代码质量评估和设计质量评估。
+这个文件实现了独立的评估器代理，用于多代理协作中的质量把关:
+1. 代码质量评估：检查代码风格、复杂度、可读性
+2. 设计质量评估：检查架构合理性、模块划分
+3. 综合评估：生成评分报告和改进建议
+
+评估类型:
+- CODE_QUALITY: 代码质量（命名、复杂度、重复等）
+- DESIGN_QUALITY: 设计质量（架构、模块划分等）
+- FULL: 综合评估（代码+设计）
+
+评分体系:
+- 每个维度 0-10 分
+- 自动计算总分和百分比
+- 生成改进建议
+
+使用方式:
+    from foxcode.core.evaluator import EvaluatorAgent
+
+    evaluator = EvaluatorAgent(config)
+    report = await evaluator.evaluate(code, evaluation_type="full")
+    print(f"总分: {report.total_score}")
 """
 
 from __future__ import annotations

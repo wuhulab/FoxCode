@@ -1,7 +1,23 @@
 """
-FoxCode 命令管理器模块
+FoxCode 命令管理器模块 - 管理长时间运行的命令进程
 
-管理长时间运行的命令进程，支持状态检查和停止操作
+这个文件管理 FoxCode 中需要长时间运行的命令:
+1. 命令启动：异步启动子进程执行命令
+2. 状态追踪：实时追踪命令的执行状态
+3. 超时控制：自动终止超时的命令
+4. 结果收集：收集命令的标准输出和错误输出
+5. 停止控制：支持手动停止正在运行的命令
+
+命令状态流转:
+PENDING -> RUNNING -> COMPLETED / FAILED / STOPPED / TIMEOUT
+
+使用方式:
+    from foxcode.core.command_manager import CommandProcessManager
+
+    manager = CommandProcessManager()
+    cmd_id = await manager.start_command("npm test", cwd="/project")
+    status = manager.get_status(cmd_id)
+    await manager.stop_command(cmd_id)
 """
 
 from __future__ import annotations

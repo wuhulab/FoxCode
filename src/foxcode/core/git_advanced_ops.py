@@ -1,13 +1,28 @@
 """
-FoxCode Git 高级操作模块
+FoxCode Git 高级操作模块 - 智能提交、冲突解决和分支管理
 
-提供智能提交、冲突解决和分支管理功能。
+这个文件提供 Git 高级操作功能:
+1. 智能提交：自动分析变更，生成规范的提交信息
+2. 冲突解决：分析合并冲突，提供解决建议
+3. 分支管理：可视化管理分支，推荐分支策略
+4. 提交规范：遵循 Conventional Commits 规范
 
-主要功能：
-- 智能提交信息生成
-- 合并冲突分析和解决建议
-- 分支可视化管理
-- 分支策略建议
+提交类型（Conventional Commits）:
+- feat: 新功能
+- fix: 修复 bug
+- docs: 文档变更
+- style: 代码格式
+- refactor: 重构
+- test: 测试
+- chore: 构建/工具
+- perf: 性能优化
+
+使用方式:
+    from foxcode.core.git_advanced_ops import GitAdvancedOps
+
+    git = GitAdvancedOps(working_dir=Path("."))
+    message = git.generate_commit_message()
+    conflicts = git.analyze_conflicts()
 """
 
 from __future__ import annotations

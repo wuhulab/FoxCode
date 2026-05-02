@@ -1,13 +1,25 @@
 """
-FoxCode 性能分析器
+FoxCode 性能分析器 - 代码执行时间和内存使用分析
 
-提供代码执行时间分析、内存使用追踪和性能瓶颈识别功能。
+这个文件提供代码性能分析功能:
+1. 执行时间分析：使用 cProfile 分析代码执行时间
+2. 内存使用追踪：使用 tracemalloc 追踪内存分配
+3. 性能瓶颈识别：自动识别性能热点
+4. 性能报告生成：生成详细的性能分析报告
 
-主要功能：
-- 代码执行时间分析
-- 内存使用追踪和分析
-- 性能瓶颈识别
-- 性能报告生成
+分析状态:
+- IDLE: 空闲
+- PROFILING: 正在分析
+- COMPLETED: 分析完成
+- FAILED: 分析失败
+
+使用方式:
+    from foxcode.core.performance_analyzer import PerformanceAnalyzer
+
+    analyzer = PerformanceAnalyzer()
+    report = analyzer.profile_function(my_function, *args)
+    print(f"耗时: {report.total_time:.2f}s")
+    print(f"瓶颈: {report.bottlenecks}")
 """
 
 from __future__ import annotations

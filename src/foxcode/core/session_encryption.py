@@ -1,12 +1,23 @@
 """
-FoxCode 会话加密模块
+FoxCode 会话加密模块 - 会话数据的加密存储
 
-提供会话数据的加密存储功能，保护敏感信息
+这个文件提供会话数据的加密存储功能，保护用户隐私:
+1. 对称加密：使用 Fernet（AES-128-CBC + HMAC）加密会话数据
+2. 密钥管理：自动生成和管理加密密钥
+3. 密钥派生：使用 PBKDF2 从密码派生密钥
+4. 安全存储：密钥文件权限设置为 600
 
-安全要求：
+安全要求:
 - 必须安装 cryptography 库
-- 使用 Fernet 对称加密（AES-128-CBC + HMAC）
-- 密钥文件权限设置为 600
+- 密钥文件权限限制为仅所有者可读写
+- 加密算法使用 Fernet 对称加密
+
+使用方式:
+    from foxcode.core.session_encryption import SessionEncryption
+
+    encryption = SessionEncryption(working_dir=Path("~/.foxcode"))
+    encrypted = encryption.encrypt("敏感数据")
+    decrypted = encryption.decrypt(encrypted)
 """
 
 from __future__ import annotations

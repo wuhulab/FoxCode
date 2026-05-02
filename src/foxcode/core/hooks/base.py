@@ -1,7 +1,28 @@
 """
-FoxCode 钩子系统基础组件
+FoxCode 钩子系统基础组件 - 钩子类型、上下文和管理器
 
-定义钩子系统的核心组件，包括钩子类型、上下文和管理器
+这个文件定义钩子系统的核心组件:
+1. HookType: 钩子类型枚举，定义所有可用的钩子事件
+2. HookContext: 钩子上下文，传递钩子执行时的数据
+3. HookHandler: 钩子处理器，封装回调函数和优先级
+4. HookManager: 钩子管理器，负责注册和执行钩子
+
+钩子类型分类:
+- APP: 应用启动/关闭
+- COMMAND: 命令执行前/后/错误
+- TOOL: 工具执行前/后/错误
+- SESSION: 会话开始/结束/保存
+- SKILL: 技能执行前/后/错误
+- WORK_MODE: 工作模式开始/结束/步骤变化
+- CONFIG: 配置加载/变更
+- SERVICE: 服务启动/停止
+
+使用方式:
+    from foxcode.core.hooks.base import HookManager, HookType
+
+    manager = HookManager()
+    manager.register(HookType.APP_STARTUP, my_callback)
+    await manager.execute(HookType.APP_STARTUP, data={"key": "value"})
 """
 
 from __future__ import annotations

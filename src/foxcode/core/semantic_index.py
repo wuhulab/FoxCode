@@ -1,14 +1,23 @@
 """
-语义代码索引系统
+FoxCode 语义代码索引系统 - 基于向量的代码语义搜索
 
-提供代码的语义搜索、结构分析和依赖关系管理功能。
-支持多种嵌入模型，包括 OpenAI embeddings 和本地模型。
+这个文件提供代码的语义搜索功能:
+1. 代码解析：解析代码结构（AST 分析）
+2. 代码向量化：将代码片段转换为向量表示
+3. 语义搜索：用自然语言查询搜索相关代码
+4. 依赖分析：分析代码间的依赖关系
+5. 索引持久化：保存和加载索引，支持增量更新
 
-主要功能：
-- 代码解析和向量化
-- 语义搜索（自然语言查询）
-- 代码结构分析（AST 和依赖图）
-- 索引持久化和增量更新
+支持的嵌入模型:
+- OpenAI embeddings
+- 本地模型（无需 API 调用）
+
+使用方式:
+    from foxcode.core.semantic_index import SemanticCodeIndex
+
+    index = SemanticCodeIndex(working_dir=Path("."))
+    await index.build_index()
+    results = await index.search("用户登录相关代码")
 """
 
 from __future__ import annotations

@@ -1,7 +1,26 @@
 """
-FoxCode 消息模块
+FoxCode 消息模块 - 定义消息类型和对话历史管理
 
-定义消息类型和对话历史管理
+这个文件定义了 FoxCode 的消息系统:
+1. MessageRole: 消息角色枚举（system/user/assistant/tool）
+2. ContentType: 内容类型枚举（text/image/code/tool_use/tool_result）
+3. TextContent / ImageContent / CodeContent: 各种内容类型
+4. ToolUseContent / ToolResultContent: 工具调用和结果
+5. Message: 单条消息
+6. Conversation: 对话历史管理
+
+消息角色:
+- SYSTEM: 系统提示词
+- USER: 用户输入
+- ASSISTANT: AI 回复
+- TOOL: 工具执行结果
+
+使用方式:
+    from foxcode.types.message import Message, Conversation, MessageRole
+
+    conversation = Conversation()
+    conversation.add_message(MessageRole.USER, "你好")
+    conversation.add_message(MessageRole.ASSISTANT, "你好！")
 """
 
 from __future__ import annotations

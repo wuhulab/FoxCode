@@ -1,13 +1,23 @@
 """
-FoxCode 文档自动生成器
+FoxCode 文档自动生成器 - API文档和代码注释自动生成
 
-提供 API 文档、代码注释和 README 自动生成功能。
+这个文件提供文档自动生成功能:
+1. API 文档生成：支持 OpenAPI/Swagger 格式
+2. 代码注释生成：自动生成 docstring（Google/Numpy/Sphinx 风格）
+3. README 生成：自动生成项目 README
+4. 多格式输出：支持 Markdown / RST / HTML
 
-主要功能：
-- API 文档生成（OpenAPI/Swagger）
-- 代码注释生成（docstring）
-- README 自动生成
-- 多种文档格式支持
+文档风格:
+- GOOGLE: Google 风格 docstring
+- NUMPY: Numpy 风格 docstring
+- SPHINX: Sphinx 风格 docstring
+
+使用方式:
+    from foxcode.core.doc_generator import DocGenerator
+
+    generator = DocGenerator()
+    docs = generator.generate_module_docs(Path("src/"))
+    readme = generator.generate_readme(project_info)
 """
 
 from __future__ import annotations

@@ -1,7 +1,15 @@
 """
-FoxCode 工具钩子模块
+FoxCode 工具钩子模块 - 工具执行生命周期事件钩子
 
-提供工具生命周期相关的钩子定义和操作
+这个文件提供工具执行相关的钩子:
+- on_pre_execute: 工具执行前触发
+- on_post_execute: 工具执行后触发
+- on_error: 工具执行出错时触发
+
+使用方式:
+    from foxcode.core.hooks.tool_hooks import ToolHooks
+
+    results = await ToolHooks.on_pre_execute(data={"tool": "file_read"})
 """
 
 from foxcode.core.hooks.base import HookType, hook_manager, HookContext

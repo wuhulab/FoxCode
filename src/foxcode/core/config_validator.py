@@ -1,7 +1,24 @@
 """
-FoxCode 配置验证模块
+FoxCode 配置验证模块 - 确保配置的正确性和安全性
 
-提供配置文件验证功能，确保配置正确性和安全性
+这个文件提供配置验证功能:
+1. 格式验证：检查配置项的格式是否正确
+2. 安全验证：检查配置是否存在安全风险（如不安全的权限）
+3. 依赖验证：检查配置的依赖是否满足
+4. 错误报告：生成详细的验证错误报告
+
+验证内容:
+- API Key 格式和有效性
+- 文件路径和权限
+- 端口号范围
+- 模型名称是否支持
+- 沙箱配置安全性
+
+使用方式:
+    from foxcode.core.config_validator import ConfigValidator
+
+    validator = ConfigValidator()
+    is_valid, errors, warnings = validator.validate(config)
 """
 
 from __future__ import annotations

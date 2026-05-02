@@ -1,7 +1,27 @@
 """
-FoxCode 任务管理模块
+FoxCode 任务管理模块 - 任务列表和规划系统
 
-管理任务列表和规划系统
+这个文件管理 FoxCode 的任务系统:
+1. 任务定义：创建带有优先级、依赖关系的任务
+2. 任务状态：追踪任务的执行状态（待办/进行中/完成/失败/跳过）
+3. 任务规划：根据依赖关系自动排序任务执行顺序
+4. 任务执行：按规划顺序逐步执行任务
+
+任务状态流转:
+PENDING -> IN_PROGRESS -> COMPLETED / FAILED / SKIPPED
+
+任务优先级:
+- HIGH: 高优先级，优先执行
+- MEDIUM: 中优先级（默认）
+- LOW: 低优先级，最后执行
+
+使用方式:
+    from foxcode.core.tasks import TaskManager, Task, TaskPriority
+
+    manager = TaskManager()
+    task = manager.add_task("实现用户登录", priority=TaskPriority.HIGH)
+    manager.start_task(task.id)
+    manager.complete_task(task.id, result="登录功能已实现")
 """
 
 from __future__ import annotations

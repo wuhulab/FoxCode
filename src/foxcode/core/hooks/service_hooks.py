@@ -1,7 +1,14 @@
 """
-FoxCode 服务钩子模块
+FoxCode 服务钩子模块 - 服务启动和停止事件钩子
 
-提供服务相关的钩子定义和操作
+这个文件提供服务管理相关的钩子:
+- on_start: 服务启动时触发
+- on_stop: 服务停止时触发
+
+使用方式:
+    from foxcode.core.hooks.service_hooks import ServiceHooks
+
+    results = await ServiceHooks.on_start(data={"service": "mcp"})
 """
 
 from foxcode.core.hooks.base import HookType, hook_manager, HookContext

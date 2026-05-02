@@ -1,7 +1,15 @@
 """
-FoxCode 命令钩子模块
+FoxCode 命令钩子模块 - 命令执行生命周期事件钩子
 
-提供命令生命周期相关的钩子定义和操作
+这个文件提供命令执行相关的钩子:
+- on_pre_execute: 命令执行前触发
+- on_post_execute: 命令执行后触发
+- on_error: 命令执行出错时触发
+
+使用方式:
+    from foxcode.core.hooks.command_hooks import CommandHooks
+
+    results = await CommandHooks.on_pre_execute(data={"command": "test"})
 """
 
 from foxcode.core.hooks.base import HookType, hook_manager, HookContext

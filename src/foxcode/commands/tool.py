@@ -1,7 +1,20 @@
 """
-工具管理命令
+工具管理命令 - 查看和管理 FoxCode 工具
 
-用于管理和操作工具
+这个文件提供工具管理功能:
+1. 列出所有可用工具
+2. 按类别过滤工具
+3. 搜索匹配的工具
+4. 列出工具类别
+
+命令类型: LOCAL（本地命令）
+命令别名: t
+
+使用方式:
+    foxcode tool --list              # 列出所有工具
+    foxcode tool --category code     # 按类别过滤
+    foxcode tool --find file         # 搜索工具
+    foxcode tool --categories        # 列出类别
 """
 
 import click

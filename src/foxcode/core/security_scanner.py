@@ -1,13 +1,26 @@
 """
-FoxCode 安全漏洞扫描器
+FoxCode 安全漏洞扫描器 - 代码安全扫描和敏感信息检测
 
-提供代码安全扫描、敏感信息检测和依赖安全检查功能。
+这个文件提供代码安全扫描功能:
+1. 漏洞模式检测：检测 SQL 注入、XSS、命令注入等常见漏洞
+2. 敏感信息检测：检测 API Key、密码、Token 等敏感信息
+3. 依赖安全检查：检查依赖包的已知漏洞
+4. 安全报告生成：生成详细的安全扫描报告
 
-主要功能：
-- 常见漏洞模式检测（SQL注入、XSS等）
-- 敏感信息检测（API Key、密码等）
-- 依赖安全检查
-- 安全报告生成
+检测的漏洞类型:
+- SQL 注入
+- XSS（跨站脚本）
+- 命令注入
+- 路径穿越
+- 硬编码密钥
+- 不安全的反序列化
+
+使用方式:
+    from foxcode.core.security_scanner import SecurityScanner
+
+    scanner = SecurityScanner()
+    report = scanner.scan_directory(Path("src/"))
+    print(f"发现 {len(report.vulnerabilities)} 个漏洞")
 """
 
 from __future__ import annotations

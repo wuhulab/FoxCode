@@ -1,10 +1,23 @@
 """
-FoxCode 敏感信息脱敏模块
+FoxCode 敏感信息脱敏模块 - 日志和输出中的敏感信息保护
 
-提供敏感信息检测和脱敏功能，用于：
-- 日志输出脱敏
-- 配置信息脱敏
-- 错误信息脱敏
+这个文件提供敏感信息检测和脱敏功能:
+1. 敏感信息检测：识别 API Key、密码、Token 等
+2. 自动脱敏：将敏感信息替换为 ***MASKED***
+3. 多场景支持：日志输出、配置信息、错误信息
+
+脱敏规则:
+- API Key: 匹配常见格式（sk-xxx, key-xxx 等）
+- 密码: 匹配 password=xxx 等模式
+- Token: 匹配 Bearer token 等模式
+- 自定义规则: 支持添加自定义脱敏模式
+
+使用方式:
+    from foxcode.core.sensitive_masker import SensitiveDataMasker
+
+    masker = SensitiveDataMasker()
+    safe_text = masker.mask("API Key: sk-abc123def456")
+    # 结果: "API Key: ***MASKED***"
 """
 
 from __future__ import annotations

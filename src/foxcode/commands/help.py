@@ -1,7 +1,17 @@
 """
-帮助命令
+帮助命令 - 显示可用命令和使用说明
 
-显示可用命令和帮助信息
+这个文件提供 FoxCode 的帮助系统:
+1. 列出所有可用命令
+2. 显示指定命令的详细帮助
+
+命令类型: LOCAL（本地命令）
+命令别名: h, ?
+
+使用方式:
+    foxcode help           # 显示所有命令
+    foxcode help command   # 显示 command 命令的详细帮助
+    foxcode h              # 使用别名
 """
 
 import click

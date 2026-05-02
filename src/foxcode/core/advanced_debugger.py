@@ -1,14 +1,23 @@
 """
-FoxCode 高级调试器集成
+FoxCode 高级调试器集成 - 断点管理和调用栈分析
 
-提供断点管理、变量监视、调用栈分析等调试功能。
-支持 Python 调试器（pdb/debugpy）集成。
+这个文件提供了 FoxCode 的调试功能:
+1. 断点管理：支持条件断点、日志断点
+2. 变量监视：监视变量值变化和表达式求值
+3. 调用栈分析：查看和切换栈帧
+4. Python 调试器集成：集成 pdb/debugpy
 
-主要功能：
-- 断点管理（条件断点、日志断点）
-- 变量监视和表达式求值
-- 调用栈分析和栈帧切换
-- Python 调试器集成
+安全机制:
+- 表达式求值有安全限制（禁止导入、定义函数/类等）
+- 表达式最大长度 1000 字符
+- 禁止访问全局声明
+
+使用方式:
+    from foxcode.core.advanced_debugger import AdvancedDebugger
+
+    debugger = AdvancedDebugger()
+    debugger.add_breakpoint("main.py", 42, condition="x > 10")
+    debugger.start_debug("python main.py")
 """
 
 from __future__ import annotations

@@ -1,13 +1,26 @@
 """
-FoxCode 智能测试生成器
+FoxCode 智能测试生成器 - 自动生成测试用例和覆盖率分析
 
-提供自动生成测试用例、测试覆盖率分析和 TDD 支持功能。
+这个文件提供智能测试生成功能:
+1. 单元测试生成：自动生成 pytest 风格的单元测试
+2. 边界测试：自动生成边界条件和异常测试
+3. 覆盖率分析：分析测试覆盖率
+4. TDD 支持：支持测试驱动开发模式
 
-主要功能：
-- 单元测试自动生成（pytest 风格）
-- 边界条件和异常测试生成
-- 测试覆盖率分析
-- TDD 模式支持
+测试类型:
+- UNIT: 单元测试
+- INTEGRATION: 集成测试
+- EDGE_CASE: 边界测试
+- EXCEPTION: 异常测试
+- PERFORMANCE: 性能测试
+- MOCK: 模拟测试
+
+使用方式:
+    from foxcode.core.test_generator import TestGenerator
+
+    generator = TestGenerator()
+    tests = generator.generate_tests(Path("src/module.py"))
+    coverage = generator.analyze_coverage(tests)
 """
 
 from __future__ import annotations

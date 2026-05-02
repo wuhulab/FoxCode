@@ -1,7 +1,14 @@
 """
-FoxCode 应用钩子模块
+FoxCode 应用钩子模块 - 应用生命周期事件钩子
 
-提供应用生命周期相关的钩子定义和操作
+这个文件提供应用级别的生命周期钩子:
+- on_startup: 应用启动时触发
+- on_shutdown: 应用关闭时触发
+
+使用方式:
+    from foxcode.core.hooks.app_hooks import AppHooks
+
+    results = await AppHooks.on_startup(config=config)
 """
 
 from foxcode.core.hooks.base import HookType, hook_manager, HookContext

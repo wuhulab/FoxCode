@@ -1,7 +1,24 @@
 """
-FoxCode 编码检测模块
+FoxCode 编码检测模块 - 智能文件编码检测
 
-提供智能文件编码检测功能，支持多种编码格式
+这个文件提供文件编码检测功能:
+1. 自动检测：尝试多种编码，找到正确的编码格式
+2. 多编码支持：支持 Unicode、中文、日文、韩文等编码
+3. BOM 检测：检测带 BOM 的 UTF 文件
+4. 回退机制：检测失败时回退到默认编码
+
+支持的编码（按检测优先级排序）:
+- Unicode: utf-8, utf-8-sig, utf-16, utf-32
+- 中文: gbk, gb2312, gb18030, big5
+- 日文: shift_jis, cp932, euc-jp
+- 韩文: euc-kr, cp949
+- 西文: iso-8859-1, cp1252
+
+使用方式:
+    from foxcode.utils.encoding import detect_encoding
+
+    encoding = detect_encoding(Path("file.txt"))
+    content = Path("file.txt").read_text(encoding=encoding)
 """
 
 from __future__ import annotations

@@ -1,7 +1,15 @@
 """
-FoxCode 技能钩子模块
+FoxCode 技能钩子模块 - 技能执行生命周期事件钩子
 
-提供技能生命周期相关的钩子定义和操作
+这个文件提供技能执行相关的钩子:
+- on_pre_execute: 技能执行前触发
+- on_post_execute: 技能执行后触发
+- on_error: 技能执行出错时触发
+
+使用方式:
+    from foxcode.core.hooks.skill_hooks import SkillHooks
+
+    results = await SkillHooks.on_pre_execute(data={"skill": "code_review"})
 """
 
 from foxcode.core.hooks.base import HookType, hook_manager, HookContext

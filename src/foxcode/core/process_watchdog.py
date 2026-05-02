@@ -1,13 +1,24 @@
 """
-进程看门狗模块
+FoxCode 进程看门狗模块 - 进程监控、性能统计和自动恢复
 
-提供进程监控、性能统计和自动恢复功能
+这个文件提供进程级别的监控和保护:
+1. 进程监控：监控内存和 CPU 使用情况
+2. 性能统计：记录请求响应时间等性能指标
+3. 异常检测：自动检测进程异常（内存泄漏、CPU 飙高等）
+4. 自动恢复：检测到异常时触发恢复操作
+5. 健康报告：提供进程健康状态报告
 
-主要功能：
-- 监控内存和 CPU 使用
-- 记录请求性能指标
-- 自动检测异常并触发恢复
-- 提供健康状态报告
+健康状态:
+- HEALTHY: 一切正常
+- WARNING: 需要关注（如内存使用率偏高）
+- CRITICAL: 需要立即处理（如内存即将耗尽）
+
+使用方式:
+    from foxcode.core.process_watchdog import init_watchdog
+
+    watchdog = init_watchdog(config)
+    watchdog.start()
+    health = watchdog.get_health_status()
 """
 
 from __future__ import annotations

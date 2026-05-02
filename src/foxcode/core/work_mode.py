@@ -1,11 +1,25 @@
 """
-FoxCode Work模式管理器
+FoxCode Work模式管理器 - 长时间编码任务的管理和执行
 
-专注于代码编写任务管理，包括：
-- 模式开关控制
-- 长期工作模式执行
-- 任务记录保存
-- 状态监控和报告
+这个文件管理 FoxCode 的长时间编码工作模式:
+1. 模式开关控制：启用/禁用工作模式
+2. 任务管理：创建、执行、追踪编码任务
+3. 阶段推进：按工作流程阶段推进任务
+4. 状态监控：实时报告任务进度和状态
+5. 记录保存：持久化任务执行记录
+
+工作模式是什么？
+工作模式是 FoxCode 的一种特殊运行方式，适合长时间编码任务。
+它会按标准化流程（设计->编码->评估->测试->合并->推送）自动推进，
+减少人工干预，提高编码效率。
+
+使用方式:
+    from foxcode.core.work_mode import WorkModeManager
+
+    manager = WorkModeManager(config, agent)
+    await manager.start()
+    await manager.execute_task(task)
+    status = manager.get_status()
 """
 
 from __future__ import annotations

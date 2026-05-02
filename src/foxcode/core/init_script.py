@@ -1,7 +1,26 @@
 """
-FoxCode 环境初始化脚本生成模块
+FoxCode 环境初始化脚本生成模块 - 自动检测项目依赖并生成初始化脚本
 
-自动检测项目依赖和环境需求，生成跨平台兼容的初始化脚本
+这个文件负责项目环境的自动初始化:
+1. 项目类型检测：识别 Python/Node.js/Go/Rust/Java 等项目
+2. 依赖分析：扫描项目依赖文件（requirements.txt, package.json 等）
+3. 脚本生成：生成跨平台兼容的初始化脚本
+4. 环境配置：配置虚拟环境、安装依赖
+
+支持的项目类型:
+- PYTHON: 检测 requirements.txt / pyproject.toml
+- NODEJS: 检测 package.json
+- GO: 检测 go.mod
+- RUST: 检测 Cargo.toml
+- JAVA: 检测 pom.xml / build.gradle
+- MIXED: 多语言混合项目
+
+使用方式:
+    from foxcode.core.init_script import InitScriptGenerator
+
+    generator = InitScriptGenerator(working_dir=Path("."))
+    project_type = generator.detect_project_type()
+    script = generator.generate_script()
 """
 
 from __future__ import annotations

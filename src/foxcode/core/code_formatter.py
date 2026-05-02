@@ -1,13 +1,24 @@
 """
-FoxCode 代码格式化器
+FoxCode 代码格式化器 - 多语言代码自动格式化
 
-提供多语言代码格式化功能，支持 Python、JavaScript/TypeScript 等。
+这个文件提供多语言代码格式化功能:
+1. Python 格式化：支持 black / autopep8 / yapf / ruff
+2. JavaScript/TypeScript 格式化：支持 prettier / eslint
+3. Go 格式化：支持 gofmt
+4. Rust 格式化：支持 rustfmt
+5. C/C++ 格式化：支持 clang-format
 
-主要功能：
-- Python 格式化 (black, autopep8)
-- JavaScript/TypeScript 格式化 (prettier)
-- 配置文件检测和应用
-- 批量格式化和增量格式化
+格式化模式:
+- 批量格式化：格式化整个项目
+- 增量格式化：只格式化修改的文件
+- 配置检测：自动检测项目中的格式化配置
+
+使用方式:
+    from foxcode.core.code_formatter import CodeFormatter
+
+    formatter = CodeFormatter()
+    result = formatter.format_file(Path("main.py"))
+    result = formatter.format_project(Path("."), language="python")
 """
 
 from __future__ import annotations

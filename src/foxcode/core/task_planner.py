@@ -1,14 +1,24 @@
 """
-FoxCode 智能任务规划器
+FoxCode 智能任务规划器 - 复杂任务自动分解和优先级排序
 
-提供复杂任务的自动分解、依赖分析和优先级排序功能。
-支持任务进度追踪和工作量估算。
+这个文件提供智能任务规划功能:
+1. 任务分解：将复杂任务自动拆分为子任务
+2. 依赖分析：分析子任务之间的依赖关系
+3. 优先级排序：根据依赖和重要性排序任务
+4. 进度追踪：追踪任务执行进度
+5. 工作量估算：估算每个任务的工作量
 
-主要功能：
-- 复杂任务自动分解
-- 任务依赖关系分析
-- 任务优先级排序
-- 任务进度追踪和预估
+任务状态流转:
+PENDING -> READY -> IN_PROGRESS -> COMPLETED / FAILED / SKIPPED
+                   \-> BLOCKED（依赖未满足时）
+
+使用方式:
+    from foxcode.core.task_planner import TaskPlanner
+
+    planner = TaskPlanner()
+    plan = planner.create_plan("实现用户管理系统")
+    plan = planner.decompose(plan)
+    plan = planner.prioritize(plan)
 """
 
 from __future__ import annotations

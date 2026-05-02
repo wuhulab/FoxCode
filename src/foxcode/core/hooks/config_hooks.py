@@ -1,7 +1,14 @@
 """
-FoxCode 配置钩子模块
+FoxCode 配置钩子模块 - 配置加载和变更事件钩子
 
-提供配置相关的钩子定义和操作
+这个文件提供配置相关的钩子:
+- on_loaded: 配置加载完成后触发
+- on_changed: 配置变更后触发
+
+使用方式:
+    from foxcode.core.hooks.config_hooks import ConfigHooks
+
+    results = await ConfigHooks.on_loaded(config=config)
 """
 
 from foxcode.core.hooks.base import HookType, hook_manager, HookContext

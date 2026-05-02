@@ -1,15 +1,30 @@
 """
-FoxCode OpenSpace 模块
+FoxCode OpenSpace 模块 - AI 经验知识存储系统
 
-实现 AI 经验知识存储系统，用于记录 AI 踩过的坑和注意事项。
+这个文件实现了 AI 的经验知识存储，记录 AI 踩过的坑和注意事项。
 参考 HKUDS OpenSpace 项目的设计理念。
 
-功能特点：
-1. 存储经验教训（每个文件不超过 500 字）
-2. 每次启动 foxcode 时自动加载到上下文
-3. 支持启用/禁用控制
-4. 会话跟踪：记录 AI 在会话中踩过的坑
-5. 自动总结：在会话结束时自动生成经验记录
+核心功能:
+1. 经验存储：记录踩过的坑、最佳实践等（每条不超过 500 字）
+2. 自动加载：每次启动 foxcode 时自动加载到上下文
+3. 会话跟踪：记录 AI 在当前会话中踩过的坑
+4. 自动总结：会话结束时自动生成经验记录
+5. 启用控制：支持启用/禁用 OpenSpace 功能
+
+经验分类:
+- BUG_FIX: Bug 修复经验
+- BEST_PRACTICE: 最佳实践
+- PITFALL: 常见陷阱
+- PERFORMANCE: 性能优化
+- SECURITY: 安全相关
+- ARCHITECTURE: 架构设计
+
+使用方式:
+    from foxcode.core.open_space import OpenSpace
+
+    space = OpenSpace(working_dir=Path("."))
+    space.add_experience("Python GIL 限制多线程性能", category="pitfall")
+    experiences = space.get_relevant_experiences("多线程")
 """
 
 from __future__ import annotations

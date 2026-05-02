@@ -1,7 +1,35 @@
 """
-FoxCode 钩子系统模块
+FoxCode 钩子系统模块 - 事件驱动的扩展机制
 
-提供钩子定义、注册和执行机制，支持在不同生命周期执行自定义逻辑
+这个文件实现了 FoxCode 的钩子系统，允许在特定事件发生时执行自定义逻辑:
+1. 钩子定义：定义各种生命周期事件（启动、关闭、命令执行等）
+2. 钩子注册：动态注册回调函数到指定事件
+3. 钩子执行：事件触发时自动调用所有注册的回调
+4. 优先级控制：支持按优先级排序执行回调
+
+钩子类型:
+- APP: 应用启动/关闭
+- COMMAND: 命令执行前/后/错误
+- TOOL: 工具执行前/后/错误
+- SESSION: 会话开始/结束/保存
+- SKILL: 技能执行前/后/错误
+- WORK_MODE: 工作模式开始/结束/步骤变化
+- CONFIG: 配置加载/变更
+- SERVICE: 服务启动/停止
+
+使用方式:
+    from foxcode.core.hooks import HookManager, HookType, register_hook
+
+    # 注册钩子
+    @register_hook(HookType.APP_STARTUP)
+    async def on_startup(context):
+        print("应用启动了")
+
+    # 手动注册
+    hook_manager.register(HookType.TOOL_PRE_EXECUTE, my_callback, priority=10)
+
+    # 触发钩子
+    await hook_manager.execute(HookType.APP_STARTUP, context)
 """
 
 from __future__ import annotations

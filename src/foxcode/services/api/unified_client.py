@@ -1,7 +1,21 @@
 """
-统一 API 客户端接口
+FoxCode 统一 API 客户端接口 - 跨提供商的统一 API 调用
 
-提供统一的 API 客户端接口，支持不同服务提供商
+这个文件提供统一的 API 客户端接口:
+1. 统一接口：一个客户端支持多个服务提供商
+2. 服务注册：动态注册不同提供商的配置
+3. 默认提供商：设置和切换默认提供商
+4. 请求代理：自动路由到正确的提供商客户端
+
+支持的提供商:
+- OpenAI / Anthropic / Bedrock / Vertex / Foundry / Custom
+
+使用方式:
+    from foxcode.services.api.unified_client import UnifiedAPIClient
+
+    client = UnifiedAPIClient(default_provider=ServiceProvider.OPENAI)
+    client.register_service(config)
+    response = await client.chat(messages)
 """
 
 from __future__ import annotations

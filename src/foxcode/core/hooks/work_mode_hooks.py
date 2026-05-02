@@ -1,7 +1,15 @@
 """
-FoxCode 工作模式钩子模块
+FoxCode 工作模式钩子模块 - 工作模式生命周期事件钩子
 
-提供工作模式相关的钩子定义和操作
+这个文件提供工作模式相关的钩子:
+- on_start: 工作模式开始时触发
+- on_end: 工作模式结束时触发
+- on_step_change: 工作模式步骤变化时触发
+
+使用方式:
+    from foxcode.core.hooks.work_mode_hooks import WorkModeHooks
+
+    results = await WorkModeHooks.on_start(data={"mode": "coding"})
 """
 
 from foxcode.core.hooks.base import HookType, hook_manager, HookContext

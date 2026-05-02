@@ -1,7 +1,23 @@
 """
-提示命令
+提示命令 - 生成 AI 提示词模板
 
-用于生成提示模板
+这个文件提供提示词模板管理功能:
+1. 列出可用的提示模板
+2. 生成指定模板的提示词
+3. 显示默认提示模板
+
+内置模板:
+- default: 通用问题解决模板
+- code: 代码生成模板
+- debug: 调试辅助模板
+
+命令类型: PROMPT（提示命令）
+命令别名: p
+
+使用方式:
+    foxcode prompt           # 显示默认模板
+    foxcode prompt code      # 生成代码模板
+    foxcode prompt --list    # 列出所有模板
 """
 
 import click

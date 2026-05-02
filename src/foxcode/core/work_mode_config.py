@@ -1,12 +1,23 @@
 """
-FoxCode Work模式配置模块
+FoxCode Work模式配置模块 - 工作模式的状态和执行配置
 
-定义Work模式相关的配置模型，简化版本，专注于代码编写任务记录。
+这个文件定义 Work 模式相关的配置模型:
+1. WorkModeStatus: 工作模式状态（禁用/启用/启动中/停止中/错误）
+2. AgentExecutionMode: 代理执行模式（模拟/单代理/多代理）
+3. WorkModeConfig: 工作模式完整配置
 
-功能：
-- Work模式状态管理
-- 任务记录保存
-- 执行模式配置
+执行模式:
+- SIMULATION: 模拟模式，不调用真实 AI（用于测试）
+- SINGLE_AGENT: 单代理模式，使用 FoxCodeAgent
+- MULTI_AGENT: 多代理模式，使用 MultiAgentOrchestrator
+
+使用方式:
+    from foxcode.core.work_mode_config import WorkModeConfig, AgentExecutionMode
+
+    config = WorkModeConfig(
+        status=WorkModeStatus.ENABLED,
+        execution_mode=AgentExecutionMode.SINGLE_AGENT
+    )
 """
 
 from __future__ import annotations

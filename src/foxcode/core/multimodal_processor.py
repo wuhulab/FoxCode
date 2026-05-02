@@ -1,13 +1,26 @@
 """
-FoxCode 多模态处理器
+FoxCode 多模态处理器 - 图像分析、架构图生成和数据可视化
 
-提供图像分析、架构图生成和数据可视化功能。
+这个文件提供多模态处理功能:
+1. 图像分析：通过多模态 AI 模型分析图像内容
+2. 架构图生成：生成 Mermaid / PlantUML 格式的架构图
+3. 数据可视化：生成图表和可视化
+4. UI 转代码：将设计图转换为代码
 
-主要功能：
-- 图像分析（支持多模态模型）
-- 架构图生成（Mermaid, PlantUML）
-- 数据可视化图表生成
-- UI 设计图转代码
+图像类型:
+- SCREENSHOT: 屏幕截图
+- DESIGN: 设计图
+- DIAGRAM: 图表
+- CODE: 代码截图
+- ERROR: 错误截图
+- UI: UI 界面
+
+使用方式:
+    from foxcode.core.multimodal_processor import MultimodalProcessor
+
+    processor = MultimodalProcessor()
+    result = await processor.analyze_image(image_path)
+    diagram = processor.generate_architecture_diagram(structure)
 """
 
 from __future__ import annotations

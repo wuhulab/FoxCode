@@ -1,15 +1,29 @@
 """
-FoxCode 知识库管理系统
+FoxCode 知识库管理系统 - 跨会话的知识存储和语义检索
 
-提供知识的存储、检索、分类和共享功能。
-支持知识向量化和语义检索，实现跨会话知识共享。
+这个文件实现了 FoxCode 的知识库，用于存储和检索 AI 积累的经验知识:
+1. 知识存储：保存代码模式、API用法、错误解决方案等
+2. 知识分类：按类别和标签组织知识
+3. 语义检索：基于向量化实现语义搜索
+4. 知识过期：自动清理过期的知识条目
+5. 跨会话共享：不同会话可以共享知识库
 
-主要功能：
-- 知识存储和检索
-- 知识分类和标签系统
-- 知识向量化和语义检索
-- 知识过期和更新机制
-- 跨会话知识共享
+知识类别:
+- CODE_PATTERN: 代码模式（常用写法、设计模式）
+- API_USAGE: API 使用方法
+- ERROR_SOLUTION: 错误解决方案
+- BEST_PRACTICE: 最佳实践
+- PROJECT_SPECIFIC: 项目特定知识
+- ARCHITECTURE: 架构设计
+- CONFIGURATION: 配置相关
+- DEPENDENCY: 依赖相关
+
+使用方式:
+    from foxcode.core.knowledge_base import KnowledgeBase
+
+    kb = KnowledgeBase(working_dir=Path("."))
+    kb.add_entry("Python列表去重用set()", category="code_pattern")
+    results = kb.search("去重")
 """
 
 from __future__ import annotations

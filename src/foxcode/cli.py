@@ -352,6 +352,26 @@ class MinimalismOutputBuffer:
         self.in_xml_context = False  # 是否在XML上下文中
         self.xml_buffer = ""  # XML缓冲区
 
+    @staticmethod
+    def _colorize_tag(tag: str, text: str) -> str:
+        """
+        为标签添加颜色，后面内容保持白色
+        
+        Args:
+            tag: 标签名（如 "tool"、"say"）
+            text: 标签后的文本内容
+            
+        Returns:
+            带ANSI颜色码的格式化字符串
+        """
+        # ANSI颜色码
+        GREEN = "\033[32m"
+        WHITE = "\033[37m"
+        RESET = "\033[0m"
+        
+        # 返回格式：绿色标签 + 白色内容
+        return f"{GREEN}[{tag}]{RESET}{WHITE}{text}{RESET}"
+
     def _filter_xml_content(self, text: str) -> str:
         """
         过滤 XML 工具调用相关内容
@@ -415,12 +435,15 @@ class MinimalismOutputBuffer:
                 return result
             return None
         
-        # [tool] 标记：直接输出
+        # [tool] 标记：直接输出，使用绿色显示标签
         if chunk.strip().startswith("[tool]"):
             output = self._flush_text_buffer()
             self.in_xml_context = True
             self.xml_buffer = ""
-            return (output + chunk) if output else chunk
+            # 提取标签后的内容
+            tool_content = chunk.strip()[6:]  # 去掉 "[tool]" 前缀
+            colored_chunk = self._colorize_tag("tool", tool_content)
+            return (output + colored_chunk) if output else colored_chunk
         
         # [error] 标记：直接输出
         if chunk.strip().startswith("[error]"):
@@ -481,10 +504,10 @@ class MinimalismOutputBuffer:
         if not text.strip():
             return ""
         
-        # 只在第一次输出 [say]
+        # 只在第一次输出 [say]，使用绿色显示标签
         if not self.say_printed:
             self.say_printed = True
-            return f"[say] {text}"
+            return self._colorize_tag("say", f" {text}")
         
         return text
 
@@ -492,15 +515,25 @@ class MinimalismOutputBuffer:
         """刷新缓冲区，返回所有剩余内容"""
         result = ""
         
-        # 清空 XML 缓冲区（丢弃）
+        # 处理 XML 缓冲区：过滤后保留有意义的文本
         if self.xml_buffer:
+            # 过滤 XML 内容，保留有意义的文本
+            filtered = self._filter_xml_content(self.xml_buffer)
+            if filtered.strip():
+                # 如果是第一次输出，添加 [say] 标记
+                if not self.say_printed:
+                    self.say_printed = True
+                    result = self._colorize_tag("say", f" {filtered}") + "\n\n"
+                else:
+                    result = filtered + "\n\n"
             self.xml_buffer = ""
             self.in_xml_context = False
         
         # 刷新文本缓冲区
         text = self._flush_text_buffer()
         if text:
-            result = text + "\n"
+            # 确保文本以换行结束，避免 [work_end] 出现在文本中间
+            result = result.rstrip() + "\n" + text.rstrip() + "\n\n"
         
         # 刷新结果缓冲区
         if self.in_result_block and self.result_buffer:
@@ -508,8 +541,8 @@ class MinimalismOutputBuffer:
             self.in_result_block = False
             self.result_buffer = []
         
-        # 添加工作结束标记
-        result += "[work_end]\n"
+        # 添加工作结束标记（确保在新行）
+        result += "\033[34m[work_end]\033[0m\n"
         
         return result
 
@@ -806,7 +839,8 @@ def print_banner(config: Config | None = None) -> None:
     """打印欢迎横幅"""
     # 检查是否为极简模式
     if config and config.output_topic == OutputTopic.MINIMALISM:
-        print("[foxcode]")
+        # 使用蓝色显示 [foxcode] 标签
+        print("\033[34m[foxcode]\033[0m")
         return
 
     # 默认模式：完整横幅

@@ -1,5 +1,7 @@
 # FoxCode | 简体中文
 
+[English](README_EN.md)[简体中文](README.md)
+
 **新一代 AI 终端编码助手**
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19433875.svg)](https://zenodo.org/records/19433875)

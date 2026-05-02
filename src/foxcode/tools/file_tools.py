@@ -110,7 +110,7 @@ def _safe_error_message(operation: str, error: Exception, include_details: bool 
 
 @dataclass
 class PathSecurityConfig:
-    """
+    r"""
     路径安全配置 - 控制文件操作的访问权限
     
     为什么需要路径安全？
@@ -142,7 +142,7 @@ class PathSecurityConfig:
 
 
 class PathSecurityValidator:
-    """
+    r"""
     路径安全验证器 - 防止路径穿越攻击
     
     这是文件操作的安全守门员，负责：

@@ -79,11 +79,10 @@ _update_checker_started = False  # 更新检查器是否已启动
 log_dir = Path.home() / ".foxcode"
 log_dir.mkdir(parents=True, exist_ok=True)
 
-
+# ==================== 更新检查 ====================
+# 更新检查完成回调函数
 def _on_update_check_complete(result: UpdateResult) -> None:
     """
-    更新检查完成回调函数
-    
     当后台更新检查完成时调用，显示更新提示信息。
     这个函数在后台线程中执行，不阻塞主程序。
     
@@ -129,11 +128,9 @@ def _on_update_check_complete(result: UpdateResult) -> None:
     finally:
         _update_checker_started = False
 
-
+# 启动后台更新检查器
 def _start_background_update_checker() -> None:
     """
-    启动后台更新检查器
-    
     在后台线程中执行更新检查，不阻塞主程序启动。
     检查完成后通过回调函数显示更新提示。
     """
@@ -152,6 +149,7 @@ def _start_background_update_checker() -> None:
         _update_checker_started = False
 
 
+# 安全的流处理器 - 解决Windows GBK编码问题
 class SafeStreamHandler(logging.StreamHandler):
     """
     安全的流处理器 - 解决Windows GBK编码问题
@@ -288,7 +286,7 @@ setup_global_log_filter()
 logger = logging.getLogger(__name__)
 console = Console()
 
-
+# ==================== 极简模式输出缓冲器 ====================
 class MinimalismOutputBuffer:
     """
     极简模式输出缓冲器 - 过滤干扰信息，只显示核心内容
@@ -423,6 +421,7 @@ class MinimalismOutputBuffer:
         return filtered + "\n\n\033[34m[work_end]\033[0m\n"
 
 
+# 根据极简模式调整控制台日志级别
 def _adjust_log_level_for_minimalism() -> None:
     """
     根据极简模式调整控制台日志级别
@@ -445,7 +444,7 @@ def _adjust_log_level_for_minimalism() -> None:
         # 如果调整失败，不影响程序运行
         pass
 
-
+# 安全地运行异步协程
 def run_async(coro):
     """
     安全地运行异步协程
@@ -475,7 +474,7 @@ def run_async(coro):
 
 
 # ==================== 信号处理和优雅退出 ====================
-
+# 设置信号处理器，实现优雅退出
 def _setup_signal_handlers() -> None:
     """
     设置信号处理器，实现优雅退出
@@ -514,7 +513,7 @@ def _setup_signal_handlers() -> None:
         # 在非主线程中无法设置信号处理
         logger.warning(f"无法注册信号处理器（可能不在主线程）: {e}")
 
-
+# atexit 清理函数，确保进程退出时清理资源
 def _cleanup_on_exit() -> None:
     """
     atexit 清理函数
@@ -560,7 +559,7 @@ def _cleanup_on_exit() -> None:
 
     logger.info("FoxCode 进程已退出")
 
-
+# 初始化进程看门狗并配置监控参数
 def _init_watchdog() -> ProcessWatchdog:
     """
     初始化进程看门狗并配置监控参数
@@ -641,7 +640,7 @@ def _init_watchdog() -> ProcessWatchdog:
 
     return watchdog
 
-
+# 全局异常处理器
 def _handle_unexpected_error(error: Exception) -> None:
     """
     全局异常处理器
@@ -710,16 +709,10 @@ def _global_exception_hook(exc_type, exc_value, exc_traceback) -> None:
 
 sys.excepthook = _global_exception_hook
 
-
+# 打印欢迎横幅
 def print_banner(config: Config | None = None) -> None:
     """打印欢迎横幅"""
-    # 检查是否为极简模式
-    if config and config.output_topic == OutputTopic.MINIMALISM:
-        # 使用蓝色显示 [foxcode] 标签
-        print("\033[34m[foxcode]\033[0m")
-        return
-
-    # 默认模式：完整横幅
+    # 都显示完整横幅
     banner = """
     ███████╗ ██████╗ ██████╗  ██████╗ 
     ██╔════╝██╔════╝██╔═══██╗██╔════╝ 
@@ -730,7 +723,7 @@ def print_banner(config: Config | None = None) -> None:
     """
     console.print(Panel(banner, style="bold cyan", title=f"FoxCode v{__version__}"))
 
-
+# 打印帮助信息
 def print_help() -> None:
     """打印帮助信息"""
     help_text = """
@@ -946,8 +939,6 @@ def main(
     FoxCode - AI 终端编码助手
     
     一个强大的 AI 编码助手，帮助你编写、分析和修改代码。
-    
-    包含完整的异常处理和优雅退出机制
     """
     # 首先根据极简模式调整日志级别（在信号处理器之前）
     _adjust_log_level_for_minimalism()
@@ -1086,7 +1077,6 @@ def run(
 
     # 启动进程看门狗监控（在异步事件循环中）
     async def _start_watchdog_and_run():
-        """启动看门狗并运行主程序"""
         if _watchdog:
             try:
                 await _watchdog.start()
@@ -1143,7 +1133,7 @@ def run(
         _current_agent = None
         logger.info("FoxCode 运行结束")
 
-
+# 运行单次提示
 async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | None = None) -> None:
     """
     运行单次提示
@@ -1203,7 +1193,7 @@ async def _run_single_prompt(agent: FoxCodeAgent, prompt: str, config: Config | 
         # 重新抛出异常，让调用方处理
         raise
 
-
+# 运行交互式会话
 async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
     """
     运行交互式会话
@@ -1413,7 +1403,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
 
     console.print("\n[cyan]再见！[/cyan]")
 
-
+# 处理交互式命令 添加命令的地方1
 def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
     """
     处理交互式命令
@@ -1487,6 +1477,19 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
             f"总计 {usage['total_tokens']}[/cyan]"
         )
 
+    elif cmd_name == "/about":
+        console.print(
+            "FoxCode 一个基于强大的智能助手，用于生成代码，帮助工作。\n"
+            "FoxCode 基于AGPLv3开源协议分发，社区版禁止用于商业行为，公司使用需要购买企业版。\n"
+            "FoxCode 项目由 wuhulab 团队维护，欢迎贡献代码。\n"
+            "源代码：https://github.com/wuhulab/FoxCode\n"
+            "组织：wuhulab\n"
+            "邮箱：s@shunx.top\n"
+            "关注我们的非盈利团队：\n"
+            "BiliBili:https://space.bilibili.com/3546925812943471\n"
+            "Wrbsite:https://www.shunx.top/\n"
+            ""
+        )
     # ==================== 长时间运行模式命令 ====================
 
     elif cmd_name == "/init":
@@ -1581,7 +1584,7 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
 
     return True
 
-
+# 处理 /init 命令
 def _handle_init_command(agent: FoxCodeAgent, config: Config) -> None:
     """
     处理 /init 命令
@@ -1618,7 +1621,7 @@ def _handle_init_command(agent: FoxCodeAgent, config: Config) -> None:
     except Exception as e:
         console.print(f"[red]生成初始化脚本失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /progress 命令
 def _handle_progress_command(agent: FoxCodeAgent, config: Config) -> None:
     """
     处理 /progress 命令
@@ -1636,7 +1639,7 @@ def _handle_progress_command(agent: FoxCodeAgent, config: Config) -> None:
     except Exception as e:
         console.print(f"[red]获取进度失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /features 命令 （bug）
 def _handle_features_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /features 命令
@@ -1687,7 +1690,7 @@ def _handle_features_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
     except Exception as e:
         console.print(f"[red]处理功能列表失败: {markup.escape(str(e))}[/red]")
 
-
+# 显示功能列表
 def _display_features(feature_list) -> None:
     """显示功能列表"""
     from rich.table import Table
@@ -1719,7 +1722,7 @@ def _display_features(feature_list) -> None:
 
     console.print(table)
 
-
+# 处理 /summary 命令
 def _handle_summary_command(agent: FoxCodeAgent, config: Config) -> None:
     """
     处理 /summary 命令
@@ -1747,7 +1750,7 @@ def _handle_summary_command(agent: FoxCodeAgent, config: Config) -> None:
     except Exception as e:
         console.print(f"[red]获取会话摘要失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /next 命令
 def _handle_next_command(agent: FoxCodeAgent, config: Config) -> None:
     """
     处理 /next 命令
@@ -1779,7 +1782,7 @@ def _handle_next_command(agent: FoxCodeAgent, config: Config) -> None:
     except Exception as e:
         console.print(f"[red]获取下一个任务失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /long-running 命令
 def _handle_long_running_toggle(config: Config, cmd_arg: str | None) -> None:
     """
     处理 /long-running 命令
@@ -1797,7 +1800,7 @@ def _handle_long_running_toggle(config: Config, cmd_arg: str | None) -> None:
         console.print(f"[cyan]长时间运行模式: {status}[/cyan]")
         console.print("[dim]用法: /long-running [on | off][/dim]")
 
-
+# 处理 /workflow 命令
 def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /workflow 命令
@@ -1973,7 +1976,7 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
     except Exception as e:
         console.print(f"[red]处理工作流程命令失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /phase 命令
 def _handle_phase_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /phase 命令
@@ -2031,7 +2034,7 @@ def _handle_phase_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     except Exception as e:
         console.print(f"[red]处理阶段命令失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /work 命令
 def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /work 命令
@@ -2277,7 +2280,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
     except Exception as e:
         console.print(f"[red]处理 /work 命令失败: {markup.escape(str(e))}[/red]")
 
-
+# 从任务描述中提取目标子文件夹
 def _extract_target_subfolder(description: str, working_dir: Path) -> str:
     """
     从任务描述中提取目标子文件夹
@@ -2339,7 +2342,7 @@ def _extract_target_subfolder(description: str, working_dir: Path) -> str:
 
     return "."
 
-
+# 处理会话结束
 def _handle_session_end(agent: FoxCodeAgent, config: Config) -> None:
     """
     处理会话结束
@@ -2364,7 +2367,7 @@ def _handle_session_end(agent: FoxCodeAgent, config: Config) -> None:
     except Exception as e:
         logger.warning(f"保存会话摘要失败: {e}")
 
-
+# 处理 /stats 命令
 def _handle_stats_command() -> None:
     """
     处理 /stats 命令
@@ -2444,7 +2447,7 @@ def _handle_stats_command() -> None:
         logger.error(f"获取统计信息失败: {e}")
         console.print(f"[red]获取统计信息失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /health 命令
 def _handle_health_command() -> None:
     """
     处理 /health 命令
@@ -2506,8 +2509,7 @@ if __name__ == "__main__":
     main()
 
 
-# ==================== 高级功能命令处理函数 (v2.0 新增) ====================
-
+# 处理 /index 命令
 def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /index 命令
@@ -2557,7 +2559,7 @@ def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     except Exception as e:
         console.print(f"[red]索引操作失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /search 命令
 def _handle_search_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /search 命令
@@ -2611,7 +2613,7 @@ def _handle_search_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
     except Exception as e:
         console.print(f"[red]搜索失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /kb 命令
 def _handle_kb_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /kb 命令
@@ -2662,7 +2664,7 @@ def _handle_kb_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None)
     except Exception as e:
         console.print(f"[red]知识库操作失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /analyze 命令
 def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /analyze 命令
@@ -2712,7 +2714,7 @@ def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
     except Exception as e:
         console.print(f"[red]项目分析失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /debug 命令
 def _handle_debug_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /debug 命令
@@ -2767,7 +2769,7 @@ def _handle_debug_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     except Exception as e:
         console.print(f"[red]调试操作失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /profile 命令
 def _handle_profile_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /profile 命令
@@ -2800,7 +2802,7 @@ def _handle_profile_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
     except Exception as e:
         console.print(f"[red]性能分析失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /security 命令
 def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /security 命令
@@ -2916,7 +2918,7 @@ def _handle_security_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
         logger.error(f"安全扫描失败: {e}", exc_info=True)
         console.print(f"[red]安全扫描失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /format 命令
 def _handle_format_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /format 命令
@@ -2951,7 +2953,7 @@ def _handle_format_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
     except Exception as e:
         console.print(f"[red]代码格式化失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /refactor 命令
 def _handle_refactor_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /refactor 命令
@@ -2989,7 +2991,7 @@ def _handle_refactor_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
     except Exception as e:
         console.print(f"[red]重构分析失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /test 命令
 def _handle_test_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /test 命令
@@ -3019,7 +3021,7 @@ def _handle_test_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
     except Exception as e:
         console.print(f"[red]测试生成失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /doc 命令
 def _handle_doc_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /doc 命令
@@ -3048,7 +3050,7 @@ def _handle_doc_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
     except Exception as e:
         console.print(f"[red]文档生成失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /git 命令
 def _handle_git_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /git 命令
@@ -3091,7 +3093,7 @@ def _handle_git_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
     except Exception as e:
         console.print(f"[red]Git 操作失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /diagram 命令
 def _handle_diagram_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /diagram 命令
@@ -3123,7 +3125,7 @@ def _handle_diagram_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
     except Exception as e:
         console.print(f"[red]图表生成失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /space 命令
 def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /space 命令
@@ -3353,7 +3355,7 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     except Exception as e:
         console.print(f"[red]OpenSpace 操作失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /topic 命令
 def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /topic 命令
@@ -3441,7 +3443,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         else:
             console.print(f"[red]切换输出模式失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /mcp 命令
 def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /mcp 命令
@@ -3642,7 +3644,7 @@ def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
     except Exception as e:
         console.print(f"[red]处理 /mcp 命令失败: {markup.escape(str(e))}[/red]")
 
-
+# 处理 /update 命令
 def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /update 命令

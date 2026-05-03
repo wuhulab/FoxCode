@@ -765,6 +765,8 @@ foxcode --plan             # 规划模式
 - `/load <id>` - 加载会话
 - `/mode <mode>` - 切换模式
 - `/model <name>` - 切换模型
+- `/openai` - 配置 OpenAI API（url, key, model）
+- `/shunxapi` - 配置 ShunxAPI（默认 url: https://ai-api2.shunx.top/v1）
 - `/exit` 或 `/quit` - 退出
 
 ### 监控命令
@@ -1464,6 +1466,12 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
         config.model.model_name = cmd_arg
         console.print(f"[green]已切换模型: {cmd_arg}[/green]")
 
+    elif cmd_name == "/openai":
+        _handle_openai_command(agent, config)
+
+    elif cmd_name == "/shunxapi":
+        _handle_shunxapi_command(agent, config)
+
     elif cmd_name == "/sessions":
         sessions = Session.list_sessions(config)
         for s in sessions[:10]:
@@ -1490,6 +1498,13 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
             "Wrbsite:https://www.shunx.top/\n"
             ""
         )
+
+    elif cmd_name == "/openai":
+        _handle_openai_command(config)
+
+    elif cmd_name == "/shunxapi":
+        _handle_shunxapi_command(config)
+
     # ==================== 长时间运行模式命令 ====================
 
     elif cmd_name == "/init":
@@ -1578,11 +1593,110 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
     elif cmd_name == "/update":
         _handle_update_command(agent, config, cmd_arg)
 
+    elif cmd_name == "/design":
+        _handle_design_command(cmd_arg)
+
     else:
         console.print(f"[yellow]未知命令: {cmd_name}[/yellow]")
         console.print("[dim]输入 /help 查看可用命令[/dim]")
 
     return True
+
+# 处理 /design 命令
+def _handle_design_command(cmd_arg: str | None) -> None:
+    """
+    处理 /design 命令
+
+    启用 AI 设计规范检查与强制遵守功能。
+    子命令：
+      lint <file>  — 验证 DESIGN.md 文件
+      spec         — 输出格式规范
+      export <file> <format> — 导出为其他格式
+    """
+    from foxcode.design_md.lint import lint as design_lint
+    from foxcode.design_md.spec_gen.helpers import get_spec_content, get_rules_table
+
+    if not cmd_arg:
+        console.print("[cyan]DESIGN.md 设计规范检查工具[/cyan]")
+        console.print("[dim]用法: /design lint <file> | /design spec | /design export <file> <format>[/dim]")
+        return
+
+    parts = cmd_arg.strip().split(maxsplit=1)
+    sub_cmd = parts[0].lower()
+    sub_arg = parts[1] if len(parts) > 1 else None
+
+    if sub_cmd == "lint":
+        if not sub_arg:
+            console.print("[yellow]请指定 DESIGN.md 文件路径[/yellow]")
+            return
+        file_path = sub_arg.strip()
+        try:
+            from pathlib import Path
+            content = Path(file_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            console.print(f"[red]文件不存在: {file_path}[/red]")
+            return
+        report = design_lint(content)
+        console.print(f"[bold]验证结果:[/bold] {report.summary['errors']} 错误, {report.summary['warnings']} 警告, {report.summary['infos']} 信息")
+        for f in report.findings:
+            color = {"error": "red", "warning": "yellow", "info": "cyan"}[f.severity]
+            path_str = f" [dim]{f.path}[/dim]" if f.path else ""
+            console.print(f"  [{color}]{f.severity.upper()}[/{color}]{path_str}: {f.message}")
+
+    elif sub_cmd == "spec":
+        output = get_spec_content()
+        console.print(output)
+
+    elif sub_cmd == "export":
+        if not sub_arg:
+            console.print("[yellow]用法: /design export <file> <format>[/yellow]")
+            console.print("[dim]支持格式: css-tailwind, json-tailwind, dtcg[/dim]")
+            return
+        export_parts = sub_arg.strip().split(maxsplit=1)
+        if len(export_parts) < 2:
+            console.print("[yellow]请指定文件路径和导出格式[/yellow]")
+            return
+        file_path, fmt = export_parts
+        try:
+            from pathlib import Path
+            content = Path(file_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            console.print(f"[red]文件不存在: {file_path}[/red]")
+            return
+        report = design_lint(content)
+        if fmt in ("css-tailwind",):
+            from foxcode.design_md.tailwind.v4.handler import TailwindV4EmitterHandler
+            from foxcode.design_md.tailwind.v4.serialize import serialize_to_css
+            handler = TailwindV4EmitterHandler()
+            result = handler.execute(report.designSystem)
+            if result.success:
+                console.print(serialize_to_css(result.data["theme"]))
+            else:
+                console.print(f"[red]导出失败: {result.error}[/red]")
+        elif fmt in ("json-tailwind", "tailwind"):
+            from foxcode.design_md.tailwind.handler import TailwindEmitterHandler
+            handler = TailwindEmitterHandler()
+            result = handler.execute(report.designSystem)
+            if result.success:
+                import json
+                console.print(json.dumps(result.data, default=str, indent=2, ensure_ascii=False))
+            else:
+                console.print(f"[red]导出失败: {result.error}[/red]")
+        elif fmt == "dtcg":
+            from foxcode.design_md.dtcg.handler import DtcgEmitterHandler
+            handler = DtcgEmitterHandler()
+            result = handler.execute(report.designSystem)
+            if result.success:
+                import json
+                console.print(json.dumps(result.data, default=str, indent=2, ensure_ascii=False))
+            else:
+                console.print(f"[red]导出失败: {result.error}[/red]")
+        else:
+            console.print(f"[yellow]不支持的格式: {fmt}[/yellow]")
+
+    else:
+        console.print(f"[yellow]未知子命令: {sub_cmd}[/yellow]")
+        console.print("[dim]可用: lint, spec, export[/dim]")
 
 # 处理 /init 命令
 def _handle_init_command(agent: FoxCodeAgent, config: Config) -> None:
@@ -3930,3 +4044,143 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
             print(f"[update] 更新失败: {str(e)}")
         else:
             console.print(f"[red]更新失败: {markup.escape(str(e))}[/red]")
+
+# 处理 /openai 命令
+def _handle_openai_command(agent: FoxCodeAgent, config: Config) -> None:
+    """
+    处理 /openai 命令
+    
+    配置 OpenAI API 连接参数
+    
+    用法:
+        /openai - 交互式配置 url, key, model
+    """
+    try:
+        is_minimalism = config.output_topic == OutputTopic.MINIMALISM
+        
+        # 显示当前配置
+        current_url = config.model.base_url or "未设置"
+        current_key = config.model.api_key or "未设置"
+        current_model = config.model.model_name
+        
+        if is_minimalism:
+            print("[openai] 当前配置:")
+            print(f"  URL: {current_url}")
+            print(f"  Key: {'已设置' if config.model.api_key else '未设置'}")
+            print(f"  Model: {current_model}")
+        else:
+            console.print(Panel(
+                f"[bold]URL:[/bold] {current_url}\n"
+                f"[bold]Key:[/bold] {'已设置' if config.model.api_key else '未设置'}\n"
+                f"[bold]Model:[/bold] {current_model}",
+                title="🔧 当前 OpenAI 配置",
+                style="cyan",
+            ))
+        
+        # 提示用户输入
+        console.print("\n[cyan]请输入新的配置（直接回车保持当前值）:[/cyan]")
+        
+        # 输入 URL
+        new_url = console.input("[yellow]URL[/yellow] (如 https://api.openai.com/v1): ").strip()
+        if new_url:
+            config.model.base_url = new_url
+            console.print(f"[green]✓ URL 已更新[/green]")
+        
+        # 输入 API Key
+        new_key = console.input("[yellow]API Key[/yellow]: ").strip()
+        if new_key:
+            config.model.api_key = new_key
+            console.print(f"[green]✓ API Key 已更新[/green]")
+        
+        # 输入 Model
+        new_model = console.input(f"[yellow]Model[/yellow] (当前: {current_model}): ").strip()
+        if new_model:
+            config.model.model_name = new_model
+            console.print(f"[green]✓ Model 已更新: {new_model}[/green]")
+        
+        # 显示更新后的配置
+        if is_minimalism:
+            print("[openai] 配置已更新:")
+            print(f"  URL: {config.model.base_url or '未设置'}")
+            print(f"  Key: {'已设置' if config.model.api_key else '未设置'}")
+            print(f"  Model: {config.model.model_name}")
+        else:
+            console.print(Panel(
+                f"[bold]URL:[/bold] {config.model.base_url or '未设置'}\n"
+                f"[bold]Key:[/bold] {'已设置' if config.model.api_key else '未设置'}\n"
+                f"[bold]Model:[/bold] {config.model.model_name}",
+                title="✅ OpenAI 配置已更新",
+                style="green",
+            ))
+            
+    except Exception as e:
+        logger.error(f"OpenAI 配置失败: {e}")
+        console.print(f"[red]配置失败: {markup.escape(str(e))}[/red]")
+
+# 处理 /shunxapi 命令
+def _handle_shunxapi_command(agent: FoxCodeAgent, config: Config) -> None:
+    """
+    处理 /shunxapi 命令
+    
+    配置 ShunxAPI 连接参数（OpenAI 兼容接口）
+    默认 URL: https://ai-api2.shunx.top/v1
+    
+    用法:
+        /shunxapi - 交互式配置 key, model（URL 使用默认值）
+    """
+    try:
+        is_minimalism = config.output_topic == OutputTopic.MINIMALISM
+        default_url = "https://ai-api2.shunx.top/v1"
+        
+        # 显示当前配置
+        current_key = config.model.api_key or "未设置"
+        current_model = config.model.model_name
+        
+        if is_minimalism:
+            print("[shunxapi] 当前配置:")
+            print(f"  URL: {default_url} (默认)")
+            print(f"  Key: {'已设置' if config.model.api_key else '未设置'}")
+            print(f"  Model: {current_model}")
+        else:
+            console.print(Panel(
+                f"[bold]URL:[/bold] {default_url} [dim](默认)[/dim]\n"
+                f"[bold]Key:[/bold] {'已设置' if config.model.api_key else '未设置'}\n"
+                f"[bold]Model:[/bold] {current_model}",
+                title="🔧 当前 ShunxAPI 配置",
+                style="cyan",
+            ))
+        
+        
+        # 提示用户输入
+        console.print("\n[cyan]请输入新的配置（直接回车保持当前值）:[/cyan]")
+        
+        # 输入 API Key
+        new_key = console.input("[yellow]API Key[/yellow]: ").strip()
+        if new_key:
+            config.model.api_key = new_key
+            console.print(f"[green]✓ API Key 已更新[/green]")
+        
+        # 输入 Model
+        new_model = console.input(f"[yellow]Model[/yellow] (当前: {current_model}): ").strip()
+        if new_model:
+            config.model.model_name = new_model
+            console.print(f"[green]✓ Model 已更新: {new_model}[/green]")
+        
+        # 显示更新后的配置
+        if is_minimalism:
+            print("[shunxapi] 配置已更新:")
+            print(f"  URL: {config.model.base_url}")
+            print(f"  Key: {'已设置' if config.model.api_key else '未设置'}")
+            print(f"  Model: {config.model.model_name}")
+        else:
+            console.print(Panel(
+                f"[bold]URL:[/bold] {config.model.base_url}\n"
+                f"[bold]Key:[/bold] {'已设置' if config.model.api_key else '未设置'}\n"
+                f"[bold]Model:[/bold] {config.model.model_name}",
+                title="✅ ShunxAPI 配置已更新",
+                style="green",
+            ))
+            
+    except Exception as e:
+        logger.error(f"ShunxAPI 配置失败: {e}")
+        console.print(f"[red]配置失败: {markup.escape(str(e))}[/red]")

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import abc
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -518,16 +519,24 @@ class BaseTool(abc.ABC):
                     raise ValueError(f"参数 {param.name} 包含非法空字节")
 
             if param.name in ('command', 'cmd'):
-                dangerous_patterns = [
+                # Shell 语法模式：直接字符串匹配
+                shell_syntax_patterns = [
                     '$((', '`', '${', '$(',
                     '||', '&&', ';',
                     '$IFS', '$(printf', '$(eval',
-                    'base64', 'xxd', 'od',
                 ]
-                for pattern in dangerous_patterns:
+                for pattern in shell_syntax_patterns:
                     if pattern in value:
                         raise ValueError(
                             f"参数 {param.name} 包含危险的命令模式 '{pattern}'，已拒绝执行"
+                        )
+                
+                # 独立命令词：使用单词边界匹配，避免误报（如 "code" 包含 "od"）
+                standalone_commands = ['base64', 'xxd', 'od']
+                for cmd in standalone_commands:
+                    if re.search(rf'\b{re.escape(cmd)}\b', value):
+                        raise ValueError(
+                            f"参数 {param.name} 包含危险的命令 '{cmd}'，已拒绝执行"
                         )
 
         elif param.type == "integer":

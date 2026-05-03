@@ -306,56 +306,48 @@ class MinimalismOutputBuffer:
     
     过滤的内容：
     - XML工具调用标签（<function>、<parameter>等）
-    - 工具执行提示（🔧 Executing tool等）
+    - 工具执行提示（Executing tool等）
     - 特殊字符（╭─、╰─等）
     
     工作原理：
-    1. 缓冲输出片段
-    2. 识别并过滤XML内容
+    1. 收集所有输出片段到完整缓冲区
+    2. 在 flush 时统一过滤和处理
     3. 只输出有意义的文本
-    4. 添加简洁的标记（[tool]、[say]等）
     """
 
     # 需要过滤的模式（正则表达式）
-    # 这些是AI输出的XML工具调用格式，对用户无意义
     FILTER_PATTERNS = [
-        r"<function[^>]*>.*?</function>",  # <function>...</function>
-        r"<function[^>]*/>",  # <function ... />
-        r"</?function[^>]*>",  # <function> 或 </function>
-        r"<parameter[^>]*>.*?</parameter>",  # <parameter>...</parameter>
-        r"<parameter[^>]*/>",  # <parameter ... />
-        r"</?parameter[^>]*>",  # <parameter> 或 </parameter>
-        r"</?tool_result[^>]*>",  # <tool_result> 标签
-        r"</?tool_name[^>]*>",  # <tool_name> 标签
-        r"</?success[^>]*>",  # <success> 标签
-        r"</?output[^>]*>",  # <output> 标签
-        r"</?error[^>]*>",  # <error> 标签
-        r"</?hint[^>]*>",  # <hint> 标签
-        r"```xml\s*```",  # 空 xml 代码块
-        r"```xml",  # xml 代码块开始
-        r"```",  # 代码块标记（在 xml 上下文中）
-        r"🔧\s*Executing tool:",  # 工具执行提示
-        r"✅\s*Tool executed",  # 工具执行成功
-        r"❌\s*Tool execution",  # 工具执行失败
-        r"╭─+",  # 特殊字符
-        r"╰─+",  # 特殊字符
+        r"<function[^>]*>.*?</function>",
+        r"<function[^>]*/>",
+        r"</?function[^>]*>",
+        r"<parameter[^>]*>.*?</parameter>",
+        r"<parameter[^>]*/>",
+        r"</?parameter[^>]*>",
+        r"</?tool_result[^>]*>",
+        r"</?tool_name[^>]*>",
+        r"</?success[^>]*>",
+        r"</?output[^>]*>",
+        r"</?error[^>]*>",
+        r"</?hint[^>]*>",
+        r"```xml\s*```",
+        r"```xml",
+        r"```",
+        r"🔧\s*Executing tool:",
+        r"✅\s*Tool executed",
+        r"❌\s*Tool execution",
+        r"╭─+",
+        r"╰─+",
     ]
 
     def __init__(self):
         """初始化缓冲器"""
-        self.buffer: list[str] = []
-        self.in_result_block = False  # 是否在[result]块中
-        self.result_buffer: list[str] = []  # 结果缓冲区
-        self.text_buffer = ""  # 文本缓冲区
+        self.buffer = ""  # 完整缓冲区
         self.say_printed = False  # 是否已输出[say]标记
-        self.text_buffer_size = 30  # 文本缓冲区大小阈值
-        self.in_xml_context = False  # 是否在XML上下文中
-        self.xml_buffer = ""  # XML缓冲区
 
     @staticmethod
     def _colorize_tag(tag: str, text: str) -> str:
         """
-        为标签添加颜色，后面内容保持白色
+        为标签添加颜色
         
         Args:
             tag: 标签名（如 "tool"、"say"）
@@ -364,12 +356,9 @@ class MinimalismOutputBuffer:
         Returns:
             带ANSI颜色码的格式化字符串
         """
-        # ANSI颜色码
         GREEN = "\033[32m"
         WHITE = "\033[37m"
         RESET = "\033[0m"
-        
-        # 返回格式：绿色标签 + 白色内容
         return f"{GREEN}[{tag}]{RESET}{WHITE}{text}{RESET}"
 
     def _filter_xml_content(self, text: str) -> str:
@@ -394,157 +383,44 @@ class MinimalismOutputBuffer:
         
         return result.strip()
 
-    def _contains_xml_tag(self, text: str) -> bool:
-        """检查文本是否包含 XML 工具调用标签"""
-        xml_indicators = [
-            "<function", "</function>",
-            "<parameter", "</parameter>",
-            "```xml",
-            "🔧",
-            "╭─",
-            "╰─",
-        ]
-        text_lower = text.lower()
-        for indicator in xml_indicators:
-            if indicator.lower() in text_lower:
-                return True
-        return False
-
     def add_chunk(self, chunk: str) -> str | None:
         """
-        添加输出片段，返回需要立即显示的内容
+        添加输出片段到缓冲区
         
         Args:
             chunk: 输出片段
             
         Returns:
-            需要立即显示的内容，如果应该缓冲则返回 None
+            None（所有内容在 flush 时统一输出）
         """
-        # 处理 [result] 块：完整输出
-        if "[result]" in chunk:
-            self.in_result_block = True
-            self.result_buffer = [chunk]
-            return None
-        
-        if self.in_result_block:
-            self.result_buffer.append(chunk)
-            if "[/result]" in chunk:
-                self.in_result_block = False
-                result = "".join(self.result_buffer)
-                self.result_buffer = []
-                return result
-            return None
-        
-        # [tool] 标记：直接输出，使用绿色显示标签
-        if chunk.strip().startswith("[tool]"):
-            output = self._flush_text_buffer()
-            self.in_xml_context = True
-            self.xml_buffer = ""
-            # 提取标签后的内容
-            tool_content = chunk.strip()[6:]  # 去掉 "[tool]" 前缀
-            colored_chunk = self._colorize_tag("tool", tool_content)
-            return (output + colored_chunk) if output else colored_chunk
-        
-        # [error] 标记：直接输出
-        if chunk.strip().startswith("[error]"):
-            output = self._flush_text_buffer()
-            return (output + chunk) if output else chunk
-        
-        # [info] 标记：直接输出
-        if chunk.strip().startswith("[info]"):
-            output = self._flush_text_buffer()
-            return (output + chunk) if output else chunk
-        
-        # [warn] 标记：直接输出
-        if chunk.strip().startswith("[warn]"):
-            output = self._flush_text_buffer()
-            return (output + chunk) if output else chunk
-        
-        # 检测是否进入 XML 上下文
-        if self._contains_xml_tag(chunk):
-            self.in_xml_context = True
-            self.xml_buffer += chunk
-            return None
-        
-        # 在 XML 上下文中，收集内容直到遇到普通文本
-        if self.in_xml_context:
-            self.xml_buffer += chunk
-            # 检查是否 XML 块结束（遇到明显的非 XML 内容）
-            if chunk.strip() and not self._contains_xml_tag(chunk):
-                # 检查是否是真正的文本内容（不是标签片段）
-                if not chunk.strip().startswith("<") and not chunk.strip().startswith("```"):
-                    self.in_xml_context = False
-                    # 过滤 XML 缓冲区并丢弃
-                    self.xml_buffer = ""
-                    # 将这个普通文本加入缓冲
-                    self.text_buffer += chunk
-            return None
-        
-        # 普通文本：缓冲
-        self.text_buffer += chunk
-        
-        # 当缓冲区达到一定大小时，输出
-        if len(self.text_buffer) >= self.text_buffer_size:
-            return self._flush_text_buffer()
-        
+        self.buffer += chunk
         return None
 
-    def _flush_text_buffer(self) -> str:
-        """刷新文本缓冲区，只在第一次添加 [say] 前缀"""
-        if not self.text_buffer.strip():
-            self.text_buffer = ""
-            return ""
+    def flush(self) -> str:
+        """
+        刷新缓冲区，返回处理后的内容
         
-        text = self.text_buffer
-        self.text_buffer = ""
+        统一处理所有缓冲内容，过滤 XML，提取有意义的文本
+        """
+        if not self.buffer.strip():
+            self.buffer = ""
+            return "\033[34m[work_end]\033[0m\n"
         
         # 过滤 XML 内容
-        text = self._filter_xml_content(text)
+        filtered = self._filter_xml_content(self.buffer)
         
-        if not text.strip():
-            return ""
+        # 清空缓冲区
+        self.buffer = ""
         
-        # 只在第一次输出 [say]，使用绿色显示标签
+        if not filtered.strip():
+            return "\033[34m[work_end]\033[0m\n"
+        
+        # 添加 [say] 标记（只输出一次）
         if not self.say_printed:
             self.say_printed = True
-            return self._colorize_tag("say", f" {text}")
+            return self._colorize_tag("say", f" {filtered}") + "\n\n\033[34m[work_end]\033[0m\n"
         
-        return text
-
-    def flush(self) -> str:
-        """刷新缓冲区，返回所有剩余内容"""
-        result = ""
-        
-        # 处理 XML 缓冲区：过滤后保留有意义的文本
-        if self.xml_buffer:
-            # 过滤 XML 内容，保留有意义的文本
-            filtered = self._filter_xml_content(self.xml_buffer)
-            if filtered.strip():
-                # 如果是第一次输出，添加 [say] 标记
-                if not self.say_printed:
-                    self.say_printed = True
-                    result = self._colorize_tag("say", f" {filtered}") + "\n\n"
-                else:
-                    result = filtered + "\n\n"
-            self.xml_buffer = ""
-            self.in_xml_context = False
-        
-        # 刷新文本缓冲区
-        text = self._flush_text_buffer()
-        if text:
-            # 确保文本以换行结束，避免 [work_end] 出现在文本中间
-            result = result.rstrip() + "\n" + text.rstrip() + "\n\n"
-        
-        # 刷新结果缓冲区
-        if self.in_result_block and self.result_buffer:
-            result += "".join(self.result_buffer)
-            self.in_result_block = False
-            self.result_buffer = []
-        
-        # 添加工作结束标记（确保在新行）
-        result += "\033[34m[work_end]\033[0m\n"
-        
-        return result
+        return filtered + "\n\n\033[34m[work_end]\033[0m\n"
 
 
 def _adjust_log_level_for_minimalism() -> None:

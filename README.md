@@ -1,5 +1,9 @@
 # FoxCode | 简体中文
 
+### 赞助商
+
+[便宜好用的api聚合站](https://ai-api2.shunx.top/)
+
 [English](README_EN.md) | [简体中文](README.md)
 
 **新一代 AI 终端编码助手**

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <!--
+        Monaco Editor - FoxCode Desktop 独立编辑器页面
+        
+        这是嵌入 iframe 的独立页面，提供完整的 VS Code 级别代码编辑功能。
+        
+        功能特性：
+        - 语法高亮（支持 40+ 编程语言）
+        - 智能代码补全
+        - 代码折叠和 minimap
+        - 多光标编辑
+        - 查找替换
+        - 与主应用的双向通信（postMessage）
+        
+        通信协议：
+        - 接收消息: file-content, save-file, update-config, format-code
+        - 发送消息: request-file, content-changed, save-content
+        
+        作者: FoxCode Team
+        版本: 1.0.0
+    -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monaco Editor - FoxCode</title>
+    
+    <!-- 防止缓存 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
+    <style>
+        /* ==================== 全局样式重置 ==================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        /* ==================== 页面布局 ==================== */
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;  /* 禁止滚动 */
+            background-color: #1e1e1e;  /* VS Code 暗色背景 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        
+        /* 编辑器容器 - 填充整个页面 */
+        #editor-container {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+        
+        /* 加载指示器 */
+        #loading-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #cccccc;
+            font-size: 14px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .loading-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #3c3c3c;
+            border-top-color: #007acc;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* 错误提示 */
+        #error-message {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #5a1d1d;
+            color: #f44747;
+            padding: 12px 24px;
+            border-radius: 4px;
+            border: 1px solid #f44747;
+            max-width: 80%;
+            text-align: center;
+            z-index: 100;
+            display: none;
+        }
+        
+        /* 状态栏（可选） */
+        #status-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 22px;
+            background-color: #007acc;
+            color: white;
+            font-size: 12px;
+            line-height: 22px;
+            padding: 0 8px;
+            display: flex;
+            justify-content: space-between;
+            opacity: 0;
+            transition: opacity 200ms;
+            pointer-events: none;
+        }
+        
+        #status-bar:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- 加载指示器 -->
+    <div id="loading-indicator">
+        <div class="loading-spinner"></div>
+        <span>正在加载 Monaco Editor...</span>
+    </div>
+    
+    <!-- 错误提示容器 -->
+    <div id="error-message"></div>
+    
+    <!-- Monaco 编辑器挂载点 -->
+    <div id="editor-container"></div>
+    
+    <!-- 可选的状态栏 -->
+    <div id="status-bar">
+        <span id="status-position">行 1, 列 1</span>
+        <span id="status-language">Python</span>
+        <span id="status-encoding">UTF-8</span>
+    </div>
+    
+    <!-- 
+        加载 Monaco Editor 
+        使用 CDN 加载，确保版本稳定性和性能
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    
+    <!-- 主逻辑脚本 -->
+    <script src="editor.js"></script>
+</body>
+</html>

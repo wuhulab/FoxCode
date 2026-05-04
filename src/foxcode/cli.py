@@ -915,6 +915,7 @@ enable_shell = true
               default="default", help="运行模式")
 @click.option("--yolo", is_flag=True, help="启用 YOLO 模式（自动执行）")
 @click.option("--plan", is_flag=True, help="启用规划模式（只读）")
+@click.option("--gui", "-g", is_flag=True, help="启动 GUI 桌面版（基于 NiceGUI + Monaco Editor）")
 @click.option("--resume", "-r", is_flag=True, help="恢复上次会话")
 @click.option("--session", default=None, help="指定会话 ID")
 @click.option("--list-sessions", is_flag=True, help="列出所有会话")
@@ -930,6 +931,7 @@ def main(
     mode: str,
     yolo: bool,
     plan: bool,
+    gui: bool,
     resume: bool,
     session: str | None,
     list_sessions: bool,
@@ -941,7 +943,17 @@ def main(
     FoxCode - AI 终端编码助手
     
     一个强大的 AI 编码助手，帮助你编写、分析和修改代码。
+    
+    支持两种运行模式：
+    - CLI 模式（默认）：命令行交互界面
+    - GUI 桌面版：使用 --gui 或 -g 参数启动图形界面
+      基于 NiceGUI 和 Monaco Editor，提供 VS Code 级别的编辑体验
     """
+    # 首先检查是否要启动 GUI 版本
+    if gui:
+        _start_gui_mode()
+        return
+    
     # 首先根据极简模式调整日志级别（在信号处理器之前）
     _adjust_log_level_for_minimalism()
 
@@ -1607,24 +1619,52 @@ def _handle_design_command(cmd_arg: str | None) -> None:
     """
     处理 /design 命令
 
-    启用 AI 设计规范检查与强制遵守功能。
+    AI 设计规范检查与强制遵守功能。
     子命令：
+      on           — 启用设计规范遵守模式（AI 主动遵守）
+      off          — 禁用设计规范遵守模式
+      status       — 查看当前模式状态
       lint <file>  — 验证 DESIGN.md 文件
       spec         — 输出格式规范
       export <file> <format> — 导出为其他格式
     """
     from foxcode.design_md.lint import lint as design_lint
     from foxcode.design_md.spec_gen.helpers import get_spec_content, get_rules_table
+    from foxcode.design_md.design_mode import design_mode_manager
 
     if not cmd_arg:
-        console.print("[cyan]DESIGN.md 设计规范检查工具[/cyan]")
-        console.print("[dim]用法: /design lint <file> | /design spec | /design export <file> <format>[/dim]")
+        status = "[green]已启用[/green]" if design_mode_manager.is_enabled() else "[dim]未启用[/dim]"
+        console.print("[cyan]DESIGN.md 设计规范工具[/cyan]")
+        console.print(f"设计规范遵守模式: {status}")
+        console.print("[dim]用法: /design on | /design off | /design status | /design lint <file> | /design spec | /design export <file> <format>[/dim]")
         return
 
     parts = cmd_arg.strip().split(maxsplit=1)
     sub_cmd = parts[0].lower()
     sub_arg = parts[1] if len(parts) > 1 else None
 
+    # ── on/off/status 子命令 ──────────────────────────────────
+    if sub_cmd == "on":
+        result = design_mode_manager.enable()
+        console.print(f"[green]{result}[/green]")
+        return
+
+    if sub_cmd == "off":
+        result = design_mode_manager.disable()
+        console.print(f"[yellow]{result}[/yellow]")
+        return
+
+    if sub_cmd == "status":
+        if design_mode_manager.is_enabled():
+            file_path = design_mode_manager.get_design_file_path()
+            console.print(f"[green]设计规范遵守模式: 已启用[/green]")
+            console.print(f"[dim]规范文件: {file_path}[/dim]")
+        else:
+            console.print("[dim]设计规范遵守模式: 未启用[/dim]")
+            console.print("[dim]使用 /design on 启用[/dim]")
+        return
+
+    # ── lint 子命令 ───────────────────────────────────────────
     if sub_cmd == "lint":
         if not sub_arg:
             console.print("[yellow]请指定 DESIGN.md 文件路径[/yellow]")
@@ -1643,10 +1683,12 @@ def _handle_design_command(cmd_arg: str | None) -> None:
             path_str = f" [dim]{f.path}[/dim]" if f.path else ""
             console.print(f"  [{color}]{f.severity.upper()}[/{color}]{path_str}: {f.message}")
 
+    # ── spec 子命令 ───────────────────────────────────────────
     elif sub_cmd == "spec":
         output = get_spec_content()
         console.print(output)
 
+    # ── export 子命令 ─────────────────────────────────────────
     elif sub_cmd == "export":
         if not sub_arg:
             console.print("[yellow]用法: /design export <file> <format>[/yellow]")
@@ -1696,7 +1738,7 @@ def _handle_design_command(cmd_arg: str | None) -> None:
 
     else:
         console.print(f"[yellow]未知子命令: {sub_cmd}[/yellow]")
-        console.print("[dim]可用: lint, spec, export[/dim]")
+        console.print("[dim]可用: on, off, status, lint, spec, export[/dim]")
 
 # 处理 /init 命令
 def _handle_init_command(agent: FoxCodeAgent, config: Config) -> None:
@@ -2617,6 +2659,96 @@ def _handle_health_command() -> None:
     except Exception as e:
         logger.error(f"获取健康状态失败: {e}")
         console.print(f"[red]获取健康状态失败: {markup.escape(str(e))}[/red]")
+
+
+def _start_gui_mode() -> None:
+    """
+    启动 FoxCode GUI 桌面版
+    
+    这是 GUI 模式的入口函数，当用户使用 --gui 或 -g 参数时调用。
+    会启动基于 NiceGUI 和 Monaco Editor 的图形界面。
+    
+    功能特性：
+    - VS Code 风格的现代化界面
+    - Monaco 代码编辑器（完整功能）
+    - 文件浏览器和项目管理
+    - AI 对话界面（复用核心 Agent）
+    - 终端面板
+    - 暗色主题
+    
+    使用方式：
+        foxcode --gui
+        foxcode -g
+        
+    技术栈：
+    - NiceGUI (Vue.js + FastAPI)
+    - Monaco Editor (iframe 隔离)
+    - SVG 图标系统（禁止 emoji）
+    
+    注意事项：
+    - 需要安装 nicegui>=2.0.0
+    - 默认监听端口 8080
+    - 支持窗口大小调整
+    - 按 Ctrl+C 或关闭窗口退出
+    
+    异常处理：
+    - 缺少依赖时给出明确提示
+    - 端口占用时自动尝试其他端口
+    - 启动失败时回退到错误信息显示
+    """
+    import sys
+    
+    try:
+        # 导入 GUI 模块
+        from foxcode.gui.app import start_gui
+        
+        console.print(Panel(
+            "[bold cyan]正在启动 FoxCode Desktop...[/bold cyan]\n\n"
+            "基于 NiceGUI + Monaco Editor 的图形化编程环境\n\n"
+            "功能：\n"
+            "  • VS Code 级别的代码编辑器\n"
+            "  • 文件浏览器和项目管理\n"
+            "  • AI 辅助编程对话\n"
+            "  • 集成终端面板\n"
+            "  • 暗色主题界面\n\n"
+            "访问地址: http://localhost:8080",
+            title="FoxCode Desktop",
+            border_style="cyan",
+        ))
+        
+        # 启动 GUI 应用
+        start_gui()
+        
+    except ImportError as e:
+        error_msg = str(e)
+        
+        if "nicegui" in error_msg.lower():
+            console.print(Panel(
+                f"[red]缺少 GUI 依赖[/red]\n\n"
+                f"请运行以下命令安装：\n\n"
+                f"  [bold]pip install nicegui>=2.0.0[/bold]\n\n"
+                f"或安装完整的 GUI 可选依赖：\n\n"
+                f"  [bold]pip install 'foxcode[gui]'[/bold]",
+                title="依赖缺失",
+                border_style="red",
+            ))
+        else:
+            console.print(f"[red]导入 GUI 模块失败: {error_msg}[/red]")
+        
+        sys.exit(1)
+        
+    except Exception as e:
+        console.print(Panel(
+            f"[red]启动 GUI 失败[/red]\n\n"
+            f"错误信息: {markup.escape(str(e))}\n\n"
+            f"请检查日志获取详细信息:\n"
+            f"  [bold]{Path.home() / '.foxcode' / 'gui.log'}[/bold]",
+            title="启动错误",
+            border_style="red",
+        ))
+        
+        logger.error(f"GUI 启动失败: {e}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

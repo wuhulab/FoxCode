@@ -48,6 +48,7 @@ dependencies = [
     "cryptography>=41.0.0",
     "pyyaml>=6.0",
     "markdown-it-py>=3.0",
+    "nicegui>=2.0.0",           # GUI 桌面版框架（基于 Vue.js 和 FastAPI）
 ]
 
 [project.optional-dependencies]

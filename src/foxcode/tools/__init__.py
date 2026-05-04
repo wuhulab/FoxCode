@@ -49,6 +49,7 @@ from foxcode.tools.base import (
 )
 from foxcode.tools.ai_tools import AIChatTool, AICodeTool, AISummarizeTool
 from foxcode.tools.code_tools import GrepTool, SearchCodebaseTool
+from foxcode.tools.design_tools import DesignCheckTool
 from foxcode.tools.file_tools import (
     DeleteFileTool,
     EditFileTool,
@@ -129,6 +130,8 @@ __all__ = [
     # 代码工具
     "GrepTool",
     "SearchCodebaseTool",
+    # 设计规范工具
+    "DesignCheckTool",
     # Playwright 浏览器工具
     "BrowserSession",
     "PlaywrightSessionManager",

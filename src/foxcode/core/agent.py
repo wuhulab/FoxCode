@@ -182,6 +182,7 @@ Your response (output immediately, do NOT talk):
 | glob | Find files | pattern |
 | search_codebase | Semantic search | query |
 | shell_execute | Run command | command |
+| design_check | Check design tokens & compliance | action (tokens/rules/check) |
 
 ================================================================================
 ## TOOL CALL FORMAT
@@ -758,6 +759,11 @@ class FoxCodeAgent:
         if open_space_prompt:
             base_prompt += "\n\n" + open_space_prompt
 
+        # 注入设计规范遵守模式上下文
+        design_prompt = self._get_design_mode_prompt_injection()
+        if design_prompt:
+            base_prompt += "\n\n" + design_prompt
+
         # 检查是否有恢复上下文
         handoff_context = self._get_handoff_context()
         if handoff_context:
@@ -815,6 +821,28 @@ class FoxCodeAgent:
 
         except Exception as e:
             logger.warning(f"Failed to get OpenSpace prompt injection: {e}")
+            return ""
+
+    def _get_design_mode_prompt_injection(self) -> str:
+        """
+        获取设计规范遵守模式的提示注入
+
+        当 /design on 启用时，将项目的设计令牌和遵守规则
+        注入到系统提示中，使 AI 在前端代码生成时主动遵守。
+
+        Returns:
+            设计规范上下文文本，未启用时返回空字符串
+        """
+        try:
+            from foxcode.design_md.design_mode import design_mode_manager
+
+            if not design_mode_manager.is_enabled():
+                return ""
+
+            return design_mode_manager.get_prompt_injection()
+
+        except Exception as e:
+            logger.warning(f"Failed to get design mode prompt injection: {e}")
             return ""
 
     def _get_handoff_context(self) -> str:

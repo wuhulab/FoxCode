@@ -16,7 +16,7 @@ FoxCode 文件操作工具 - 安全的文件系统操作
 使用方式：
     # 这些工具通过agent自动调用
     # AI会根据需要选择合适的工具
-    
+
     # 例如读取文件：
     # <function=read_file>
     # <parameter=file_path>/path/to/file.py</parameter>
@@ -61,22 +61,22 @@ logger = logging.getLogger(__name__)
 def _safe_error_message(operation: str, error: Exception, include_details: bool = False) -> str:
     """
     生成安全的错误消息 - 保护敏感信息不泄露
-    
+
     为什么需要安全错误消息？
     1. 错误消息可能包含完整路径，泄露系统结构
     2. 可能暴露用户名、目录结构等敏感信息
     3. 给攻击者提供系统信息
-    
+
     处理策略：
     - 详细错误记录到日志（管理员可见）
     - 用户看到通用错误消息（安全）
     - 调试模式下显示部分信息（脱敏后）
-    
+
     Args:
         operation: 操作类型（如"读取文件"、"写入文件"）
         error: 原始异常对象
         include_details: 是否包含详细信息（仅调试模式）
-        
+
     Returns:
         安全的错误消息（不包含敏感路径）
     """
@@ -87,22 +87,22 @@ def _safe_error_message(operation: str, error: Exception, include_details: bool 
         # 调试模式下返回详细信息（但仍然脱敏路径）
         error_str = str(error)
         # 脱敏Windows路径：C:\Users\xxx\... -> ***PATH***
-        error_str = re.sub(r'[A-Za-z]:\\[^\s<>:"|?*]+', '***PATH***', error_str)
+        error_str = re.sub(r'[A-Za-z]:\\[^\s<>:"|?*]+', "***PATH***", error_str)
         # 脱敏Unix路径：/home/xxx/... -> ***PATH***
-        error_str = re.sub(r'/[^\s<>:"|?*]+/[^\s<>:"|?*]+', '***PATH***', error_str)
+        error_str = re.sub(r'/[^\s<>:"|?*]+/[^\s<>:"|?*]+', "***PATH***", error_str)
         return f"{operation} 失败: {error_str}"
 
     # 返回通用错误消息（用户友好且安全）
     error_type = type(error).__name__
     generic_messages = {
-        'FileNotFoundError': "文件不存在或无法访问",
-        'PermissionError': "权限不足，无法执行操作",
-        'IsADirectoryError': "目标是一个目录，不是文件",
-        'NotADirectoryError': "目标不是目录",
-        'FileExistsError': "文件已存在",
-        'OSError': "系统错误，操作失败",
-        'UnicodeDecodeError': "文件编码不支持",
-        'ValueError': "参数无效",
+        "FileNotFoundError": "文件不存在或无法访问",
+        "PermissionError": "权限不足，无法执行操作",
+        "IsADirectoryError": "目标是一个目录，不是文件",
+        "NotADirectoryError": "目标不是目录",
+        "FileExistsError": "文件已存在",
+        "OSError": "系统错误，操作失败",
+        "UnicodeDecodeError": "文件编码不支持",
+        "ValueError": "参数无效",
     }
 
     return generic_messages.get(error_type, f"{operation} 失败，请检查参数后重试")
@@ -112,30 +112,40 @@ def _safe_error_message(operation: str, error: Exception, include_details: bool 
 class PathSecurityConfig:
     r"""
     路径安全配置 - 控制文件操作的访问权限
-    
+
     为什么需要路径安全？
     1. 防止路径穿越攻击（../../../etc/passwd）
     2. 限制AI只能访问项目目录
     3. 保护系统关键文件不被修改
-    
+
     安全策略：
     - 白名单：只允许访问指定目录
     - 黑名单：禁止访问系统关键目录
     - 符号链接：控制是否跟随符号链接
-    
+
     默认黑名单目录：
     - Windows: C:\Windows, C:\Program Files, C:\Users
     - Unix: /etc, /var, /root, /home
     """
+
     enabled: bool = True  # 是否启用安全检查
     allowed_directories: list[str] = field(default_factory=list)  # 允许的目录
-    denied_directories: list[str] = field(default_factory=lambda: [
-        # Unix系统目录
-        "/etc", "/var", "/root", "/home",
-        # Windows系统目录
-        "C:\\Windows", "C:\\Program Files", "C:\\ProgramData",
-        "C:\\Users", "\\Windows", "\\Program Files",
-    ])
+    denied_directories: list[str] = field(
+        default_factory=lambda: [
+            # Unix系统目录
+            "/etc",
+            "/var",
+            "/root",
+            "/home",
+            # Windows系统目录
+            "C:\\Windows",
+            "C:\\Program Files",
+            "C:\\ProgramData",
+            "C:\\Users",
+            "\\Windows",
+            "\\Program Files",
+        ]
+    )
     allow_symlinks: bool = False  # 是否允许符号链接
     max_symlink_depth: int = 5  # 最大符号链接深度
     follow_symlinks_in_allowed_dirs: bool = True  # 在允许目录内是否跟随符号链接
@@ -144,23 +154,23 @@ class PathSecurityConfig:
 class PathSecurityValidator:
     r"""
     路径安全验证器 - 防止路径穿越攻击
-    
+
     这是文件操作的安全守门员，负责：
     1. 验证路径是否在允许的目录内
     2. 检测并阻止路径穿越攻击
     3. 处理符号链接的安全问题
     4. 记录安全审计日志
-    
+
     攻击防护：
     - 路径穿越：../etc/passwd
     - 绝对路径：/etc/passwd
     - 符号链接：link -> /etc/passwd
     - 驱动器穿越：C:\Windows\System32
-    
+
     使用示例：
         validator = PathSecurityValidator()
         validator.initialize(working_dir="/project")
-        
+
         # 验证路径
         is_safe, reason, resolved = validator.validate_path("/project/file.txt")
         if not is_safe:
@@ -170,7 +180,7 @@ class PathSecurityValidator:
     def __init__(self, config: PathSecurityConfig | None = None):
         """
         初始化验证器
-        
+
         Args:
             config: 安全配置，None则使用默认配置
         """
@@ -182,7 +192,7 @@ class PathSecurityValidator:
     def initialize(self, working_dir: Path | str | None = None) -> None:
         """
         初始化允许的目录列表
-        
+
         Args:
             working_dir: 工作目录，如果未指定则使用当前目录
         """
@@ -220,18 +230,18 @@ class PathSecurityValidator:
     ) -> tuple[bool, str, Path | None]:
         """
         验证路径是否安全（增强版）
-        
+
         安全检查包括：
         - 路径规范化（防止 ../ 等遍历）
         - 符号链接检测和验证
         - 允许/禁止目录检查
         - 中间路径组件检查
-        
+
         Args:
             file_path: 要验证的路径
             operation: 操作类型 (read, write, delete)
             check_symlink: 是否检查符号链接
-            
+
         Returns:
             (是否安全, 错误消息, 解析后的路径)
         """
@@ -248,7 +258,7 @@ class PathSecurityValidator:
             path = Path(file_path)
 
             # 检查空字节注入
-            if '\x00' in str(path):
+            if "\x00" in str(path):
                 return False, "路径包含非法的空字节", None
 
             # 标准化路径，检测路径穿越
@@ -257,7 +267,7 @@ class PathSecurityValidator:
 
             # 检查路径穿越尝试（包括编码绕过）
             for part in path_parts:
-                if part == '..':
+                if part == "..":
                     return False, "路径包含非法的遍历字符 (..)", None
                 # 检测 Unicode 同形字符绕过
                 if self._contains_unicode_confusable(part):
@@ -272,7 +282,11 @@ class PathSecurityValidator:
                     # 解析符号链接目标
                     resolved_path = Path(os.path.realpath(str(path)))
                 else:
-                    resolved_path = Path(os.path.realpath(str(path))) if path.exists() else path.resolve(strict=False)
+                    resolved_path = (
+                        Path(os.path.realpath(str(path)))
+                        if path.exists()
+                        else path.resolve(strict=False)
+                    )
             except Exception:
                 try:
                     resolved_path = path.resolve(strict=False)
@@ -330,21 +344,21 @@ class PathSecurityValidator:
     def _contains_unicode_confusable(self, text: str) -> bool:
         """
         检查文本是否包含 Unicode 同形字符
-        
+
         Args:
             text: 要检查的文本
-            
+
         Returns:
             是否包含可疑字符
         """
         # 常见的路径相关 Unicode 同形字符
         suspicious_chars = {
-            '\uff0e': '.',  # 全角句号
-            '\u2024': '.',  # 单点前导符
-            '\uff0f': '/',  # 全角斜杠
-            '\uff3c': '\\', # 全角反斜杠
-            '\u2215': '/',  # 除号
-            '\u2216': '\\', # 集合减号
+            "\uff0e": ".",  # 全角句号
+            "\u2024": ".",  # 单点前导符
+            "\uff0f": "/",  # 全角斜杠
+            "\uff3c": "\\",  # 全角反斜杠
+            "\u2215": "/",  # 除号
+            "\u2216": "\\",  # 集合减号
         }
 
         for char in suspicious_chars:
@@ -355,12 +369,12 @@ class PathSecurityValidator:
     def _final_path_validation(self, resolved_path: Path) -> bool:
         """
         最终路径验证（防止竞态条件）
-        
+
         使用文件描述符验证路径，防止 TOCTOU 攻击。
-        
+
         Args:
             resolved_path: 解析后的路径
-            
+
         Returns:
             是否验证通过
         """
@@ -370,7 +384,7 @@ class PathSecurityValidator:
                 return True  # 新文件，允许创建
 
             # 使用 os.open 获取文件描述符（带 O_NOFOLLOW 防止符号链接）
-            if hasattr(os, 'O_NOFOLLOW'):
+            if hasattr(os, "O_NOFOLLOW"):
                 try:
                     fd = os.open(str(resolved_path), os.O_RDONLY | os.O_NOFOLLOW)
                     os.close(fd)
@@ -393,11 +407,11 @@ class PathSecurityValidator:
     def _check_symlink_enhanced(self, original_path: Path, resolved_path: Path) -> str | None:
         """
         增强的符号链接安全检查
-        
+
         Args:
             original_path: 原始路径
             resolved_path: 解析后的路径
-            
+
         Returns:
             错误消息，如果安全则返回 None
         """
@@ -416,8 +430,8 @@ class PathSecurityValidator:
 
                     try:
                         link_target = component.readlink()
-                        if str(link_target).startswith(('/', '\\')) or (
-                            len(str(link_target)) >= 2 and str(link_target)[1] == ':'
+                        if str(link_target).startswith(("/", "\\")) or (
+                            len(str(link_target)) >= 2 and str(link_target)[1] == ":"
                         ):
                             return f"符号链接指向绝对路径: {link_target}"
 
@@ -433,7 +447,11 @@ class PathSecurityValidator:
                         return f"符号链接检查失败: {e}"
 
             try:
-                original_real = Path(os.path.realpath(str(original_path))) if original_path.exists() else resolved_path
+                original_real = (
+                    Path(os.path.realpath(str(original_path)))
+                    if original_path.exists()
+                    else resolved_path
+                )
                 if original_real != resolved_path:
                     return "路径解析不一致，可能存在符号链接攻击"
             except Exception:
@@ -451,9 +469,9 @@ class PathSecurityValidator:
     def _validate_path_components(self, path: Path) -> None:
         """
         验证路径的所有组件
-        
+
         确保路径的每个部分都是有效的
-        
+
         Args:
             path: 要验证的路径
         """
@@ -467,11 +485,11 @@ class PathSecurityValidator:
     def _count_symlink_depth(self, path: Path, max_depth: int = 10) -> int:
         """
         计算符号链接深度
-        
+
         Args:
             path: 路径
             max_depth: 最大检查深度
-            
+
         Returns:
             符号链接深度
         """
@@ -495,11 +513,11 @@ class PathSecurityValidator:
     def _is_subpath(self, path: Path, parent: Path) -> bool:
         """
         检查路径是否是父路径的子路径
-        
+
         Args:
             path: 要检查的路径
             parent: 父路径
-            
+
         Returns:
             是否是子路径
         """
@@ -516,7 +534,7 @@ _path_validator: PathSecurityValidator | None = None
 def get_path_validator() -> PathSecurityValidator:
     """
     获取全局路径验证器实例
-    
+
     Returns:
         PathSecurityValidator 实例
     """
@@ -529,7 +547,7 @@ def get_path_validator() -> PathSecurityValidator:
 def set_path_validator(validator: PathSecurityValidator) -> None:
     """
     设置全局路径验证器实例
-    
+
     Args:
         validator: PathSecurityValidator 实例
     """
@@ -719,6 +737,44 @@ class WriteFileTool(BaseTool):
 
             path.parent.mkdir(parents=True, exist_ok=True)
 
+            # 注释保护：在写入前读取原始内容，让保护器处理
+            original_content = None
+            if path.exists() and path.is_file():
+                try:
+                    async with aiofiles.open(path, "rb") as f:
+                        raw_data = await f.read()
+                    original_content, _ = decode_bytes(raw_data)
+                except Exception:
+                    original_content = None
+
+            # 应用注释保护
+            protect_notice = ""
+            try:
+                from foxcode.core.comment_protect_manager import get_manager
+
+                manager = get_manager()
+                if manager.is_enabled():
+                    protected_content, prot_result = manager.protect_file(
+                        path, content, original_content
+                    )
+                    logger.info(
+                        f"注释保护: restored={prot_result.restored_count}, "
+                        f"kept={prot_result.kept_count}, lost={prot_result.lost_count}"
+                    )
+                    if prot_result.restored_count > 0 or prot_result.kept_count > 0:
+                        logger.debug(
+                            f"Protected content (first 500 chars): {protected_content[:500]!r}"
+                        )
+                        content = protected_content
+                        if manager.get_stats().files_protected == 1 and (
+                            prot_result.restored_count > 0
+                        ):
+                            protect_notice = (
+                                f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
+                            )
+            except Exception as e:
+                logger.debug(f"注释保护跳过: {e}")
+
             expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
             async with aiofiles.open(path, "w", encoding="utf-8") as f:
@@ -757,7 +813,7 @@ class WriteFileTool(BaseTool):
                 logger.info(f"文件写入成功并验证通过: {file_path}")
                 return ToolResult(
                     success=True,
-                    output=f"文件已写入并验证: {file_path}",
+                    output=f"文件已写入并验证: {file_path}{protect_notice}",
                     data={
                         "file_path": str(path),
                         "size": len(content),
@@ -770,7 +826,7 @@ class WriteFileTool(BaseTool):
                 logger.warning(f"文件写入成功但验证失败: {file_path}")
                 return ToolResult(
                     success=True,
-                    output=f"文件已写入但验证失败: {file_path}\n警告: {verification_error}",
+                    output=f"文件已写入但验证失败: {file_path}\n警告: {verification_error}{protect_notice}",
                     data={
                         "file_path": str(path),
                         "size": len(content),
@@ -870,6 +926,25 @@ class EditFileTool(BaseTool):
 
             new_content = content.replace(old_text, new_text, 1)
 
+            # 注释保护：对编辑结果应用注释恢复
+            protect_notice = ""
+            try:
+                from foxcode.core.comment_protect_manager import get_manager
+
+                manager = get_manager()
+                if manager.is_enabled():
+                    # 对整个文件应用保护（因为编辑可能影响其他位置的注释）
+                    protected_content, prot_result = manager.protect_file(
+                        path, new_content, content
+                    )
+                    if prot_result.restored_count > 0:
+                        new_content = protected_content
+                        protect_notice = (
+                            f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
+                        )
+            except Exception as e:
+                logger.debug(f"注释保护跳过: {e}")
+
             try:
                 async with aiofiles.open(path, "w", encoding=detected_encoding) as f:
                     await f.write(new_content)
@@ -882,7 +957,7 @@ class EditFileTool(BaseTool):
 
             return ToolResult(
                 success=True,
-                output=f"文件已编辑: {file_path}\n替换了 1 处文本\n编码: {detected_encoding}",
+                output=f"文件已编辑: {file_path}\n替换了 1 处文本\n编码: {detected_encoding}{protect_notice}",
                 data={
                     "file_path": str(path),
                     "occurrences": 1,

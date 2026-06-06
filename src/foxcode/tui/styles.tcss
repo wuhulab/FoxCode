@@ -1,0 +1,262 @@
+/* FoxCode TUI styles
+   Inspired by opencode (clean dark panels) and uv (terse, single accent).
+   Keep this file small - layout first, color second, motion last. */
+
+Screen {
+    background: #0d1117;
+    color: #e6edf3;
+}
+
+/* -------- Header -------- */
+Header {
+    background: #161b22;
+    color: #e6edf3;
+    text-style: bold;
+    height: 1;
+    border-bottom: solid #30363d;
+}
+
+Header #logo {
+    color: #ff8c42;
+    text-style: bold;
+}
+
+Header #mode {
+    color: #d29922;
+}
+
+Header #tokens {
+    color: #3fb950;
+}
+
+/* -------- Footer -------- */
+Footer {
+    background: #161b22;
+    color: #7d8590;
+    height: 1;
+    border-top: solid #30363d;
+}
+
+Footer > .footer--key {
+    color: #ff8c42;
+    background: #3a2418;
+    text-style: bold;
+}
+
+Footer > .footer--description {
+    color: #7d8590;
+}
+
+/* -------- Sidebar -------- */
+Sidebar {
+    width: 30;
+    min-width: 24;
+    background: #0d1117;
+    border-right: solid #30363d;
+}
+
+Sidebar > .section {
+    height: auto;
+    padding: 1 1 0 1;
+    color: #7d8590;
+    text-style: bold;
+}
+
+Sidebar ListView {
+    background: transparent;
+    height: 1fr;
+    padding: 0 1;
+}
+
+Sidebar ListItem {
+    background: transparent;
+    color: #e6edf3;
+    padding: 0 1;
+}
+
+Sidebar ListItem.--highlight {
+    background: #1c2128;
+    color: #ff8c42;
+}
+
+Sidebar Button#new-session {
+    margin: 1 1 0 1;
+    width: 1fr;
+    background: #1c2128;
+    color: #ff8c42;
+    border: round #ff8c42;
+}
+
+Sidebar Button#new-session:hover {
+    background: #3a2418;
+    color: #ffa866;
+}
+
+/* -------- Chat area -------- */
+ChatScroll {
+    background: #0d1117;
+    padding: 1 2;
+    scrollbar-gutter: stable;
+}
+
+ChatScroll > .message {
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+
+ChatScroll > .message.--user {
+    border-left: thick #79c0ff;
+}
+
+ChatScroll > .message.--assistant {
+    border-left: thick #ff8c42;
+}
+
+ChatScroll > .message.--tool {
+    border-left: thick #a371f7;
+    color: #a371f7;
+}
+
+ChatScroll > .message.--system {
+    border-left: thick #7d8590;
+    color: #7d8590;
+}
+
+ChatScroll > .message > .role {
+    color: #ff8c42;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+ChatScroll > .message.--user > .role {
+    color: #79c0ff;
+}
+
+ChatScroll > .message.--tool > .role {
+    color: #a371f7;
+}
+
+ChatScroll > .message.--system > .role {
+    color: #7d8590;
+}
+
+ChatScroll > .message > .body {
+    color: #e6edf3;
+}
+
+ChatScroll > .message.--thinking > .body {
+    color: #7d8590;
+    text-style: italic;
+}
+
+ChatScroll > .divider {
+    color: #30363d;
+    margin: 1 0;
+}
+
+/* -------- Input -------- */
+InputPanel {
+    height: auto;
+    background: #161b22;
+    border-top: solid #30363d;
+    padding: 1 1 0 1;
+}
+
+InputPanel > .hint {
+    color: #7d8590;
+    height: 1;
+    padding: 0 1 1 1;
+}
+
+InputPanel Input {
+    background: #0d1117;
+    border: round #30363d;
+    color: #e6edf3;
+    height: 3;
+    padding: 0 1;
+}
+
+InputPanel Input:focus {
+    border: round #ff8c42;
+}
+
+InputPanel Input > .input--placeholder {
+    color: #545d68;
+    text-style: italic;
+}
+
+InputPanel Button#send {
+    background: #ff8c42;
+    color: #0d1117;
+    text-style: bold;
+    border: none;
+    width: 12;
+    margin-top: 1;
+    min-width: 12;
+}
+
+InputPanel Button#send:hover {
+    background: #ffa866;
+}
+
+InputPanel Button#send:disabled {
+    background: #30363d;
+    color: #7d8590;
+}
+
+InputPanel .input-row {
+    height: 3;
+    align: right top;
+}
+
+/* -------- Modal (help) -------- */
+ModalScreen {
+    align: center middle;
+}
+
+ModalScreen > .modal {
+    width: 70;
+    max-width: 90%;
+    height: auto;
+    background: #161b22;
+    border: round #ff8c42;
+    padding: 1 2;
+}
+
+ModalScreen > .modal > .title {
+    color: #ff8c42;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+ModalScreen > .modal > .body {
+    color: #e6edf3;
+}
+
+ModalScreen > .modal > .keys {
+    margin-top: 1;
+    color: #7d8590;
+}
+
+ModalScreen > .modal > .keys > .key {
+    color: #ff8c42;
+    text-style: bold;
+}
+
+/* -------- Banner (welcome) -------- */
+Banner {
+    background: #161b22;
+    border: round #30363d;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    color: #e6edf3;
+}
+
+Banner > .logo {
+    color: #ff8c42;
+    text-style: bold;
+}
+
+Banner > .tag {
+    color: #7d8590;
+}

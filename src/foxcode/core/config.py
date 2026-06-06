@@ -23,13 +23,13 @@ FoxCode 配置模块 - 管理所有配置选项
 使用方式：
     # 创建配置（自动加载）
     config = Config.create()
-    
+
     # 创建配置（指定参数）
     config = Config.create(
         model=ModelConfig(model_name="gpt-4o"),
         run_mode=RunMode.YOLO
     )
-    
+
     # 验证配置
     is_valid, errors, warnings = config.validate()
 
@@ -62,6 +62,7 @@ else:
 
 class ModelProvider(str, Enum):
     """支持的 AI 模型提供者"""
+
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     DEEPSEEK = "deepseek"
@@ -73,51 +74,54 @@ class ModelProvider(str, Enum):
 class RunMode(str, Enum):
     """
     运行模式 - 控制代理的行为方式
-    
+
     不同的运行模式适用于不同的场景：
     - DEFAULT: 适合新手，每次操作都需要确认
     - YOLO: 适合熟练用户，自动执行所有操作
     - ACCEPT_EDITS: 适合代码编辑场景，自动接受文件修改
     - PLAN: 适合规划阶段，只分析不执行
-    
+
     安全性：
     - DEFAULT最安全，所有危险操作都需要确认
     - YOLO最快，但可能执行危险操作
     - PLAN最安全，只读不写
     """
-    DEFAULT = "default"          # 默认模式：危险操作需要确认
-    YOLO = "yolo"                # YOLO模式：自动执行所有操作
-    ACCEPT_EDITS = "accept_edits" # 自动接受文件编辑
-    PLAN = "plan"                # 规划模式：只读，不执行操作
+
+    DEFAULT = "default"  # 默认模式：危险操作需要确认
+    YOLO = "yolo"  # YOLO模式：自动执行所有操作
+    ACCEPT_EDITS = "accept_edits"  # 自动接受文件编辑
+    PLAN = "plan"  # 规划模式：只读，不执行操作
 
 
 class OutputTopic(str, Enum):
     """
     输出主题模式
-    
+
     控制命令行输出的详细程度和格式：
     - DEFAULT: 默认模式，显示完整信息
     - DEBUG: 调试模式，显示详细调试信息
     - MINIMALISM: 极简模式，只输出与用户交互的核心内容
     """
-    DEFAULT = "default"      # 默认模式，完整输出
-    DEBUG = "debug"          # 调试模式，详细输出
+
+    DEFAULT = "default"  # 默认模式，完整输出
+    DEBUG = "debug"  # 调试模式，详细输出
     MINIMALISM = "minimalism"  # 极简模式，精简输出
 
 
 class AgentRole(str, Enum):
     """
     代理角色枚举
-    
+
     定义多代理系统中各代理的角色类型，用于实现代理间的协作和切换机制。
     每个角色负责特定的任务领域，通过 handoff 机制进行代理间的任务传递。
-    
+
     Attributes:
         PLANNER: 规划器代理 - 负责分析需求、制定计划和分解任务
         GENERATOR: 生成器代理 - 负责根据计划生成代码和实现功能
         EVALUATOR: 评估器代理 - 负责评估生成结果的质量和正确性
     """
-    PLANNER = "planner"      # 规划器代理：负责需求分析和任务规划
+
+    PLANNER = "planner"  # 规划器代理：负责需求分析和任务规划
     GENERATOR = "generator"  # 生成器代理：负责代码生成和功能实现
     EVALUATOR = "evaluator"  # 评估器代理：负责质量评估和结果验证
 
@@ -125,23 +129,23 @@ class AgentRole(str, Enum):
 class ModelConfig(BaseModel):
     """
     模型配置 - AI模型的连接和参数设置
-    
+
     配置AI模型的各个方面：
     - 提供者：OpenAI、Anthropic、DeepSeek等
     - 模型名称：gpt-4o、claude-sonnet等
     - API密钥：从环境变量或配置文件读取
     - 参数：温度、最大token数、超时时间
-    
+
     模型别名：
     支持简短的模型别名，如"claude"映射到"claude-sonnet-4-20250514"
-    
+
     使用示例：
         # 使用默认配置
         config = ModelConfig()
-        
+
         # 指定模型
         config = ModelConfig(model_name="claude")
-        
+
         # 自定义参数
         config = ModelConfig(
             model_name="gpt-4o",
@@ -149,6 +153,7 @@ class ModelConfig(BaseModel):
             max_tokens=8192
         )
     """
+
     model_config = ConfigDict(protected_namespaces=())
 
     provider: ModelProvider = ModelProvider.OPENAI
@@ -213,7 +218,10 @@ class ModelConfig(BaseModel):
 
 class PlaywrightConfig(BaseModel):
     """Playwright 浏览器配置"""
-    browser_type: str = Field(default="chromium", description="浏览器类型: chromium, firefox, webkit")
+
+    browser_type: str = Field(
+        default="chromium", description="浏览器类型: chromium, firefox, webkit"
+    )
     headless: bool = Field(default=True, description="是否使用无头模式")
     viewport_width: int = Field(default=1280, ge=320, description="视口宽度")
     viewport_height: int = Field(default=720, ge=240, description="视口高度")
@@ -225,35 +233,76 @@ class PlaywrightConfig(BaseModel):
 
 class SandboxMode(str, Enum):
     """沙箱模式"""
-    DISABLED = "disabled"       # 禁用沙箱
-    BLACKLIST = "blacklist"     # 黑名单模式（默认，阻止危险命令）
-    WHITELIST = "whitelist"     # 白名单模式（只允许白名单命令）
+
+    DISABLED = "disabled"  # 禁用沙箱
+    BLACKLIST = "blacklist"  # 黑名单模式（默认，阻止危险命令）
+    WHITELIST = "whitelist"  # 白名单模式（只允许白名单命令）
 
 
 class SandboxConfigModel(BaseModel):
     """安全沙箱配置"""
+
     enabled: bool = Field(default=True, description="是否启用沙箱")
-    mode: SandboxMode = Field(default=SandboxMode.BLACKLIST, description="沙箱模式: disabled, blacklist, whitelist")
+    mode: SandboxMode = Field(
+        default=SandboxMode.BLACKLIST, description="沙箱模式: disabled, blacklist, whitelist"
+    )
     allow_path_traversal: bool = Field(default=False, description="是否允许路径穿越")
     max_command_length: int = Field(default=10000, ge=100, description="最大命令长度")
     allowed_commands: list[str] = Field(
         default_factory=lambda: [
-            "ls", "dir", "cat", "type", "echo", "pwd", "cd",
-            "git", "npm", "node", "python", "python3", "pip", "pip3",
-            "cargo", "rustc", "go", "java", "javac", "mvn", "gradle",
-            "make", "cmake", "gcc", "g++", "clang", "clang++",
-            "docker", "docker-compose",
-            "pytest", "jest", "mocha", "unittest",
-            "curl", "wget",
-            "tar", "zip", "unzip", "gzip", "gunzip",
-            "grep", "find", "sed", "awk",
-            "touch", "mkdir", "cp", "mv",
+            "ls",
+            "dir",
+            "cat",
+            "type",
+            "echo",
+            "pwd",
+            "cd",
+            "git",
+            "npm",
+            "node",
+            "python",
+            "python3",
+            "pip",
+            "pip3",
+            "cargo",
+            "rustc",
+            "go",
+            "java",
+            "javac",
+            "mvn",
+            "gradle",
+            "make",
+            "cmake",
+            "gcc",
+            "g++",
+            "clang",
+            "clang++",
+            "docker",
+            "docker-compose",
+            "pytest",
+            "jest",
+            "mocha",
+            "unittest",
+            "curl",
+            "wget",
+            "tar",
+            "zip",
+            "unzip",
+            "gzip",
+            "gunzip",
+            "grep",
+            "find",
+            "sed",
+            "awk",
+            "touch",
+            "mkdir",
+            "cp",
+            "mv",
         ],
-        description="白名单命令列表（白名单模式下生效）"
+        description="白名单命令列表（白名单模式下生效）",
     )
     blocked_commands: list[str] = Field(
-        default_factory=list,
-        description="黑名单命令列表（黑名单模式下生效，为空则使用默认黑名单）"
+        default_factory=list, description="黑名单命令列表（黑名单模式下生效，为空则使用默认黑名单）"
     )
 
     @field_validator("allowed_commands", "blocked_commands", mode="before")
@@ -264,7 +313,7 @@ class SandboxConfigModel(BaseModel):
             return []
 
         validated = []
-        dangerous_chars = [';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r']
+        dangerous_chars = [";", "|", "&", "$", "`", "(", ")", "{", "}", "<", ">", "\n", "\r"]
 
         for cmd in v:
             # 跳过空值
@@ -281,7 +330,7 @@ class SandboxConfigModel(BaseModel):
                 continue  # 跳过包含危险字符的命令
 
             # 只允许字母、数字、连字符、下划线和点号
-            if not all(c.isalnum() or c in '-_.' for c in cmd):
+            if not all(c.isalnum() or c in "-_." for c in cmd):
                 continue
 
             # 长度限制
@@ -295,19 +344,54 @@ class SandboxConfigModel(BaseModel):
 
 class ToolConfig(BaseModel):
     """工具配置"""
+
     enable_file_ops: bool = True
     enable_shell: bool = True
     enable_web_search: bool = False
     enable_code_execution: bool = True
     shell_timeout: int = Field(default=300, ge=1)
     max_file_size: int = Field(default=10 * 1024 * 1024)  # 10MB
-    allowed_extensions: list[str] = Field(default_factory=lambda: [
-        ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs",
-        ".c", ".cpp", ".h", ".hpp", ".cs", ".rb", ".php", ".swift",
-        ".kt", ".scala", ".lua", ".r", ".sql", ".sh", ".bash",
-        ".json", ".yaml", ".yml", ".toml", ".xml", ".html", ".css",
-        ".md", ".txt", ".rst", ".ini", ".cfg", ".env", ".gitignore",
-    ])
+    allowed_extensions: list[str] = Field(
+        default_factory=lambda: [
+            ".py",
+            ".js",
+            ".ts",
+            ".jsx",
+            ".tsx",
+            ".java",
+            ".go",
+            ".rs",
+            ".c",
+            ".cpp",
+            ".h",
+            ".hpp",
+            ".cs",
+            ".rb",
+            ".php",
+            ".swift",
+            ".kt",
+            ".scala",
+            ".lua",
+            ".r",
+            ".sql",
+            ".sh",
+            ".bash",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".xml",
+            ".html",
+            ".css",
+            ".md",
+            ".txt",
+            ".rst",
+            ".ini",
+            ".cfg",
+            ".env",
+            ".gitignore",
+        ]
+    )
 
     @field_validator("allowed_extensions", mode="before")
     @classmethod
@@ -323,15 +407,15 @@ class ToolConfig(BaseModel):
                 continue
 
             # 确保以 '.' 开头（对于没有点的扩展名自动添加）
-            if not ext.startswith('.'):
-                ext = '.' + ext
+            if not ext.startswith("."):
+                ext = "." + ext
 
             # 验证扩展名只包含有效字符（字母、数字、连字符、下划线）
             ext_part = ext[1:]  # 去掉点号
             if not ext_part:
                 continue  # 跳过只有点号的扩展名
 
-            if not all(c.isalnum() or c in '-_' for c in ext_part):
+            if not all(c.isalnum() or c in "-_" for c in ext_part):
                 continue  # 跳过包含无效字符的扩展名
 
             validated.append(ext.lower())
@@ -341,6 +425,7 @@ class ToolConfig(BaseModel):
 
 class UIConfig(BaseModel):
     """UI 配置"""
+
     theme: str = "dark"
     show_token_usage: bool = True
     show_timing: bool = True
@@ -352,10 +437,10 @@ class UIConfig(BaseModel):
 class EvaluatorCriteriaConfig(BaseModel):
     """
     评估器评估标准配置
-    
+
     定义评估器代理在评估代码质量时使用的各项标准及其权重。
     所有权重值应在 0.0 到 1.0 之间，评估结果为加权平均分（满分 10 分）。
-    
+
     Attributes:
         code_correctness_weight: 代码正确性权重 - 评估代码是否正确实现功能
         test_coverage_weight: 测试覆盖率权重 - 评估测试用例的覆盖程度
@@ -367,69 +452,31 @@ class EvaluatorCriteriaConfig(BaseModel):
         extensibility_weight: 可扩展性权重 - 评估代码的可扩展能力
         documentation_weight: 文档完整性权重 - 评估文档的完整程度
     """
+
     code_correctness_weight: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=1.0,
-        description="代码正确性权重"
+        default=0.3, ge=0.0, le=1.0, description="代码正确性权重"
     )
-    test_coverage_weight: float = Field(
-        default=0.25,
-        ge=0.0,
-        le=1.0,
-        description="测试覆盖率权重"
-    )
-    code_style_weight: float = Field(
-        default=0.2,
-        ge=0.0,
-        le=1.0,
-        description="代码风格权重"
-    )
-    error_handling_weight: float = Field(
-        default=0.25,
-        ge=0.0,
-        le=1.0,
-        description="错误处理权重"
-    )
+    test_coverage_weight: float = Field(default=0.25, ge=0.0, le=1.0, description="测试覆盖率权重")
+    code_style_weight: float = Field(default=0.2, ge=0.0, le=1.0, description="代码风格权重")
+    error_handling_weight: float = Field(default=0.25, ge=0.0, le=1.0, description="错误处理权重")
     passing_threshold: float = Field(
-        default=7.0,
-        ge=0.0,
-        le=10.0,
-        description="通过阈值（满分10分）"
+        default=7.0, ge=0.0, le=10.0, description="通过阈值（满分10分）"
     )
     design_requirements_weight: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=1.0,
-        description="需求覆盖权重"
+        default=0.3, ge=0.0, le=1.0, description="需求覆盖权重"
     )
-    architecture_weight: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=1.0,
-        description="架构合理性权重"
-    )
-    extensibility_weight: float = Field(
-        default=0.2,
-        ge=0.0,
-        le=1.0,
-        description="可扩展性权重"
-    )
-    documentation_weight: float = Field(
-        default=0.2,
-        ge=0.0,
-        le=1.0,
-        description="文档完整性权重"
-    )
+    architecture_weight: float = Field(default=0.3, ge=0.0, le=1.0, description="架构合理性权重")
+    extensibility_weight: float = Field(default=0.2, ge=0.0, le=1.0, description="可扩展性权重")
+    documentation_weight: float = Field(default=0.2, ge=0.0, le=1.0, description="文档完整性权重")
 
 
 class LongRunningConfig(BaseModel):
     """
     长时间运行模式配置
-    
+
     管理长时间运行会话的配置选项，包括进度跟踪、上下文管理、
     多代理协作等功能。
-    
+
     Attributes:
         progress_file: 进度文件路径
         feature_list_file: 功能列表文件路径
@@ -444,6 +491,7 @@ class LongRunningConfig(BaseModel):
         handoff_dir: HandoffArtifact 存储目录
         evaluator_criteria: 评估器评估标准配置
     """
+
     progress_file: str = ".foxcode/progress.md"  # 进度文件路径
     feature_list_file: str = ".foxcode/features.md"  # 功能列表文件路径
     summary_file: str = ".foxcode/summary.md"  # 摘要文件路径
@@ -455,35 +503,32 @@ class LongRunningConfig(BaseModel):
         default=0.85,
         ge=0.0,
         le=1.0,
-        description="上下文重置阈值（百分比），当上下文使用率达到此阈值时触发重置"
+        description="上下文重置阈值（百分比），当上下文使用率达到此阈值时触发重置",
     )
     context_warning_threshold: float = Field(
         default=0.70,
         ge=0.0,
         le=1.0,
-        description="上下文警告阈值，当上下文使用率达到此阈值时发出警告"
+        description="上下文警告阈值，当上下文使用率达到此阈值时发出警告",
     )
     enable_multi_agent: bool = Field(
         default=False,
-        description="是否启用多代理模式，启用后将使用 Planner-Generator-Evaluator 架构"
+        description="是否启用多代理模式，启用后将使用 Planner-Generator-Evaluator 架构",
     )
     max_context_tokens: int = Field(
-        default=128000,
-        ge=1000,
-        description="最大上下文 token 数，用于控制上下文窗口大小"
+        default=128000, ge=1000, description="最大上下文 token 数，用于控制上下文窗口大小"
     )
     handoff_dir: str = Field(
-        default=".foxcode/handoffs",
-        description="HandoffArtifact 存储目录，用于代理间任务传递"
+        default=".foxcode/handoffs", description="HandoffArtifact 存储目录，用于代理间任务传递"
     )
     evaluator_criteria: EvaluatorCriteriaConfig = Field(
-        default_factory=EvaluatorCriteriaConfig,
-        description="评估器评估标准配置"
+        default_factory=EvaluatorCriteriaConfig, description="评估器评估标准配置"
     )
 
 
 class WorkflowConfig(BaseModel):
     """工作流程配置"""
+
     # 工作流程存储目录
     workflow_dir: str = ".foxcode/workflows"
     # 是否自动推进工作流程
@@ -504,6 +549,7 @@ class WorkflowConfig(BaseModel):
 
 class MCPServerConfigModel(BaseModel):
     """MCP 服务器配置模型（用于配置文件）"""
+
     name: str = Field(description="服务器名称")
     command: str = Field(description="启动命令")
     args: list[str] = Field(default_factory=list, description="命令参数")
@@ -515,22 +561,18 @@ class MCPServerConfigModel(BaseModel):
 
 class MCPConfig(BaseModel):
     """MCP (Model Context Protocol) 配置"""
+
     enabled: bool = Field(default=True, description="是否启用 MCP 功能")
-    servers: list[MCPServerConfigModel] = Field(
-        default_factory=list,
-        description="MCP 服务器列表"
-    )
+    servers: list[MCPServerConfigModel] = Field(default_factory=list, description="MCP 服务器列表")
     auto_discover: bool = Field(default=True, description="是否自动发现 MCP 服务器")
-    config_file: str = Field(
-        default=".foxcode/mcp.json",
-        description="MCP 配置文件路径"
-    )
+    config_file: str = Field(default=".foxcode/mcp.json", description="MCP 配置文件路径")
     connection_timeout: int = Field(default=30, ge=5, description="连接超时时间（秒）")
     request_timeout: int = Field(default=60, ge=10, description="请求超时时间（秒）")
 
 
 class SkillConfigModel(BaseModel):
     """技能配置模型（用于配置文件）"""
+
     name: str = Field(description="技能名称")
     enabled: bool = Field(default=True, description="是否启用")
     config: dict[str, Any] = Field(default_factory=dict, description="技能特定配置")
@@ -538,100 +580,79 @@ class SkillConfigModel(BaseModel):
 
 class SkillsConfig(BaseModel):
     """技能系统配置"""
+
     enabled: bool = Field(default=True, description="是否启用技能系统")
-    skills: list[SkillConfigModel] = Field(
-        default_factory=list,
-        description="技能配置列表"
-    )
+    skills: list[SkillConfigModel] = Field(default_factory=list, description="技能配置列表")
     auto_discover: bool = Field(default=True, description="是否自动发现技能")
-    skills_dir: str = Field(
-        default=".foxcode/skills",
-        description="技能目录"
-    )
+    skills_dir: str = Field(default=".foxcode/skills", description="技能目录")
     enable_builtin: bool = Field(default=True, description="是否启用内置技能")
 
 
 class OpenSpaceConfig(BaseModel):
     """
     OpenSpace 配置
-    
+
     AI 经验知识存储系统，用于记录 AI 踩过的坑和注意事项。
     每次启动 foxcode 时自动加载到上下文中。
     """
-    enabled: bool = Field(
-        default=True,
-        description="是否启用 OpenSpace 功能，默认启用"
-    )
-    space_dir: str = Field(
-        default="",
-        description="经验文件存储目录，为空则使用 ~/.foxcode/space/"
-    )
+
+    enabled: bool = Field(default=True, description="是否启用 OpenSpace 功能，默认启用")
+    space_dir: str = Field(default="", description="经验文件存储目录，为空则使用 ~/.foxcode/space/")
     max_content_length: int = Field(
-        default=500,
-        ge=100,
-        le=2000,
-        description="单条经验最大字数限制"
+        default=500, ge=100, le=2000, description="单条经验最大字数限制"
     )
-    auto_load: bool = Field(
-        default=True,
-        description="启动时是否自动加载经验"
-    )
+    auto_load: bool = Field(default=True, description="启动时是否自动加载经验")
 
 
 class UpdateConfig(BaseModel):
     """
     版本更新配置
-    
+
     管理 FoxCode 的版本更新相关配置，包括：
     - 是否启用自动检查更新
     - 是否包含预发布版本
     - 更新源配置
     - 版本锁定
     """
-    enabled: bool = Field(
-        default=True,
-        description="是否启用版本更新功能"
-    )
-    auto_check: bool = Field(
-        default=True,
-        description="启动时是否自动检查更新"
-    )
-    include_prerelease: bool = Field(
-        default=False,
-        description="是否包含预发布版本"
-    )
+
+    enabled: bool = Field(default=True, description="是否启用版本更新功能")
+    auto_check: bool = Field(default=True, description="启动时是否自动检查更新")
+    include_prerelease: bool = Field(default=False, description="是否包含预发布版本")
     check_interval_hours: int = Field(
-        default=24,
-        ge=1,
-        le=168,
-        description="检查更新的间隔时间（小时）"
+        default=24, ge=1, le=168, description="检查更新的间隔时间（小时）"
     )
     github_repo: str = Field(
-        default="wuhulab/FoxCode",
-        description="GitHub 仓库地址（owner/repo 格式）"
+        default="wuhulab/FoxCode", description="GitHub 仓库地址（owner/repo 格式）"
     )
-    locked_version: str = Field(
-        default="",
-        description="锁定的版本号，为空则使用最新版本"
+    locked_version: str = Field(default="", description="锁定的版本号，为空则使用最新版本")
+    last_check_time: str = Field(default="", description="上次检查更新的时间（ISO 格式）")
+    last_known_version: str = Field(default="", description="上次检查到的最新版本")
+    skip_version: str = Field(default="", description="跳过的版本号（用户选择跳过更新）")
+
+
+class ProtectCommentsConfig(BaseModel):
+    """
+    注释保护配置 - 使用 diff 算法保护项目原有注释
+
+    默认开启：AI 编辑文件后自动恢复原始注释，保持项目可维护性。
+    """
+
+    enabled: bool = Field(default=True, description="是否启用注释保护（默认启用）")
+    fuzzy_threshold: float = Field(
+        default=0.6, ge=0.0, le=1.0, description="锚点相似度阈值（低于此值视为不匹配）"
     )
-    last_check_time: str = Field(
-        default="",
-        description="上次检查更新的时间（ISO 格式）"
+    search_radius: int = Field(default=20, ge=1, description="锚点附近搜索的最大行数")
+    protect_docstrings: bool = Field(
+        default=True, description="是否保护文档字符串（Python 三引号字符串）"
     )
-    last_known_version: str = Field(
-        default="",
-        description="上次检查到的最新版本"
-    )
-    skip_version: str = Field(
-        default="",
-        description="跳过的版本号（用户选择跳过更新）"
-    )
+    protect_inline: bool = Field(default=True, description="是否保护行内注释（行尾注释）")
+    show_notifications: bool = Field(default=True, description="是否在保护注释时显示通知")
 
 
 class Config(BaseSettings):
     """
     FoxCode主配置类 - 所有配置的入口
-    
+
     这是FoxCode配置的核心，整合了所有子配置：
     - model: AI模型配置
     - tools: 工具配置
@@ -640,32 +661,33 @@ class Config(BaseSettings):
     - sandbox: 沙箱安全配置
     - mcp: MCP工具配置
     - skills: 技能系统配置
-    
+
     配置优先级（从高到低）：
     1. 命令行参数 - 最高优先级
     2. 环境变量 - FOXCODE_XXX格式
     3. 项目配置文件 - .foxcode.toml
     4. 用户配置文件 - ~/.foxcode/config.toml
     5. 默认值 - 最低优先级
-    
+
     使用示例：
         # 创建配置（自动加载）
         config = Config.create()
-        
+
         # 创建配置（指定参数）
         config = Config.create(
             run_mode=RunMode.YOLO,
             model=ModelConfig(model_name="claude")
         )
-        
+
         # 验证配置
         is_valid, errors, warnings = config.validate()
-    
+
     安全特性：
     - 支持沙箱模式，限制危险操作
     - 支持配置验证，防止错误配置
     - 支持加密存储敏感信息
     """
+
     model_config = SettingsConfigDict(
         env_prefix="FOXCODE_",
         env_nested_delimiter="__",
@@ -677,8 +699,7 @@ class Config(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     output_topic: OutputTopic = Field(
-        default=OutputTopic.MINIMALISM,
-        description="输出主题模式: default, debug, minimalism"
+        default=OutputTopic.MINIMALISM, description="输出主题模式: default, debug, minimalism"
     )
 
     # 子配置
@@ -691,15 +712,17 @@ class Config(BaseSettings):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
     workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
-    work_mode: WorkModeConfig = Field(default_factory=WorkModeConfig, description="Work模式配置（默认启用）")
+    work_mode: WorkModeConfig = Field(
+        default_factory=WorkModeConfig, description="Work模式配置（默认启用）"
+    )
     open_space: OpenSpaceConfig = Field(
-        default_factory=OpenSpaceConfig,
-        description="OpenSpace配置（AI经验知识存储，默认启用）"
+        default_factory=OpenSpaceConfig, description="OpenSpace配置（AI经验知识存储，默认启用）"
     )
-    update: UpdateConfig = Field(
-        default_factory=UpdateConfig,
-        description="版本更新配置"
+    update: UpdateConfig = Field(default_factory=UpdateConfig, description="版本更新配置")
+    protect_comments: ProtectCommentsConfig = Field(
+        default_factory=ProtectCommentsConfig, description="注释保护配置（默认启用）"
     )
+    update: UpdateConfig = Field(default_factory=UpdateConfig, description="版本更新配置")
 
     # 工作目录
     working_dir: Path = Field(default_factory=lambda: Path.cwd())
@@ -719,10 +742,10 @@ class Config(BaseSettings):
     def load_from_file(cls, config_path: Path | None = None) -> dict[str, Any]:
         """
         从配置文件加载配置
-        
+
         Args:
             config_path: 配置文件路径，如果为 None 则自动查找
-            
+
         Returns:
             配置字典
         """
@@ -748,10 +771,10 @@ class Config(BaseSettings):
     def create(cls, **overrides: Any) -> Config:
         """
         创建配置实例，合并所有配置来源
-        
+
         Args:
             **overrides: 命令行参数覆盖
-            
+
         Returns:
             配置实例
         """
@@ -765,10 +788,10 @@ class Config(BaseSettings):
     def validate_file(cls, config_path: Path | None = None) -> tuple[bool, str]:
         """
         验证配置文件
-        
+
         Args:
             config_path: 配置文件路径，如果为 None 则自动查找
-            
+
         Returns:
             (是否有效, 验证报告)
         """
@@ -794,7 +817,7 @@ class Config(BaseSettings):
     def validate(self) -> tuple[bool, list[dict[str, Any]], list[dict[str, Any]]]:
         """
         验证当前配置
-        
+
         Returns:
             (是否有效, 错误列表, 警告列表)
         """
@@ -845,11 +868,11 @@ class Config(BaseSettings):
     def get_config_file_path(self) -> Path:
         """
         获取配置文件路径
-        
+
         优先级：
         1. 项目级配置文件 (.foxcode.toml)
         2. 用户级配置文件 (~/.foxcode/config.toml)
-        
+
         Returns:
             配置文件路径
         """
@@ -870,10 +893,10 @@ class Config(BaseSettings):
     def save_output_topic(self, topic: OutputTopic) -> bool:
         """
         保存 output_topic 设置到配置文件
-        
+
         Args:
             topic: 输出主题模式
-            
+
         Returns:
             是否保存成功
         """
@@ -903,6 +926,7 @@ class Config(BaseSettings):
             # 写入配置文件
             try:
                 import tomli_w
+
                 with open(config_path, "wb") as f:
                     tomli_w.dump(existing_config, f)
                 return True
@@ -912,13 +936,14 @@ class Config(BaseSettings):
 
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).error(f"保存配置失败: {e}")
             return False
 
     def _get_base_config_dict(self) -> dict[str, Any]:
         """
         获取基础配置字典（用于保存配置时保留现有设置）
-        
+
         Returns:
             配置字典
         """
@@ -939,18 +964,18 @@ class Config(BaseSettings):
     def _write_simple_config(self, config_path: Path, config_dict: dict) -> bool:
         """
         简单的 TOML 配置写入（不依赖 tomli_w）
-        
+
         Args:
             config_path: 配置文件路径
             config_dict: 配置字典
-            
+
         Returns:
             是否写入成功
         """
         try:
             with open(config_path, "w", encoding="utf-8") as f:
-                f.write('# FoxCode 配置文件\n')
-                f.write(f'# 自动生成于 {time.strftime("%Y-%m-%d %H:%M:%S")}\n\n')
+                f.write("# FoxCode 配置文件\n")
+                f.write(f"# 自动生成于 {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
                 # 先写入顶级字段
                 for key, value in config_dict.items():
@@ -960,20 +985,21 @@ class Config(BaseSettings):
                 # 再写入节
                 for key, value in config_dict.items():
                     if isinstance(value, dict):
-                        f.write(f'\n[{key}]\n')
+                        f.write(f"\n[{key}]\n")
                         for k, v in value.items():
                             self._write_toml_value(f, k, v, indent="    ")
 
             return True
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).error(f"写入配置失败: {e}")
             return False
 
     def _write_toml_value(self, f, key: str, value, indent: str = "") -> None:
         """
         写入单个 TOML 值
-        
+
         Args:
             f: 文件对象
             key: 键名
@@ -984,20 +1010,20 @@ class Config(BaseSettings):
             f.write(f'{indent}{key} = "{value}"\n')
         elif isinstance(value, bool):
             # TOML 布尔值必须是小写的 true 或 false
-            f.write(f'{indent}{key} = {"true" if value else "false"}\n')
+            f.write(f"{indent}{key} = {'true' if value else 'false'}\n")
         elif isinstance(value, (int, float)):
-            f.write(f'{indent}{key} = {value}\n')
+            f.write(f"{indent}{key} = {value}\n")
         elif isinstance(value, list):
             # TOML 数组格式
             if not value:
-                f.write(f'{indent}{key} = []\n')
+                f.write(f"{indent}{key} = []\n")
             elif all(isinstance(v, str) for v in value):
                 # 字符串数组
-                formatted = ', '.join(f'"{v}"' for v in value)
-                f.write(f'{indent}{key} = [{formatted}]\n')
+                formatted = ", ".join(f'"{v}"' for v in value)
+                f.write(f"{indent}{key} = [{formatted}]\n")
             else:
                 # 其他类型数组
-                f.write(f'{indent}{key} = {value}\n')
+                f.write(f"{indent}{key} = {value}\n")
         elif value is None:
             pass  # 跳过 None 值
         else:

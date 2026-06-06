@@ -31,12 +31,31 @@ FoxCode 核心模块 - 导出所有核心组件
 """
 
 from foxcode.core.agent import FoxCodeAgent
+from foxcode.core.comment_parser import (
+    CommentParser,
+    CommentRegion,
+    CommentType,
+    get_parser_for_file,
+)
+from foxcode.core.comment_protect_manager import (
+    CommentProtectManager,
+    ProtectionStats,
+    get_manager,
+)
+from foxcode.core.comment_protector import (
+    AnchorInfo,
+    CommentProtector,
+    ProtectionResult,
+    ProtectedComment,
+    default_protector,
+)
 from foxcode.core.config import (
     Config,
     MCPConfig,
     MCPServerConfigModel,
     ModelConfig,
     ModelProvider,
+    ProtectCommentsConfig,
     RunMode,
     SkillConfigModel,
     SkillsConfig,
@@ -79,6 +98,7 @@ __all__ = [
     "MCPServerConfigModel",
     "SkillsConfig",
     "SkillConfigModel",
+    "ProtectCommentsConfig",
     # Message
     "Message",
     "MessageRole",
@@ -99,4 +119,17 @@ __all__ = [
     "create_model_provider",
     # Session
     "Session",
+    # Comment protection
+    "CommentParser",
+    "CommentRegion",
+    "CommentType",
+    "get_parser_for_file",
+    "CommentProtector",
+    "ProtectionResult",
+    "ProtectedComment",
+    "AnchorInfo",
+    "default_protector",
+    "CommentProtectManager",
+    "ProtectionStats",
+    "get_manager",
 ]

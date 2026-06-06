@@ -212,6 +212,31 @@ class CommentParser:
                         )
                         i, line, col = self._pos_at_to_index(content, end_line, end_col)
                         continue
+                    # 不是 docstring，但作为普通多行字符串处理
+                    i, line, col = self._skip_string(content, i, line, col, '"""')
+                    continue
+                if self._syntax.get("docstring") and ch == "'" and content[i : i + 3] == "'''":
+                    ds = self._try_match_docstring(content, i, line, col)
+                    if ds is not None:
+                        start_line, start_col, end_line, end_col, text, body = ds
+                        comments.append(
+                            CommentRegion(
+                                start_line=start_line,
+                                start_col=start_col,
+                                end_line=end_line,
+                                end_col=end_col,
+                                text=text,
+                                body=body,
+                                comment_type=CommentType.DOCSTRING,
+                            )
+                        )
+                        i, line, col = self._pos_at_to_index(content, end_line, end_col)
+                        continue
+                    # 不是 docstring，但作为普通多行字符串处理
+                    i, line, col = self._skip_string(content, i, line, col, "'''")
+                    continue
+                i, line, col = self._skip_string(content, i, line, col, ch)
+                continue
                 if self._syntax.get("docstring") and ch == "'" and content[i : i + 3] == "'''":
                     ds = self._try_match_docstring(content, i, line, col)
                     if ds is not None:
@@ -421,14 +446,15 @@ class CommentParser:
         Args:
             i: 起始索引（指向开头的引号字符）
             line, col: 对应的行列
-            quote: 引号字符
+            quote: 引号字符，普通单双引号或三引号
 
         Returns:
             跳过字符串后新的 (i, line, col)
         """
         n = len(content)
-        i += 1  # 跳过起始引号
-        col += 1
+        q_len = len(quote)
+        i += q_len  # 跳过起始引号
+        col += q_len
         while i < n:
             ch = content[i]
             if ch == "\\" and i + 1 < n:
@@ -450,9 +476,9 @@ class CommentParser:
                     continue
                 # 普通字符串跨行——退出，让外层处理
                 return i, line, col
-            if ch == quote:
+            if content[i : i + q_len] == quote:
                 # 字符串结束
-                return i + 1, line, col + 1
+                return i + q_len, line, col + q_len
             if ch == "\n":
                 line += 1
                 col = 0

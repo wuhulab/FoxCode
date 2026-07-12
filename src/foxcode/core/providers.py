@@ -696,10 +696,13 @@ def create_model_provider(config: ModelConfig) -> BaseModelProvider:
         ModelProvider.DEEPSEEK: DeepSeekProvider,
         ModelProvider.STEP: StepProvider,
         ModelProvider.LOCAL: LocalModelProvider,
+        ModelProvider.CUSTOM: OpenAIProvider,  # CUSTOM 使用 OpenAI 兼容接口
     }
 
     provider_class = providers.get(config.provider)
     if not provider_class:
-        raise ValueError(f"不支持的模型提供者: {config.provider}")
+        # 未知 provider 也回退到 OpenAI 兼容接口
+        logger.warning(f"未知的模型提供者 {config.provider}，回退到 OpenAI 兼容接口")
+        provider_class = OpenAIProvider
 
     return provider_class(config)

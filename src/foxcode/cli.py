@@ -943,6 +943,12 @@ enable_shell = true
 @click.option("--plan", is_flag=True, help="启用规划模式（只读）")
 @click.option("--gui", "-g", is_flag=True, help="启动 GUI 桌面版（基于 NiceGUI + Monaco Editor）")
 @click.option(
+    "--pyside",
+    "use_pyside",
+    is_flag=True,
+    help="启动 PySide 桌面版（基于 PySide6，原生 Qt 界面）",
+)
+@click.option(
     "--tui",
     "use_tui",
     is_flag=True,
@@ -964,6 +970,7 @@ def main(
     yolo: bool,
     plan: bool,
     gui: bool,
+    use_pyside: bool,
     use_tui: bool,
     resume: bool,
     session: str | None,
@@ -977,15 +984,22 @@ def main(
 
     一个强大的 AI 编码助手，帮助你编写、分析和修改代码。
 
-    支持三种运行模式：
+    支持四种运行模式：
     - CLI 模式（默认）：命令行交互界面
     - TUI 模式：使用 --tui 启动轻量级终端界面，基于 Textual，类 opencode/uv 风格
     - GUI 桌面版：使用 --gui 或 -g 参数启动图形界面
       基于 NiceGUI 和 Monaco Editor，提供 VS Code 级别的编辑体验
+    - PySide 桌面版：使用 --pyside 参数启动原生 Qt 桌面界面
+      基于 PySide6，Codex 风格纯白配色
     """
     # 首先检查是否要启动 GUI 版本
     if gui:
         _start_gui_mode()
+        return
+
+    # PySide 原生桌面界面
+    if use_pyside:
+        _start_pyside_mode()
         return
 
     # 轻量级 TUI 终端界面
@@ -3026,6 +3040,77 @@ def _start_tui_mode(
         sys.exit(1)
 
 
+def _start_pyside_mode() -> None:
+    """
+    启动 FoxCode PySide 桌面版
+
+    这是 PySide 模式的入口函数，当用户使用 --pyside 参数时调用。
+    会启动基于 PySide6 (Qt) 的原生桌面图形界面。
+
+    功能特性：
+    - 原生 Qt 桌面应用
+    - Codex 风格纯白配色
+    - AI 对话界面
+    - 多项目/会话管理
+
+    使用方式：
+        foxcode --pyside
+    """
+    import sys
+
+    try:
+        from foxcode.pyside_gui.app import start_pyside_gui
+
+        console.print(
+            Panel(
+                "[bold cyan]正在启动 FoxCode PySide Desktop...[/bold cyan]\n\n"
+                "基于 PySide6 (Qt) 的原生桌面客户端\n\n"
+                "功能：\n"
+                "  • Codex 风格纯白配色界面\n"
+                "  • AI 辅助编程对话\n"
+                "  • 多项目/会话管理\n"
+                "  • 自定义窗口控件",
+                title="FoxCode PySide Desktop",
+                border_style="cyan",
+            )
+        )
+
+        sys.exit(start_pyside_gui())
+
+    except ImportError as e:
+        error_msg = str(e)
+
+        if "pyside6" in error_msg.lower() or "PySide6" in error_msg:
+            console.print(
+                Panel(
+                    f"[red]缺少 PySide6 依赖[/red]\n\n"
+                    f"请运行以下命令安装：\n\n"
+                    f"  [bold]pip install PySide6>=6.5.0[/bold]",
+                    title="依赖缺失",
+                    border_style="red",
+                )
+            )
+        else:
+            console.print(f"[red]导入 PySide GUI 模块失败: {error_msg}[/red]")
+
+        sys.exit(1)
+
+    except Exception as e:
+        console.print(
+            Panel(
+                f"[red]启动 PySide GUI 失败[/red]\n\n"
+                f"错误信息: {markup.escape(str(e))}\n\n"
+                f"请检查日志获取详细信息:\n"
+                f"  [bold]{Path.home() / '.foxcode' / 'foxcode.log'}[/bold]",
+                title="启动错误",
+                border_style="red",
+            )
+        )
+
+        logger.error(f"PySide GUI 启动失败: {e}", exc_info=True)
+        sys.exit(1)
+
+
 def _start_gui_mode() -> None:
     """
     启动 FoxCode GUI 桌面版
@@ -4698,9 +4783,50 @@ def _handle_openai_command(agent: FoxCodeAgent, config: Config) -> None:
             config.model.model_name = new_model
             console.print(f"[green]✓ Model 已更新: {new_model}[/green]")
 
+        # 如果有任何修改，自动推断 provider 并持久化+热加载
+        if new_url or new_key or new_model:
+            from foxcode.core.config import ModelProvider
+
+            # 根据 URL 自动推断 provider（全部走 OpenAI 兼容接口）
+            url = (config.model.base_url or "").lower()
+            if "anthropic" in url:
+                config.model.provider = ModelProvider.ANTHROPIC
+            elif "deepseek" in url:
+                config.model.provider = ModelProvider.DEEPSEEK
+            elif "stepfun" in url:
+                config.model.provider = ModelProvider.STEP
+            else:
+                # 任意第三方 URL 统一走 OpenAI 兼容接口
+                config.model.provider = ModelProvider.OPENAI
+
+            # 持久化到配置文件
+            if config.save_model_config():
+                save_msg = "配置已保存到文件"
+            else:
+                save_msg = "配置已更新（但保存到文件失败，重启后可能丢失）"
+
+            # 热加载：重新初始化 agent 的模型提供者
+            try:
+                import asyncio
+                from foxcode.core.providers import create_model_provider
+
+                new_provider = create_model_provider(config.model)
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(new_provider.initialize())
+                else:
+                    loop.run_until_complete(new_provider.initialize())
+                agent.model_provider = new_provider
+                save_msg += "，已热加载新配置"
+            except Exception as reload_err:
+                logger.warning(f"热加载失败，重启后生效: {reload_err}")
+                save_msg += "（热加载失败，重启后生效）"
+        else:
+            save_msg = "未做任何修改"
+
         # 显示更新后的配置
         if is_minimalism:
-            print("[openai] 配置已更新:")
+            print(f"[openai] {save_msg}:")
             print(f"  URL: {config.model.base_url or '未设置'}")
             print(f"  Key: {'已设置' if config.model.api_key else '未设置'}")
             print(f"  Model: {config.model.model_name}")
@@ -4709,7 +4835,8 @@ def _handle_openai_command(agent: FoxCodeAgent, config: Config) -> None:
                 Panel(
                     f"[bold]URL:[/bold] {config.model.base_url or '未设置'}\n"
                     f"[bold]Key:[/bold] {'已设置' if config.model.api_key else '未设置'}\n"
-                    f"[bold]Model:[/bold] {config.model.model_name}",
+                    f"[bold]Model:[/bold] {config.model.model_name}\n"
+                    f"[dim]{save_msg}[/dim]",
                     title="✅ OpenAI 配置已更新",
                     style="green",
                 )

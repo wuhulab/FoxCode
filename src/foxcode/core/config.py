@@ -205,6 +205,7 @@ class ModelConfig(BaseModel):
             ModelProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
             ModelProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
             ModelProvider.STEP: "STEP_API_KEY",
+            ModelProvider.CUSTOM: "OPENAI_API_KEY",  # CUSTOM 回退到 OPENAI 环境变量
         }
 
         env_key = env_keys.get(self.provider)
@@ -212,6 +213,11 @@ class ModelConfig(BaseModel):
             key = os.environ.get(env_key)
             if key:
                 return key
+
+        # 最后尝试通用的 OPENAI_API_KEY
+        fallback = os.environ.get("OPENAI_API_KEY")
+        if fallback:
+            return fallback
 
         raise ValueError(f"未找到 {self.provider.value} 的 API Key，请设置环境变量或配置")
 
@@ -938,6 +944,56 @@ class Config(BaseSettings):
             import logging
 
             logging.getLogger(__name__).error(f"保存配置失败: {e}")
+            return False
+
+    def save_model_config(self) -> bool:
+        """
+        保存当前 model 配置到配置文件
+
+        Returns:
+            是否保存成功
+        """
+        try:
+            config_path = self.get_config_file_path()
+
+            # 读取现有配置文件
+            existing_config = {}
+            if config_path.exists():
+                try:
+                    with open(config_path, "rb") as f:
+                        existing_config = tomllib.load(f)
+                except Exception:
+                    existing_config = {}
+
+            # 更新 model 配置
+            model_dict = {
+                "provider": self.model.provider.value,
+                "model_name": self.model.model_name,
+                "temperature": self.model.temperature,
+                "max_tokens": self.model.max_tokens,
+                "timeout": self.model.timeout,
+            }
+            if self.model.api_key:
+                model_dict["api_key"] = self.model.api_key
+            if self.model.base_url:
+                model_dict["base_url"] = self.model.base_url
+
+            existing_config["model"] = model_dict
+
+            # 写入配置文件
+            try:
+                import tomli_w
+
+                with open(config_path, "wb") as f:
+                    tomli_w.dump(existing_config, f)
+                return True
+            except ImportError:
+                return self._write_simple_config(config_path, existing_config)
+
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).error(f"保存模型配置失败: {e}")
             return False
 
     def _get_base_config_dict(self) -> dict[str, Any]:

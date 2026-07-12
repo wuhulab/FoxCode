@@ -29,6 +29,17 @@ max_tokens = 4096
 # 请求超时时间 (秒)
 timeout = 120
 
+# 代理地址 (可选，用于绕过 WAF/IP 限制)
+# 当遇到 403 Forbidden 错误时，配置代理可以绕过
+# 支持 HTTP/HTTPS/SOCKS5 代理
+# proxy_url = "http://127.0.0.1:7890"
+
+# 请求限流间隔 (可选，不依赖代理的防 WAF 方案)
+# 每次 API 请求之间的最小间隔（秒），避免因请求过快被 WAF 标记
+# 设为 1.0~3.0 可在大部分场景下有效绕过 WAF 频率检测
+# 默认 0 表示不限制
+# request_throttle_interval = 1.5
+
 # 工具配置
 [tools]
 # 启用文件操作

@@ -76,19 +76,16 @@ class RunMode(str, Enum):
     运行模式 - 控制代理的行为方式
 
     不同的运行模式适用于不同的场景：
-    - DEFAULT: 适合新手，每次操作都需要确认
-    - YOLO: 适合熟练用户，自动执行所有操作
+    - YOLO: 默认模式，自动执行所有操作（适合熟练用户）
     - ACCEPT_EDITS: 适合代码编辑场景，自动接受文件修改
-    - PLAN: 适合规划阶段，只分析不执行
+    - PLAN: 规划模式，只分析不执行（适合前期需求分析）
 
     安全性：
-    - DEFAULT最安全，所有危险操作都需要确认
-    - YOLO最快，但可能执行危险操作
-    - PLAN最安全，只读不写
+    - YOLO最快，所有操作自动执行，适合日常开发
+    - PLAN最安全，只读不写，适合前期规划
     """
 
-    DEFAULT = "default"  # 默认模式：危险操作需要确认
-    YOLO = "yolo"  # YOLO模式：自动执行所有操作
+    YOLO = "yolo"  # YOLO模式：自动执行所有操作（默认）
     ACCEPT_EDITS = "accept_edits"  # 自动接受文件编辑
     PLAN = "plan"  # 规划模式：只读，不执行操作
 
@@ -163,6 +160,11 @@ class ModelConfig(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, ge=1)
     timeout: int = Field(default=120, ge=1)
+    proxy_url: str | None = Field(default=None, description="HTTP/HTTPS 代理地址，用于绕过 API 的 WAF/IP 限制，如 http://127.0.0.1:7890")
+    request_throttle_interval: float = Field(
+        default=0.0, ge=0.0, le=30.0,
+        description="每次 API 请求之间的最小间隔（秒），设为 1.0~3.0 可避免因请求过快被 WAF 拦截，0 表示不限制"
+    )
 
     # 模型别名映射（类变量）
     # 简化模型名称输入，提供更好的用户体验
@@ -701,7 +703,7 @@ class Config(BaseSettings):
     )
 
     # 基本配置
-    run_mode: RunMode = RunMode.DEFAULT
+    run_mode: RunMode = RunMode.YOLO
     debug: bool = False
     log_level: str = "INFO"
     output_topic: OutputTopic = Field(
@@ -839,6 +841,7 @@ class Config(BaseSettings):
                 "temperature": self.model.temperature,
                 "max_tokens": self.model.max_tokens,
                 "timeout": self.model.timeout,
+                "proxy_url": self.model.proxy_url,
             },
             "tools": {
                 "enable_file_ops": self.tools.enable_file_ops,
@@ -977,6 +980,8 @@ class Config(BaseSettings):
                 model_dict["api_key"] = self.model.api_key
             if self.model.base_url:
                 model_dict["base_url"] = self.model.base_url
+            if self.model.proxy_url:
+                model_dict["proxy_url"] = self.model.proxy_url
 
             existing_config["model"] = model_dict
 
@@ -1014,6 +1019,7 @@ class Config(BaseSettings):
                 "temperature": self.model.temperature,
                 "max_tokens": self.model.max_tokens,
                 "timeout": self.model.timeout,
+                "proxy_url": self.model.proxy_url,
             },
         }
 

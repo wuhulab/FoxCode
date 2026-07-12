@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 import time
 from collections.abc import AsyncIterator
@@ -53,6 +54,28 @@ MAX_RETRY_DELAY = 60.0  # 最长等待60秒
 RETRY_BACKOFF_FACTOR = 2.0  # 每次重试等待时间翻倍（2s -> 4s -> 8s -> ...）
 
 
+def _extract_http_detail(error: Exception) -> str:
+    """从异常中提取 HTTP 请求详情"""
+    try:
+        response = getattr(error, "response", None)
+        if response is not None:
+            request = getattr(response, "request", None)
+            if request is not None:
+                method = getattr(request, "method", "?")
+                url = getattr(request, "url", "?")
+                status = getattr(response, "status_code", "?")
+                reason = getattr(response, "reason_phrase", "")
+                return f"Detailed:HTTP Request: {method} {url} \"HTTP/1.1 {status} {reason}\""
+        request = getattr(error, "request", None)
+        if request is not None:
+            method = getattr(request, "method", "?")
+            url = getattr(request, "url", "?")
+            return f"Detailed:HTTP Request: {method} {url}"
+    except Exception:
+        pass
+    return ""
+
+
 def _is_retryable_error(error: Exception) -> bool:
     """
     检查错误是否可重试
@@ -66,10 +89,24 @@ def _is_retryable_error(error: Exception) -> bool:
     Returns:
         是否可重试
     """
+    # 检查 SDK 类型异常的 status_code 属性
+    # openai.APIStatusError / anthropic.APIStatusError / httpx.HTTPStatusError
+    status_code = getattr(error, "status_code", None)
+    if status_code is not None:
+        if status_code == 403:   # 被 WAF 或权限限制
+            return True
+        if status_code == 429:   # 请求过多
+            return True
+        if status_code == 502:   # 网关错误
+            return True
+        if status_code == 503:   # 服务不可用
+            return True
+        if status_code == 504:   # 网关超时
+            return True
+
     error_str = str(error).lower()
 
-    # 403 错误 - RPM限制（每分钟请求数超限）
-    # 等待一段时间后可以继续
+    # 403 错误 - RPM限制 / WAF 拦截
     if "403" in error_str:
         return True
     if "rpm limit" in error_str:
@@ -78,20 +115,29 @@ def _is_retryable_error(error: Exception) -> bool:
         return True
     if "too many requests" in error_str:
         return True
+    if "your request was blocked" in error_str:
+        return True
+    if "blocked" in error_str:
+        return True
 
     # 429 错误 - 请求过多
-    # 服务器要求降低请求频率
     if "429" in error_str:
         return True
 
     # 超时错误 - 网络或服务器响应慢
-    # 等待后可能恢复
     if "timeout" in error_str:
         return True
 
     # 连接错误 - 网络不稳定
-    # 重试可能成功
     if "connection" in error_str:
+        return True
+
+    # 5xx 服务端错误
+    if "500" in error_str:
+        return True
+    if "502" in error_str:
+        return True
+    if "503" in error_str:
         return True
 
     # 其他错误不重试
@@ -118,8 +164,10 @@ def _calculate_retry_delay(retry_count: int) -> float:
     # 计算指数增长的延迟时间
     delay = INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count)
     
-    # 不超过最大延迟时间
-    return min(delay, MAX_RETRY_DELAY)
+    # 不超过最大延迟时间，并添加 ±25% 随机抖动防止惊群
+    delay = min(delay, MAX_RETRY_DELAY)
+    jitter = delay * random.uniform(-0.25, 0.25)
+    return delay + jitter
 
 
 # Default System Prompt
@@ -1103,6 +1151,7 @@ class FoxCodeAgent:
         # 不让用户看到原始的XML工具调用代码
         xml_buffer = ""
         in_xml_tool_call = False
+        _in_say_mode = False
 
         while True:
             # 获取模型响应
@@ -1128,16 +1177,20 @@ class FoxCodeAgent:
                             # 检测XML开始标记
                             if "<function" in xml_buffer or "```xml" in xml_buffer:
                                 in_xml_tool_call = True
+                                _in_say_mode = False
                                 # 输出XML标记之前的内容
                                 idx = max(
                                     xml_buffer.find("<function") if "<function" in xml_buffer else -1,
                                     xml_buffer.find("```xml") if "```xml" in xml_buffer else -1
                                 )
                                 if idx > 0:
-                                    yield xml_buffer[:idx]
+                                    yield "[say] " + xml_buffer[:idx]
                                 xml_buffer = xml_buffer[idx:]
                             elif len(xml_buffer) > 100:
                                 # 缓冲区足够长但没有检测到XML，输出内容
+                                if not _in_say_mode:
+                                    _in_say_mode = True
+                                    yield "[say] "
                                 yield xml_buffer
                                 xml_buffer = ""
                         else:
@@ -1162,6 +1215,15 @@ class FoxCodeAgent:
                                         xml_buffer = remaining
 
                     total_response += full_response
+
+                    # 刷新xml_buffer中剩余的文本内容
+                    if xml_buffer.strip():
+                        if not _in_say_mode:
+                            _in_say_mode = True
+                            yield "[say] "
+                        yield xml_buffer
+                        xml_buffer = ""
+
                     break  # 成功获取响应，退出重试循环
 
                 except Exception as e:
@@ -1182,11 +1244,13 @@ class FoxCodeAgent:
                         full_response = ""  # 重置响应
                         xml_buffer = ""  # 重置XML缓冲区
                         in_xml_tool_call = False  # 重置XML状态
+                        _in_say_mode = False  # 重置say模式
                         continue
                     else:
                         # 不可重试或达到最大重试次数
                         logger.error(f"Failed to generate response: {e}")
-                        yield f"\n[error] {str(e)}\n"
+                        http_detail = _extract_http_detail(e)
+                        yield f"\n\033[31m[error]\033[0m {str(e)}{http_detail}\n"
                         return
 
             # ==================== 3. 检查上下文重置 ====================
@@ -1251,7 +1315,7 @@ class FoxCodeAgent:
                     if result.success:
                         yield f"[result]\n{result.output}\n[/result]\n"
                     else:
-                        yield f"[error] {result.error}\n"
+                        yield f"\033[31m[error]\033[0m {result.error}\n"
 
                 # 将工具结果添加到对话
                 tool_result_message = (
@@ -1335,10 +1399,6 @@ class FoxCodeAgent:
                         data={"planned": True, "tool": tool_name, "params": kwargs},
                     )
                 # 只读工具在规划模式下正常执行
-
-            # 检查危险操作确认
-            if tool.dangerous and self.config.run_mode == RunMode.DEFAULT:
-                logger.warning(f"Dangerous operation requires confirmation: {tool_name}")
 
             return await registry.execute(tool_name, **kwargs)
 

@@ -301,10 +301,10 @@ class MinimalismOutputBuffer:
     极简模式过滤掉这些技术细节，只显示用户关心的内容。
 
     输出格式：
+    - [say] text... - AI回复文本（由agent生成）
     - [tool] tool_name key_param - 工具调用（简洁）
     - [result]...[/result] - 命令结果（仅shell类工具）
     - [error] message - 错误信息
-    - [say] text... - AI回复文本（只输出一次）
     - [work_end] - 工作完成
 
     过滤的内容：
@@ -345,108 +345,66 @@ class MinimalismOutputBuffer:
     def __init__(self):
         """初始化缓冲器"""
         self.buffer = ""  # 完整缓冲区
-        self.say_printed = False  # 是否已输出[say]标记
 
     @staticmethod
     def _colorize_tag(tag: str, text: str) -> str:
-        """
-        为标签添加颜色
-
-        Args:
-            tag: 标签名（如 "tool"、"say"）
-            text: 标签后的文本内容
-
-        Returns:
-            带ANSI颜色码的格式化字符串
-        """
         GREEN = "\033[32m"
         WHITE = "\033[37m"
         RESET = "\033[0m"
         return f"{GREEN}[{tag}]{RESET}{WHITE}{text}{RESET}"
 
     def _filter_xml_content(self, text: str) -> str:
-        """
-        过滤 XML 工具调用相关内容
-
-        使用正则表达式移除所有 XML 标签和相关内容
-        """
         import re
 
         result = text
 
-        # 先处理完整的 <function>...</function> 块
         result = re.sub(r"<function[^>]*>.*?</function>", "", result, flags=re.DOTALL)
 
-        # 处理其他 XML 标签
         for pattern in self.FILTER_PATTERNS:
             result = re.sub(pattern, "", result, flags=re.IGNORECASE)
 
-        # 清理多余的空行
         result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
 
         return result.strip()
 
     def add_chunk(self, chunk: str) -> str | None:
-        """
-        添加输出片段到缓冲区
-
-        Args:
-            chunk: 输出片段
-
-        Returns:
-            None（所有内容在 flush 时统一输出）
-        """
         self.buffer += chunk
         return None
 
     def flush(self) -> str:
-        """
-        刷新缓冲区，返回处理后的内容
-
-        统一处理所有缓冲内容，过滤 XML，提取有意义的文本
-        """
         if not self.buffer.strip():
             self.buffer = ""
             return "\033[34m[work_end]\033[0m\n"
 
-        # 过滤 XML 内容
         filtered = self._filter_xml_content(self.buffer)
 
-        # 清空缓冲区
         self.buffer = ""
 
         if not filtered.strip():
             return "\033[34m[work_end]\033[0m\n"
 
-        # 添加 [say] 标记（只输出一次）
-        if not self.say_printed:
-            self.say_printed = True
-            return self._colorize_tag("say", f" {filtered}") + "\n\n\033[34m[work_end]\033[0m\n"
-
         return filtered + "\n\n\033[34m[work_end]\033[0m\n"
 
 
-# 根据极简模式调整控制台日志级别
-def _adjust_log_level_for_minimalism() -> None:
+# 根据输出主题调整控制台日志级别
+def _adjust_log_level_for_topic() -> None:
     """
-    根据极简模式调整控制台日志级别
+    根据输出主题调整控制台日志级别
 
-    在极简模式下，将控制台日志级别设置为 ERROR，
-    避免显示 WARNING 级别的日志，保持输出简洁
+    在默认模式和极简模式下，隐藏 INFO 级别的程序日志，
+    只保留 WARNING 及以上级别，避免显示程序内部日志干扰用户
     """
     try:
         from foxcode.core.config import Config, OutputTopic
 
-        # 加载配置（不创建完整实例，只读取 output_topic）
         file_config = Config.load_from_file()
         output_topic = file_config.get("output_topic", OutputTopic.DEFAULT)
 
         if output_topic == OutputTopic.MINIMALISM:
-            # 极简模式：将控制台 handler 的级别设置为 ERROR
-            # 文件日志保持 INFO 级别，用于调试
             _stream_handler.setLevel(logging.ERROR)
+        elif output_topic == OutputTopic.DEFAULT:
+            _stream_handler.setLevel(logging.WARNING)
     except Exception:
-        # 如果调整失败，不影响程序运行
         pass
 
 
@@ -935,9 +893,9 @@ enable_shell = true
 @click.option("--model", "-m", default=None, help="指定 AI 模型")
 @click.option(
     "--mode",
-    type=click.Choice(["default", "yolo", "plan", "accept_edits"]),
-    default="default",
-    help="运行模式",
+    type=click.Choice(["yolo", "plan", "accept_edits"]),
+    default="yolo",
+    help="运行模式（默认 yolo）",
 )
 @click.option("--yolo", is_flag=True, help="启用 YOLO 模式（自动执行）")
 @click.option("--plan", is_flag=True, help="启用规划模式（只读）")
@@ -1015,8 +973,8 @@ def main(
         )
         return
 
-    # 首先根据极简模式调整日志级别（在信号处理器之前）
-    _adjust_log_level_for_minimalism()
+    # 首先根据输出主题调整日志级别（在信号处理器之前）
+    _adjust_log_level_for_topic()
 
     # 初始化信号处理器（必须在主函数开始时调用）
     _setup_signal_handlers()
@@ -1128,9 +1086,9 @@ def main(
 @click.option("--plan", is_flag=True, help="启用规划模式（只读）")
 @click.option(
     "--mode",
-    type=click.Choice(["default", "yolo", "plan", "accept_edits"]),
-    default="default",
-    help="运行模式",
+    type=click.Choice(["yolo", "plan", "accept_edits"]),
+    default="yolo",
+    help="运行模式（默认 yolo）",
 )
 @click.option("--resume", "-r", is_flag=True, help="恢复上次会话")
 @click.option("--session", default=None, help="指定会话 ID")
@@ -1315,7 +1273,7 @@ async def _run_single_prompt(
         logger.error(f"单次提示执行失败: {type(e).__name__}: {e}")
         logger.debug(f"完整堆栈:\n{traceback.format_exc()}")
         if config and config.output_topic == OutputTopic.MINIMALISM:
-            print(f"\n[error] {str(e)}")
+            print(f"\n\033[31m[error]\033[0m {str(e)}")
         else:
             console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
 
@@ -1331,6 +1289,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
     增强异常处理，确保主循环不会因异常而意外终止
     """
     from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import ANSI as PTANSI
     from prompt_toolkit.history import FileHistory
 
     print_banner(config)
@@ -1342,7 +1301,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
     except Exception as e:
         logger.error(f"代理初始化失败: {e}")
         if config.output_topic == OutputTopic.MINIMALISM:
-            print(f"[error] 初始化失败: {str(e)}")
+            print(f"\033[31m[error]\033[0m 初始化失败: {str(e)}")
         else:
             console.print(f"[red]初始化失败: {markup.escape(str(e))}[/red]")
         return
@@ -1378,6 +1337,9 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
         history=FileHistory(str(history_file)),
     )
 
+    # 用于将 Rich 标记渲染为 ANSI 转义序列的控制台
+    _render_console = Console(force_terminal=True, color_system="truecolor", width=200)
+
     # 主循环（增加循环计数和健康检查）
     loop_count = 0
     max_consecutive_errors = 5  # 最大连续错误次数
@@ -1396,8 +1358,10 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
 
         try:
             # 获取用户输入（使用传统命令行样式）
+            with _render_console.capture() as capture:
+                _render_console.print(_get_prompt_text(), end="")
             user_input = await session.prompt_async(
-                _get_prompt_text(),
+                PTANSI(capture.get()),
                 multiline=False,
             )
 
@@ -1438,7 +1402,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                         if result:
                             print(result, end="")
                     else:
-                        console.print(chunk, end="")
+                        console.print(chunk, end="", markup=False, highlight=False)
 
                 # 极简模式：刷新缓冲区并输出结束标记
                 if config.output_topic == OutputTopic.MINIMALISM:
@@ -1488,7 +1452,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             logger.debug(f"错误堆栈:\n{traceback.format_exc()}")
 
             if config.output_topic == OutputTopic.MINIMALISM:
-                print(f"\n[error] {str(e)}")
+                print(f"\n\033[31m[error]\033[0m {str(e)}")
             else:
                 console.print(f"\n[red]错误: {markup.escape(str(e))}[/red]")
 
@@ -4140,7 +4104,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         # 切换到指定模式
         if sub_cmd == "default":
             config.output_topic = OutputTopic.DEFAULT
-            # 保存配置到文件
+            _stream_handler.setLevel(logging.WARNING)
             if config.save_output_topic(OutputTopic.DEFAULT):
                 console.print("[green]✅ 已切换到默认模式（完整输出）并保存配置[/green]")
             else:
@@ -4153,7 +4117,6 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             config.debug = True
             config.log_level = "DEBUG"
             logging.getLogger().setLevel(logging.DEBUG)
-            # 保存配置到文件
             if config.save_output_topic(OutputTopic.DEBUG):
                 console.print("[green]✅ 已切换到调试模式（详细输出）并保存配置[/green]")
             else:
@@ -4163,13 +4126,12 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
 
         elif sub_cmd == "minimalism":
             config.output_topic = OutputTopic.MINIMALISM
-            # 保存配置到文件
+            _stream_handler.setLevel(logging.ERROR)
             if config.save_output_topic(OutputTopic.MINIMALISM):
                 print("[OK] 已切换到极简模式（精简输出）并保存配置")
             else:
                 print("[OK] 已切换到极简模式（精简输出）")
                 print("[WARN] 配置保存失败，下次启动将恢复默认设置")
-
             return
 
         # 显示当前模式状态
@@ -4203,7 +4165,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
 
     except Exception as e:
         if config.output_topic == OutputTopic.MINIMALISM:
-            print(f"[error] 切换输出模式失败: {str(e)}")
+            print(f"\033[31m[error]\033[0m 切换输出模式失败: {str(e)}")
         else:
             console.print(f"[red]切换输出模式失败: {markup.escape(str(e))}[/red]")
 

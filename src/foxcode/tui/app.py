@@ -297,7 +297,7 @@ class FoxCodeApp(App):
         self.config = config
         self._current_session_id: str = ""
         self._run_mode_index: int = 0
-        self._run_modes: tuple[str, ...] = ("default", "yolo", "plan", "accept_edits")
+        self._run_modes: tuple[str, ...] = ("yolo", "plan", "accept_edits")
 
     # ------------------------------------------------------------------ #
     # Layout                                                              #

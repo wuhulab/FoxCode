@@ -41,14 +41,58 @@ from __future__ import annotations
 import abc
 import asyncio
 import logging
+import random
 import time
 from collections.abc import AsyncIterator
 from typing import Any
+
+import httpx
 
 from foxcode.core.config import ModelConfig, ModelProvider
 from foxcode.types.message import Conversation
 
 logger = logging.getLogger(__name__)
+
+
+# 多组浏览器 User-Agent 轮换，避免固定 UA 被 WAF 标记
+_BROWSER_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+]
+
+
+def _create_http_client(config: ModelConfig) -> httpx.AsyncClient | None:
+    """创建模拟真实浏览器的 httpx 客户端（轮换 UA + 完整请求头 + 可选代理），绕过 WAF 拦截"""
+    headers = {
+        "User-Agent": random.choice(_BROWSER_USER_AGENTS),
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "cross-site",
+    }
+    client_kwargs: dict[str, Any] = {
+        "headers": headers,
+        "timeout": httpx.Timeout(config.timeout),
+    }
+    if config.proxy_url:
+        # httpx >= 0.28 使用 proxy 参数（httpx.Proxy 实例），< 0.28 使用 proxies 参数
+        try:
+            if hasattr(httpx, "Proxy"):
+                client_kwargs["proxy"] = httpx.Proxy(url=config.proxy_url)
+            else:
+                client_kwargs["proxies"] = config.proxy_url
+        except Exception:
+            client_kwargs["proxies"] = config.proxy_url
+        logger.info("使用代理: %s", config.proxy_url)
+    return httpx.AsyncClient(**client_kwargs)
 
 
 class ModelResponse:
@@ -128,6 +172,18 @@ class BaseModelProvider(abc.ABC):
         """
         self.config = config
         self._client: Any = None  # 具体的API客户端
+        self._last_request_time: float = 0.0  # 上次请求时间（用于请求间隔控制）
+
+    async def _apply_throttle(self) -> None:
+        """根据配置的请求间隔进行限流，避免因请求过快被 WAF 标记"""
+        interval = self.config.request_throttle_interval
+        if interval > 0:
+            elapsed = time.time() - self._last_request_time
+            if elapsed < interval:
+                wait = interval - elapsed
+                logger.debug("请求限流: 等待 %.2fs", wait)
+                await asyncio.sleep(wait)
+        self._last_request_time = time.time()
 
     @abc.abstractmethod
     async def initialize(self) -> None:
@@ -252,11 +308,13 @@ class OpenAIProvider(BaseModelProvider):
             # 获取有效的API密钥
             api_key = self.config.get_effective_api_key()
             
-            # 创建异步客户端
+            # 创建异步客户端（带浏览器 UA 和可选代理，避免 WAF 拦截）
+            http_client = _create_http_client(self.config)
             self._client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=self.config.base_url,  # 支持自定义API地址
                 timeout=self.config.timeout,
+                http_client=http_client,
             )
             logger.info("OpenAI 客户端初始化成功")
         except ImportError:
@@ -270,6 +328,7 @@ class OpenAIProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
+        await self._apply_throttle()
 
         messages = []
         if system_prompt:
@@ -305,6 +364,7 @@ class OpenAIProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
+        await self._apply_throttle()
 
         messages = []
         if system_prompt:
@@ -344,10 +404,12 @@ class AnthropicProvider(BaseModelProvider):
             from anthropic import AsyncAnthropic
 
             api_key = self.config.get_effective_api_key()
+            http_client = _create_http_client(self.config)
             self._client = AsyncAnthropic(
                 api_key=api_key,
                 base_url=self.config.base_url,
                 timeout=self.config.timeout,
+                http_client=http_client,
             )
             logger.info("Anthropic 客户端初始化成功")
         except ImportError:
@@ -361,6 +423,7 @@ class AnthropicProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
+        await self._apply_throttle()
 
         messages = conversation.get_messages_for_api(include_system=False)
 
@@ -398,6 +461,7 @@ class AnthropicProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
+        await self._apply_throttle()
 
         messages = conversation.get_messages_for_api(include_system=False)
 
@@ -437,10 +501,12 @@ class DeepSeekProvider(BaseModelProvider):
             from openai import AsyncOpenAI
 
             api_key = self.config.get_effective_api_key()
+            http_client = _create_http_client(self.config)
             self._client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=self.config.base_url,
                 timeout=self.config.timeout,
+                http_client=http_client,
             )
             logger.info("DeepSeek 客户端初始化成功")
         except ImportError:
@@ -454,6 +520,7 @@ class DeepSeekProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
+        await self._apply_throttle()
 
         messages = []
         if system_prompt:
@@ -488,6 +555,7 @@ class DeepSeekProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
+        await self._apply_throttle()
 
         messages = []
         if system_prompt:
@@ -526,10 +594,12 @@ class StepProvider(BaseModelProvider):
             from openai import AsyncOpenAI
 
             api_key = self.config.get_effective_api_key()
+            http_client = _create_http_client(self.config)
             self._client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=self.config.base_url,
                 timeout=self.config.timeout,
+                http_client=http_client,
             )
             logger.info("StepFun 客户端初始化成功")
         except ImportError:
@@ -543,6 +613,7 @@ class StepProvider(BaseModelProvider):
         """发送聊天请求"""
         if not self._client:
             await self.initialize()
+        await self._apply_throttle()
 
         messages = []
         if system_prompt:
@@ -577,6 +648,7 @@ class StepProvider(BaseModelProvider):
         """流式聊天请求"""
         if not self._client:
             await self.initialize()
+        await self._apply_throttle()
 
         messages = []
         if system_prompt:

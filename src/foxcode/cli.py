@@ -54,7 +54,7 @@ from rich.panel import Panel
 from foxcode import __version__
 from foxcode.commands import get_command_manager
 from foxcode.core.agent import FoxCodeAgent
-from foxcode.core.config import Config, OutputTopic, RunMode
+from foxcode.core.config import Config, ModelProvider, OutputTopic, RunMode
 from foxcode.core.process_watchdog import (
     ProcessWatchdog,
     init_watchdog,
@@ -1589,12 +1589,6 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
             "Wrbsite:https://www.shunx.top/\n"
             ""
         )
-
-    elif cmd_name == "/openai":
-        _handle_openai_command(config)
-
-    elif cmd_name == "/shunxapi":
-        _handle_shunxapi_command(config)
 
     # ==================== 长时间运行模式命令 ====================
 
@@ -4690,6 +4684,68 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
             console.print(f"[red]更新失败: {markup.escape(str(e))}[/red]")
 
 
+def apply_model_settings(
+    config: Config,
+    agent: "FoxCodeAgent",
+    *,
+    url: str = "",
+    key: str = "",
+    model: str = "",
+    infer_provider: bool = True,
+) -> str:
+    """Apply url/key/model onto ``config.model``, persist and hot-reload.
+
+    Returns a human-readable status string (Chinese). Shared by the CLI
+    handlers and the TUI interactive config form so behaviour stays
+    identical across both entry points.
+    """
+    if not (url or key or model):
+        return "未做任何修改"
+
+    if url:
+        config.model.base_url = url
+    if key:
+        config.model.api_key = key
+    if model:
+        config.model.model_name = model
+
+    if infer_provider:
+        u = (config.model.base_url or "").lower()
+        if "anthropic" in u:
+            provider = ModelProvider.ANTHROPIC
+        elif "deepseek" in u:
+            provider = ModelProvider.DEEPSEEK
+        elif "stepfun" in u:
+            provider = ModelProvider.STEP
+        else:
+            provider = ModelProvider.OPENAI
+        config.model.provider = provider
+
+    if config.save_model_config():
+        msg = "配置已保存到文件"
+    else:
+        msg = "配置已更新（但保存到文件失败，重启后可能丢失）"
+
+    if agent is not None:
+        try:
+            import asyncio
+
+            from foxcode.core.providers import create_model_provider
+
+            new_provider = create_model_provider(config.model)
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(new_provider.initialize())
+            else:
+                loop.run_until_complete(new_provider.initialize())
+            agent.model_provider = new_provider
+            msg += "，已热加载新配置"
+        except Exception as reload_err:  # noqa: BLE001
+            logger.warning(f"热加载失败，重启后生效: {reload_err}")
+            msg += "（热加载失败，重启后生效）"
+    return msg
+
+
 # 处理 /openai 命令
 def _handle_openai_command(agent: FoxCodeAgent, config: Config) -> None:
     """
@@ -4746,45 +4802,14 @@ def _handle_openai_command(agent: FoxCodeAgent, config: Config) -> None:
             console.print(f"[green]✓ Model 已更新: {new_model}[/green]")
 
         # 如果有任何修改，自动推断 provider 并持久化+热加载
-        if new_url or new_key or new_model:
-            from foxcode.core.config import ModelProvider
-
-            # 根据 URL 自动推断 provider（全部走 OpenAI 兼容接口）
-            url = (config.model.base_url or "").lower()
-            if "anthropic" in url:
-                config.model.provider = ModelProvider.ANTHROPIC
-            elif "deepseek" in url:
-                config.model.provider = ModelProvider.DEEPSEEK
-            elif "stepfun" in url:
-                config.model.provider = ModelProvider.STEP
-            else:
-                # 任意第三方 URL 统一走 OpenAI 兼容接口
-                config.model.provider = ModelProvider.OPENAI
-
-            # 持久化到配置文件
-            if config.save_model_config():
-                save_msg = "配置已保存到文件"
-            else:
-                save_msg = "配置已更新（但保存到文件失败，重启后可能丢失）"
-
-            # 热加载：重新初始化 agent 的模型提供者
-            try:
-                import asyncio
-                from foxcode.core.providers import create_model_provider
-
-                new_provider = create_model_provider(config.model)
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(new_provider.initialize())
-                else:
-                    loop.run_until_complete(new_provider.initialize())
-                agent.model_provider = new_provider
-                save_msg += "，已热加载新配置"
-            except Exception as reload_err:
-                logger.warning(f"热加载失败，重启后生效: {reload_err}")
-                save_msg += "（热加载失败，重启后生效）"
-        else:
-            save_msg = "未做任何修改"
+        save_msg = apply_model_settings(
+            config,
+            agent,
+            url=new_url,
+            key=new_key,
+            model=new_model,
+            infer_provider=True,
+        )
 
         # 显示更新后的配置
         if is_minimalism:
@@ -4859,6 +4884,15 @@ def _handle_shunxapi_command(agent: FoxCodeAgent, config: Config) -> None:
             config.model.model_name = new_model
             console.print(f"[green]✓ Model 已更新: {new_model}[/green]")
 
+        # 持久化 + 热加载
+        save_msg = apply_model_settings(
+            config,
+            agent,
+            key=new_key,
+            model=new_model,
+            infer_provider=False,
+        )
+
         # 显示更新后的配置
         if is_minimalism:
             print("[shunxapi] 配置已更新:")
@@ -4870,7 +4904,8 @@ def _handle_shunxapi_command(agent: FoxCodeAgent, config: Config) -> None:
                 Panel(
                     f"[bold]URL:[/bold] {config.model.base_url}\n"
                     f"[bold]Key:[/bold] {'已设置' if config.model.api_key else '未设置'}\n"
-                    f"[bold]Model:[/bold] {config.model.model_name}",
+                    f"[bold]Model:[/bold] {config.model.model_name}\n"
+                    f"[dim]{save_msg}[/dim]",
                     title="✅ ShunxAPI 配置已更新",
                     style="green",
                 )

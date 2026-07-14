@@ -735,6 +735,19 @@ class WriteFileTool(BaseTool):
                     error=f"路径是目录，无法写入: {file_path}",
                 )
 
+            # 企业级 / Git 友好：write_file 只用于创建新文件，
+            # 禁止清空或覆盖已有文件，避免全篇重写破坏版本历史。
+            if path.exists():
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"文件已存在，无法覆盖写入: {file_path}。"
+                        "write_file 仅用于创建新文件；修改已有文件请使用 edit_file"
+                        "（替换用 old_text/new_text，或在指定行后插入用 line/content）。"
+                    ),
+                )
+
             path.parent.mkdir(parents=True, exist_ok=True)
 
             # 注释保护：在写入前读取原始内容，让保护器处理
@@ -777,7 +790,7 @@ class WriteFileTool(BaseTool):
 
             expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-            async with aiofiles.open(path, "w", encoding="utf-8") as f:
+            async with aiofiles.open(path, "w", encoding="utf-8", newline="") as f:
                 await f.write(content)
 
             verification_passed = False
@@ -847,10 +860,20 @@ class WriteFileTool(BaseTool):
 
 @tool
 class EditFileTool(BaseTool):
-    """Edit file content"""
+    """Edit file content (replace, or insert after a line)"""
 
     name = "edit_file"
-    description = "Search and replace text content in a file"
+    description = (
+        "Edit an existing file with small, targeted changes (Git-friendly, "
+        "avoids full-file rewrites).\n"
+        "Two modes:\n"
+        "1) Replace: provide old_text + new_text (old_text must match exactly "
+        "and appear once).\n"
+        "2) Insert: provide line + content to insert a new block AFTER the given "
+        "line. line is a 1-based integer, or 'end' to append at the end of file.\n"
+        "If the file does not exist and old_text is empty, it is created with "
+        "new_text as its content."
+    )
     category = ToolCategory.FILE
     dangerous = True
     parameters = [
@@ -863,25 +886,52 @@ class EditFileTool(BaseTool):
         ToolParameter(
             name="old_text",
             type="string",
-            description="Text to search for (must match exactly)",
-            required=True,
+            description=(
+                "Replace mode: exact text to find and replace. Leave empty to "
+                "create a new file (with new_text) or when using insert mode."
+            ),
+            required=False,
+            default="",
         ),
         ToolParameter(
             name="new_text",
             type="string",
-            description="Text to replace with",
-            required=True,
+            description=(
+                "Replace mode: replacement text. Also used as the full content "
+                "when creating a new file (old_text empty)."
+            ),
+            required=False,
+            default="",
+        ),
+        ToolParameter(
+            name="line",
+            type="string",
+            description=(
+                "Insert mode: insert `content` AFTER this line. Integer (1-based) "
+                "or 'end' to append at end of file. Takes precedence over replace mode."
+            ),
+            required=False,
+            default=None,
+        ),
+        ToolParameter(
+            name="content",
+            type="string",
+            description="Insert mode: text to insert after the given line",
+            required=False,
+            default="",
         ),
     ]
 
     async def execute(
         self,
         file_path: str,
-        old_text: str,
-        new_text: str,
+        old_text: str = "",
+        new_text: str = "",
+        line: Any = None,
+        content: str = "",
         **kwargs: Any,
     ) -> ToolResult:
-        """执行文件编辑"""
+        """执行文件编辑（替换 / 行后插入 / 新建）"""
         try:
             path_validator = get_path_validator()
             is_valid, error_msg, resolved_path = path_validator.validate_path(
@@ -897,69 +947,161 @@ class EditFileTool(BaseTool):
 
             path = resolved_path
 
-            if not path.exists():
+            if path.exists() and path.is_dir():
                 return ToolResult(
                     success=False,
                     output="",
-                    error=f"文件不存在: {file_path}",
+                    error=f"路径是目录，无法编辑: {file_path}",
+                )
+
+            file_exists = path.exists()
+
+            # ============ 插入模式：在指定行之后插入 ============
+            if line is not None:
+                if not file_exists:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error=(
+                            f"文件不存在，无法在指定行插入: {file_path}"
+                            "（新建文件请用 write_file 或 edit_file 的 old_text 为空模式）"
+                        ),
+                    )
+
+                async with aiofiles.open(path, "rb") as f:
+                    raw_data = await f.read()
+                existing, detected_encoding = decode_bytes(raw_data)
+                # 统一换行符为 LF（与 doge-code 一致），避免 Windows 上 CRLF 导致的双重换行
+                existing = existing.replace("\r\n", "\n").replace("\r", "\n")
+
+                # 规范化行：去掉末尾换行产生的空行，记住是否有结尾换行
+                lines = existing.split("\n")
+                has_trailing_nl = bool(lines) and lines[-1] == ""
+                body = lines[:-1] if has_trailing_nl else lines
+                total = len(body)
+
+                line_val = str(line).strip().lower()
+                if line_val == "end":
+                    insert_idx = total
+                else:
+                    try:
+                        ln = int(line_val)
+                    except (ValueError, TypeError):
+                        return ToolResult(
+                            success=False,
+                            output="",
+                            error="line 必须是正整数（从 1 开始）或 'end'",
+                        )
+                    if ln < 1:
+                        return ToolResult(
+                            success=False,
+                            output="",
+                            error="line 必须从 1 开始",
+                        )
+                    # 超出末尾则追加到末尾
+                    insert_idx = min(ln, total)
+
+                new_body = body[:insert_idx] + [content] + body[insert_idx:]
+                new_content = "\n".join(new_body)
+                if has_trailing_nl:
+                    new_content += "\n"
+
+                protect_notice = await self._apply_comment_protection(
+                    path, new_content, existing
+                )
+
+                await self._write_text(path, new_content, detected_encoding)
+
+                logger.info(f"文件插入成功: {file_path} (after line {insert_idx})")
+                return ToolResult(
+                    success=True,
+                    output=(
+                        f"文件已编辑: {file_path}\n在第 {insert_idx} 行后插入了 "
+                        f"{len(content.splitlines()) or 1} 行内容\n"
+                        f"编码: {detected_encoding}{protect_notice}"
+                    ),
+                    data={
+                        "file_path": str(path),
+                        "mode": "insert",
+                        "insert_after_line": insert_idx,
+                        "encoding": detected_encoding,
+                    },
+                )
+
+            # ============ 替换 / 新建模式 ============
+            # 文件不存在：仅当 old_text 为空时作为新建文件处理
+            if not file_exists:
+                if old_text == "":
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    new_content = new_text
+                    protect_notice = await self._apply_comment_protection(
+                        path, new_content, ""
+                    )
+                    await self._write_text(path, new_content, "utf-8")
+                    logger.info(f"通过 edit_file 新建文件: {file_path}")
+                    return ToolResult(
+                        success=True,
+                        output=f"文件已创建: {file_path}{protect_notice}",
+                        data={
+                            "file_path": str(path),
+                            "mode": "create",
+                            "encoding": "utf-8",
+                        },
+                    )
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"文件不存在，无法替换: {file_path}",
                 )
 
             async with aiofiles.open(path, "rb") as f:
                 raw_data = await f.read()
+            existing, detected_encoding = decode_bytes(raw_data)
+            # 统一换行符为 LF（与 doge-code 一致），避免 Windows 上 CRLF 导致的双重换行
+            existing = existing.replace("\r\n", "\n").replace("\r", "\n")
 
-            content, detected_encoding = decode_bytes(raw_data)
-
-            if old_text not in content:
-                return ToolResult(
-                    success=False,
-                    output="",
-                    error="未找到要替换的文本",
-                )
-
-            occurrences = content.count(old_text)
-            if occurrences > 1:
-                return ToolResult(
-                    success=False,
-                    output="",
-                    error=f"找到 {occurrences} 处匹配，请提供更具体的文本以唯一标识",
-                )
-
-            new_content = content.replace(old_text, new_text, 1)
-
-            # 注释保护：对编辑结果应用注释恢复
-            protect_notice = ""
-            try:
-                from foxcode.core.comment_protect_manager import get_manager
-
-                manager = get_manager()
-                if manager.is_enabled():
-                    # 对整个文件应用保护（因为编辑可能影响其他位置的注释）
-                    protected_content, prot_result = manager.protect_file(
-                        path, new_content, content
+            # 企业级 / Git 友好：禁止用空 old_text 清空已有非空文件
+            if old_text == "":
+                if existing.strip() == "":
+                    new_content = new_text
+                else:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error=(
+                            "文件已存在且非空，禁止使用空的 old_text 重写。"
+                            "请用 old_text/new_text 做局部替换，或用 line/content 在指定行后插入。"
+                        ),
                     )
-                    if prot_result.restored_count > 0:
-                        new_content = protected_content
-                        protect_notice = (
-                            f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
-                        )
-            except Exception as e:
-                logger.debug(f"注释保护跳过: {e}")
+            else:
+                if old_text not in existing:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error="未找到要替换的文本",
+                    )
+                occurrences = existing.count(old_text)
+                if occurrences > 1:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error=f"找到 {occurrences} 处匹配，请提供更具体的文本以唯一标识",
+                    )
+                new_content = existing.replace(old_text, new_text, 1)
 
-            try:
-                async with aiofiles.open(path, "w", encoding=detected_encoding) as f:
-                    await f.write(new_content)
-            except (UnicodeEncodeError, LookupError):
-                async with aiofiles.open(path, "w", encoding="utf-8") as f:
-                    await f.write(new_content)
-                detected_encoding = "utf-8"
+            protect_notice = await self._apply_comment_protection(
+                path, new_content, existing
+            )
+
+            await self._write_text(path, new_content, detected_encoding)
 
             logger.info(f"文件编辑成功: {file_path}")
-
             return ToolResult(
                 success=True,
                 output=f"文件已编辑: {file_path}\n替换了 1 处文本\n编码: {detected_encoding}{protect_notice}",
                 data={
                     "file_path": str(path),
+                    "mode": "replace",
                     "occurrences": 1,
                     "encoding": detected_encoding,
                 },
@@ -971,6 +1113,38 @@ class EditFileTool(BaseTool):
                 output="",
                 error=_safe_error_message("编辑文件", e),
             )
+
+    async def _apply_comment_protection(
+        self, path: Any, new_content: str, original_content: str
+    ) -> str:
+        """对编辑结果应用注释恢复，返回提示信息（空字符串表示无操作）"""
+        try:
+            from foxcode.core.comment_protect_manager import get_manager
+
+            manager = get_manager()
+            if manager.is_enabled():
+                protected_content, prot_result = manager.protect_file(
+                    path, new_content, original_content
+                )
+                if prot_result.restored_count > 0:
+                    new_content = protected_content
+                    return f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
+        except Exception as e:
+            logger.debug(f"注释保护跳过: {e}")
+        return ""
+
+    async def _write_text(self, path: Any, text: str, encoding: str) -> None:
+        """写入文本并修正权限（newline='' 以保留 LF，避免 Windows CRLF 破坏）"""
+        try:
+            async with aiofiles.open(path, "w", encoding=encoding, newline="") as f:
+                await f.write(text)
+        except (UnicodeEncodeError, LookupError):
+            async with aiofiles.open(path, "w", encoding="utf-8", newline="") as f:
+                await f.write(text)
+        try:
+            os.chmod(path, 0o644)
+        except Exception:
+            pass
 
 
 @tool

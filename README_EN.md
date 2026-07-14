@@ -103,8 +103,14 @@ pip install foxcode
 ### Quick Start
 
 ```bash
-# Start interactive session
+# Start interactive session (CLI mode)
 foxcode
+
+# Launch TUI terminal interface
+foxcode --tui
+
+# Or launch TUI directly via Python
+python -c "from foxcode.tui import run_tui; run_tui()"
 
 # Ask a question directly
 foxcode "Help me analyze the project structure"
@@ -122,6 +128,74 @@ foxcode -m claude "Help me refactor this code"
 foxcode -r
 ```
 
+### TUI Terminal Interface
+
+FoxCode provides a full-featured TUI (Terminal User Interface) built with Textual, a 1:1 recreation of the Claude Code interactive experience.
+
+#### TUI Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Enter` | Send message |
+| `Shift+Enter` | New line |
+| `Ctrl+L` | Clear screen |
+| `Ctrl+N` | New session |
+| `Ctrl+S` | Save session |
+| `Ctrl+B` | Toggle sidebar |
+| `Ctrl+T` | Cycle modes (yolo/plan/accept) |
+| `F1 / ?` | Help |
+| `F11` | Toggle fullscreen |
+| `PageUp / PageDown` | Scroll up/down |
+| `Ctrl+A` | Select all text |
+| `Ctrl+E` | Cursor to end of line |
+| `Ctrl+K` | Delete to end of line |
+| `Ctrl+W` | Delete word |
+| `Ctrl+U` | Clear line |
+| `Esc` | Cancel |
+| `Ctrl+C` | Quit only when the input box is focused; does not quit in the chat area (free for copy) |
+| `Ctrl+Q` | Quit FoxCode |
+| `Ctrl+Y` | Copy the last AI reply (silent, no prompt) |
+| `C` | Copy the selected message (click a message to select it first; silent) |
+| `D` | Delete the selected message |
+
+#### TUI Slash Commands (local, not sent to AI)
+
+Input starting with `/` is executed as a local instruction instead of being sent to the AI agent. Commands run immediately even while the AI is streaming.
+
+**Command resolution order:**
+1. Look up the TUI built-in commands first (table below); if found, run it inside the TUI.
+2. If the TUI does not recognize it, forward the **entire command as-is** to the CLI command handler (`cli._handle_command`). This means the long list of CLI interactive commands in the README (`/init` `/features` `/index` `/search` `/kb` `/debug` `/test` `/doc` `/git` `/topic`, etc.) does **not** need to be re-implemented in the TUI — just type them in the TUI.
+3. Only when neither the TUI nor the CLI recognizes the command is an "unknown command" error shown in the chat.
+
+| TUI Built-in Command | Description |
+|----------------------|-------------|
+| `/help` | Show the TUI command list |
+| `/clear` | Clear the chat (cancels in-progress output) |
+| `/save` | Save the current session |
+| `/mode [name]` | Set run mode: `yolo` / `plan` / `accept_edits` |
+| `/new` | Start a new session (cancels in-progress output) |
+| `/sidebar` | Toggle the sidebar |
+| `/fullscreen` or `/fs` | Toggle fullscreen |
+| `/theme [name]` | Switch theme (dark / light / dark-ansi / light-ansi / dark-daltonized / light-daltonized) |
+| `/history` | Show input history |
+| `/quit` or `/exit` | Quit FoxCode |
+| `//text` | Send a literal message starting with `/` to the AI |
+
+> All other `/commands` are forwarded to the CLI. The CLI's console output is captured and displayed in the chat (the TUI temporarily redirects the CLI `console` so it does not corrupt the terminal UI).
+
+#### TUI Features
+
+- **Multi-line Input**: TextArea with Shift+Enter for newlines
+- **Command History**: Up/Down to navigate history
+- **Message Action Bar**: E=edit/C=copy/D=delete/J=jump when message selected
+- **Animated Spinner**: Linux standard `-/\\|` rotation with stall detection and Glimmer sweep
+- **Clawd Mascot**: ASCII fox mascot with 4 pose animations
+- **Fullscreen Mode**: F11 to toggle, hide sidebar to expand main panel
+- **Session Persistence**: Auto-save/restore sessions to `~/.foxcode/sessions/`
+- **6 Themes**: dark / light / dark-ansi / light-ansi / dark-daltonized / light-daltonized
+- **Brand Color**: `#ffd56b` warm gold
+- **Dialog System**: Help, confirm, permission request, Diff viewer, cost warning
+
 ### Command Line Options
 
 | Option | Description |
@@ -135,6 +209,7 @@ foxcode -r
 | `--list-sessions` | List all sessions |
 | `--config` | Display configuration |
 | `--debug` | Enable debug mode |
+| `--tui` | Enable TUI terminal interface |
 | `--no-tui` | Disable TUI interface |
 | `--version, -v` | Display version |
 | `--help, -h` | Display help |
@@ -335,9 +410,32 @@ src/foxcode/
 │   ├── context_compressor.py # Context compression
 │   └── context_reset.py     # Context reset
 │
-├── tui/                     # TUI interface
+├── tui/                     # TUI interface (Textual)
 │   ├── __init__.py
-│   └── app.py               # Terminal application
+│   ├── app.py               # Main app entry
+│   ├── icons.py             # Public icon library
+│   ├── theme.py             # 6 theme system
+│   ├── styles.tcss          # TCSS stylesheet
+│   ├── screens/
+│   │   ├── repl.py          # REPL main screen
+│   │   └── welcome.py       # Welcome screen
+│   ├── widgets/
+│   │   ├── spinner.py       # Spinner animation system
+│   │   ├── logo.py          # Clawd mascot + Logo
+│   │   ├── message.py       # Message rendering
+│   │   ├── message_list.py  # Virtual message list
+│   │   ├── prompt_input.py  # Multi-line input
+│   │   ├── sidebar.py       # Sidebar session list
+│   │   ├── dialog.py        # Dialog system
+│   │   ├── diff_viewer.py   # Diff viewer
+│   │   ├── permission.py    # Permission request
+│   │   └── cost_dialog.py   # Cost warning
+│   └── design_system/
+│       ├── divider.py       # Divider
+│       ├── tabs.py          # Tabs
+│       ├── progress.py      # Progress bar
+│       ├── status_icon.py   # Status icon
+│       └── themed_box.py    # Themed container
 │
 ├── types/                   # Type definitions
 │   ├── __init__.py

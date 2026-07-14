@@ -1,11 +1,4 @@
-"""FoxCode TUI - Lightweight terminal UI built on Textual.
-
-Inspired by opencode and uv: minimal, fast, low memory.
-
-Usage:
-    from foxcode.tui import run_tui
-    run_tui(agent)
-"""
+"""FoxCode TUI - Python terminal UI 1:1 port of doge-code."""
 
 from foxcode.tui.app import FoxCodeApp, run_tui
 

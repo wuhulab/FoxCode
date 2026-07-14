@@ -224,8 +224,8 @@ Your response (output immediately, do NOT talk):
 |------|---------|-----------------|
 | list_directory | List directory | path |
 | read_file | Read file | file_path |
-| write_file | Write file | file_path, content |
-| edit_file | Edit file | file_path, old_text, new_text |
+| write_file | Create a NEW file (fails if it exists) | file_path, content |
+| edit_file | Edit a file: replace (old_text,new_text) OR insert after a line (line,content) | file_path + (old_text,new_text) or (line,content) |
 | grep | Search content | pattern |
 | glob | Find files | pattern |
 | search_codebase | Semantic search | query |
@@ -246,6 +246,32 @@ Your response (output immediately, do NOT talk):
 - Call ONE tool at a time
 - Wait for result before next action
 - Use absolute file paths
+
+## WRITING / EDITING FILES (Git-friendly, incremental)
+- `write_file` CREATES a new file with full content. It REFUSES to overwrite or
+  empty an existing file (this would destroy version history). Use it only for
+  genuinely new files.
+- To modify an EXISTING file, ALWAYS use `edit_file` with small, targeted changes:
+  - Replace: `old_text` + `new_text` (old_text must match exactly, once).
+  - Insert: `line` + `content` to insert a block AFTER line `line`
+    (1-based integer). Use `line="end"` to append at the end of the file.
+- NEVER rewrite an entire existing file. Make the smallest edit that works.
+- Example (insert a function after line 10, then append a note at the end):
+```xml
+<function=edit_file>
+<parameter=file_path>{working_dir}/app.py</parameter>
+<parameter=line>10</parameter>
+<parameter=content>
+def helper():
+    return 42
+</parameter>
+</function>
+<function=edit_file>
+<parameter=file_path>{working_dir}/app.py</parameter>
+<parameter=line>end</parameter>
+<parameter=content># end of file</parameter>
+</function>
+```
 
 ================================================================================
 ## WORK PRINCIPLES
@@ -297,7 +323,8 @@ First, create the `.foxcode/` directory if it does not exist, then create the fi
 |------|---------|-----------------|
 | list_directory | List directory | path |
 | read_file | Read file | file_path |
-| write_file | Write file | file_path, content |
+| write_file | Create a NEW file (fails if it exists) | file_path, content |
+| edit_file | Edit a file: replace (old_text,new_text) or insert after a line (line,content) | file_path + (old_text,new_text) or (line,content) |
 | glob | Find files | pattern |
 | shell_execute | Run command | command |
 
@@ -315,6 +342,12 @@ First, create the `.foxcode/` directory if it does not exist, then create the fi
 - Call ONE tool at a time
 - Wait for result before next action
 - Use absolute file paths
+
+## WRITING / EDITING FILES (Git-friendly, incremental)
+- `write_file` CREATES a new file. It refuses to overwrite an existing file.
+- To modify an existing file, use `edit_file`: replace (old_text,new_text) or
+  insert after a line (line + content, line="end" appends at end).
+- Never rewrite an entire existing file; make the smallest change that works.
 
 ## Current Environment
 
@@ -350,8 +383,8 @@ You have tools to read files, execute commands, and search code.
 | Tool | Purpose | Required Params |
 |------|---------|-----------------|
 | read_file | Read file | file_path |
-| edit_file | Edit file | file_path, old_text, new_text |
-| write_file | Write file | file_path, content |
+| write_file | Create a NEW file (fails if it exists) | file_path, content |
+| edit_file | Edit a file: replace (old_text,new_text) or insert after a line (line,content) | file_path + (old_text,new_text) or (line,content) |
 | grep | Search content | pattern |
 | glob | Find files | pattern |
 | shell_execute | Run command | command |
@@ -370,6 +403,12 @@ You have tools to read files, execute commands, and search code.
 - Call ONE tool at a time
 - Wait for result before next action
 - Use absolute file paths
+
+## WRITING / EDITING FILES (Git-friendly, incremental)
+- `write_file` CREATES a new file. It refuses to overwrite an existing file.
+- To modify an existing file, use `edit_file`: replace (old_text,new_text) or
+  insert after a line (line + content, line="end" appends at end).
+- Never rewrite an entire existing file; make the smallest change that works.
 
 ================================================================================
 ## WORK PRINCIPLES
@@ -1024,30 +1063,49 @@ class FoxCodeAgent:
             (工具名称, 参数字典, 剩余文本) 如果找到工具调用
             (None, None, 原文本) 如果没有找到工具调用
         """
-        # 匹配 <function=xxx>...</function> 格式
-        func_pattern = r'<function=([^>]+)>(.*?)</function>'
-        match = re.search(func_pattern, text, re.DOTALL)
+        # ---- 模糊匹配 <function=NAME>...</function> ----
+        func_start = re.search(r'<function=', text)
+        if not func_start:
+            # 退化兼容复制粘贴场景中的 [tool] NAME / <tool_name>NAME</tool_name> 格式
+            return self._parse_tool_call_bracket(text)
 
-        if not match:
+        # 提取工具名（兼容 <function=NAME> 与 <function NAME>）
+        name_at = text[func_start.start():]
+        m_name = re.match(r'<function=([^>]+)>', name_at) or re.match(
+            r'<function\s+([^>\s]+)\s*>', name_at
+        )
+        if not m_name:
             return None, None, text
 
-        tool_name = match.group(1).strip()
-        params_text = match.group(2)
+        tool_name = m_name.group(1).strip()
+        after_open = func_start.start() + m_name.end()
 
-        # 如果工具名称包含中文或看起来像占位符，则忽略
+        # 函数调用结束位置：</function> 或下一个 <function= 或文本末尾
+        call_end = len(text)
+        m_close = re.search(r'</function\s*>', text[after_open:])
+        if m_close:
+            call_end = after_open + m_close.start()
+        else:
+            m_next = re.search(r'<function=', text[after_open:])
+            if m_next:
+                call_end = after_open + m_next.start()
+
+        params_text = text[after_open:call_end]
+        pre_text = text[:func_start.start()]
+        post_text = text[call_end:]
+        remaining = pre_text + post_text
+
+        # 工具名校验：含中文 / 占位符则忽略
         if any('\u4e00' <= c <= '\u9fff' for c in tool_name):
             logger.warning(f"Ignoring invalid tool name (contains Chinese): {tool_name}")
             return None, None, text
-
-        # 如果工具名称是 "工具名称" 这样的占位符，忽略
         if tool_name.lower() in ["工具名称", "tool_name", "xxx", "name"]:
             logger.warning(f"Ignoring placeholder tool name: {tool_name}")
             return None, None, text
 
-        # 从注册表获取有效工具名称
+        # 有效工具名（含模糊匹配）
         try:
-            registered_tools = registry.list_tools()
-            valid_tool_names = [t["name"] for t in registered_tools]
+            valid_tool_names = [t["name"] for t in registry.list_tools()]
         except Exception:
             # 如果无法获取注册表，使用默认列表
             valid_tool_names = [
@@ -1055,8 +1113,6 @@ class FoxCodeAgent:
                 "glob", "grep", "search_codebase", "shell_execute",
                 "delete_file", "search_in_file", "shell_check_status", "shell_stop"
             ]
-
-        # 检查是否是已知工具
         if tool_name not in valid_tool_names:
             # 尝试模糊匹配
             from difflib import get_close_matches
@@ -1068,21 +1124,161 @@ class FoxCodeAgent:
                 logger.warning(f"Unknown tool name: {tool_name}, available tools: {valid_tool_names}")
                 return None, None, text
 
-        # 解析参数
-        params = {}
-        param_pattern = r'<parameter=([^>]+)>(.*?)</parameter>'
-        for param_match in re.finditer(param_pattern, params_text, re.DOTALL):
-            param_name = param_match.group(1).strip()
-            param_value = param_match.group(2).strip()
-            params[param_name] = param_value
-
-        # 获取工具调用前后的文本
-        pre_text = text[:match.start()]
-        post_text = text[match.end():]
-        remaining = pre_text + post_text
+        # 容错解析参数（兼容缺名 / 缺闭合标签 / 把 '=' 写成空格）
+        params = self._parse_parameters_fuzzy(params_text, tool_name)
 
         logger.info(f"Parsed tool call: {tool_name}, params: {params}")
         return tool_name, params, remaining
+
+    def _parse_parameters_fuzzy(self, params_text: str, tool_name: str) -> dict[str, str]:
+        """容错解析 <parameter> 标签，兼容以下模型常见错误输出：
+
+        - 标准格式：``<parameter=name>value</parameter>``
+        - 缺少参数名：``<parameter>value</parameter>``（按工具参数声明顺序推断）
+        - 把 ``=`` 写成空格：``<parameter>name>value``（恢复 name）
+        - 缺少闭合标签 ``</parameter>`` 或缺少 ``>``：值取到下一个标签或末尾
+        """
+        param_open = re.compile(r'<parameter(?:\s*=\s*([^>\s]*))?\s*>')
+        opens = [
+            (mo.start(), mo.end(), mo.group(1))
+            for mo in param_open.finditer(params_text)
+        ]
+        if not opens:
+            return {}
+
+        declared_order = self._get_tool_param_order(tool_name)
+        assigned: set[str] = set()
+        params: dict[str, str] = {}
+
+        for i, (start, end_open, name) in enumerate(opens):
+            val_start = end_open
+
+            # 恢复 <parameter>name> 这种把 '=' 写成空格的写法
+            if name is None:
+                after = params_text[val_start:]
+                m_rec = re.match(r'\s*([A-Za-z_][\w]*)\s*>', after)
+                if m_rec:
+                    name = m_rec.group(1)
+                    val_start = val_start + m_rec.end()
+
+            # 计算值的结束位置：下一个 <parameter、或 </parameter>、或末尾
+            val_end = len(params_text)
+            if i + 1 < len(opens):
+                val_end = min(val_end, opens[i + 1][0])
+            m_close = re.search(r'</parameter\s*>', params_text[val_start:])
+            if m_close:
+                val_end = min(val_end, val_start + m_close.start())
+
+            value = params_text[val_start:val_end]
+
+            if name is None:
+                # 未提供参数名时，按工具声明的参数顺序推断
+                name = self._infer_param_name(declared_order, assigned)
+            if name is None:
+                continue
+
+            name = name.strip()
+            if name in params:
+                # 同名参数重复出现：后值覆盖（或保留首个？这里保留首个更稳妥）
+                if params[name]:
+                    continue
+            params[name] = value.strip()
+            assigned.add(name)
+
+        return params
+
+    def _get_tool_param_order(self, tool_name: str) -> list[str]:
+        """获取工具声明的参数名顺序，用于缺名时推断"""
+        try:
+            tool = registry.get_tool(tool_name)
+            return [p.name for p in tool.parameters]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _infer_param_name(
+        declared_order: list[str], assigned: set[str]
+    ) -> str | None:
+        for n in declared_order:
+            if n not in assigned:
+                return n
+        return None
+
+    def _parse_tool_call_bracket(self, text: str) -> tuple[str | None, dict[str, str] | None, str]:
+        """兼容复制粘贴场景的非标准工具调用格式：
+
+        - ``[tool] list_directory S:\\path``（方括号 + 行内位置参数）
+        - ``<tool_name>read_file</tool_name>`` + ``<parameter>...</parameter>``
+        - 以上可能被 ``<tool_result>...</tool_result>`` 包裹
+        """
+        # 1) 提取工具名
+        m_name = re.search(r'<tool_name>\s*([^<>\s]+)\s*</tool_name>', text)
+        if m_name:
+            tool_name = m_name.group(1).strip()
+            start = m_name.start()
+        else:
+            m_tool = re.search(r'\[tool\]\s*([A-Za-z_]\w*)', text)
+            if not m_tool:
+                return None, None, text
+            tool_name = m_tool.group(1).strip()
+            start = m_tool.start()
+
+        # 工具名校验（含中文 / 占位符 / 模糊匹配）
+        if any('\u4e00' <= c <= '\u9fff' for c in tool_name):
+            logger.warning(f"Ignoring invalid tool name (contains Chinese): {tool_name}")
+            return None, None, text
+        if tool_name.lower() in ["工具名称", "tool_name", "xxx", "name"]:
+            logger.warning(f"Ignoring placeholder tool name: {tool_name}")
+            return None, None, text
+        try:
+            valid_tool_names = [t["name"] for t in registry.list_tools()]
+        except Exception:
+            valid_tool_names = [
+                "read_file", "write_file", "edit_file", "list_directory",
+                "glob", "grep", "search_codebase", "shell_execute",
+                "delete_file", "search_in_file", "shell_check_status", "shell_stop"
+            ]
+        if tool_name not in valid_tool_names:
+            from difflib import get_close_matches
+            matches = get_close_matches(tool_name, valid_tool_names, n=1, cutoff=0.6)
+            if matches:
+                logger.info(f"Tool name '{tool_name}' might be a typo for '{matches[0]}'")
+                tool_name = matches[0]
+            else:
+                logger.warning(f"Unknown tool name: {tool_name}, available tools: {valid_tool_names}")
+                return None, None, text
+
+        # 2) 计算调用结束位置（</tool_result> 或最后一个 </parameter> 或 [tool] 行尾）
+        end = len(text)
+        m_res = re.search(r'</tool_result\s*>', text[start:])
+        if m_res:
+            end = start + m_res.end()
+        else:
+            last_close = None
+            for mc in re.finditer(r'</parameter\s*>', text[start:]):
+                last_close = mc
+            if last_close:
+                end = start + last_close.end()
+            else:
+                nl = text.find('\n', start)
+                end = nl if nl != -1 else len(text)
+
+        call_span = text[start:end]
+        params = self._parse_parameters_fuzzy(call_span, tool_name)
+
+        # 3) 处理 [tool] NAME 行内位置参数（如 [tool] list_directory S:\\path）
+        m_tool_line = re.search(r'\[tool\]\s*([A-Za-z_]\w*)\s*(.*)', call_span)
+        if m_tool_line:
+            inline = m_tool_line.group(2).strip()
+            if inline and not params:
+                order = self._get_tool_param_order(tool_name)
+                if order:
+                    params[order[0]] = inline
+
+        remaining = text[:start] + text[end:]
+        logger.info(f"Parsed (bracket) tool call: {tool_name}, params: {params}")
+        return tool_name, params, remaining
+
 
     def _make_tool_key(self, tool_name: str, params: dict[str, str]) -> tuple[str, frozenset]:
         """

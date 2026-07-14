@@ -1,6 +1,6 @@
-/* FoxCode TUI styles
-   Inspired by opencode (clean dark panels) and uv (terse, single accent).
-   Keep this file small - layout first, color second, motion last. */
+/* FoxCode TUI - Full TCSS style sheet.
+   1:1 port of doge-code theme colors (converted to TCSS).
+   Brand: #ffd56b (warm gold) */
 
 Screen {
     background: #0d1117;
@@ -17,7 +17,7 @@ Header {
 }
 
 Header #logo {
-    color: #ff8c42;
+    color: #ffd56b;
     text-style: bold;
 }
 
@@ -38,7 +38,7 @@ Footer {
 }
 
 Footer > .footer--key {
-    color: #ff8c42;
+    color: #ffd56b;
     background: #3a2418;
     text-style: bold;
 }
@@ -76,142 +76,229 @@ Sidebar ListItem {
 
 Sidebar ListItem.--highlight {
     background: #1c2128;
-    color: #ff8c42;
+    color: #ffd56b;
 }
 
 Sidebar Button#new-session {
     margin: 1 1 0 1;
     width: 1fr;
     background: #1c2128;
-    color: #ff8c42;
-    border: round #ff8c42;
+    color: #ffd56b;
+    border: round #ffd56b;
 }
 
 Sidebar Button#new-session:hover {
     background: #3a2418;
-    color: #ffa866;
+    color: #ffe18c;
 }
 
-/* -------- Chat area -------- */
-ChatScroll {
+/* -------- Chat / message list -------- */
+VirtualMessageList {
     background: #0d1117;
     padding: 1 2;
     scrollbar-gutter: stable;
+    height: 1fr;
+    align-vertical: bottom;
+    align-horizontal: left;
 }
 
-ChatScroll > .message {
+VirtualMessageList > .banner {
+    background: #161b22;
+    border: round #30363d;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    color: #e6edf3;
+}
+
+/* -------- Spinner -------- */
+SpinnerWidget {
+    height: auto;
+    padding: 0 2;
+    background: #0d1117;
+    color: #ffd56b;
+}
+
+/* -------- Messages -------- */
+MessageWidget {
     margin: 0 0 1 0;
     padding: 0 1;
 }
 
-ChatScroll > .message.--user {
+MessageWidget.selected {
+    background: #1c2128;
+    border: round #ffd56b;
+}
+
+MessageWidget.-role-user {
     border-left: thick #79c0ff;
 }
 
-ChatScroll > .message.--assistant {
-    border-left: thick #ff8c42;
+MessageWidget.-role-assistant {
+    border-left: thick #ffd56b;
 }
 
-ChatScroll > .message.--tool {
+MessageWidget.-role-tool {
     border-left: thick #a371f7;
     color: #a371f7;
 }
 
-ChatScroll > .message.--system {
+MessageWidget.-role-system {
     border-left: thick #7d8590;
     color: #7d8590;
 }
 
-ChatScroll > .message > .role {
-    color: #ff8c42;
+MessageWidget > .role {
+    color: #ffd56b;
     text-style: bold;
     margin-bottom: 0;
 }
 
-ChatScroll > .message.--user > .role {
+MessageWidget.-role-user > .role {
     color: #79c0ff;
 }
 
-ChatScroll > .message.--tool > .role {
+MessageWidget.-role-tool > .role {
     color: #a371f7;
 }
 
-ChatScroll > .message.--system > .role {
+MessageWidget.-role-system > .role {
     color: #7d8590;
 }
 
-ChatScroll > .message > .body {
+MessageWidget > .body {
     color: #e6edf3;
 }
 
-ChatScroll > .message.--thinking > .body {
-    color: #7d8590;
-    text-style: italic;
+/* -------- Main panel layout -------- */
+#body {
+    height: 1fr;
 }
 
-ChatScroll > .divider {
-    color: #30363d;
-    margin: 1 0;
+#main-panel {
+    height: 1fr;
+    width: 1fr;
 }
 
-/* -------- Input -------- */
-InputPanel {
+/* -------- Input panel -------- */
+PromptInput {
     height: auto;
+    max-height: 9;
     background: #161b22;
     border-top: solid #30363d;
-    padding: 1 1 0 1;
-}
-
-InputPanel > .hint {
-    color: #7d8590;
-    height: 1;
-    padding: 0 1 1 1;
-}
-
-InputPanel Input {
-    background: #0d1117;
-    border: round #30363d;
-    color: #e6edf3;
-    height: 3;
     padding: 0 1;
 }
 
-InputPanel Input:focus {
-    border: round #ff8c42;
+/* -------- Status bar (below input) -------- */
+#status-bar {
+    height: auto;
+    background: #161b22;
+    color: #7d8590;
+    padding: 0 1;
+    border-top: solid #30363d;
 }
 
-InputPanel Input > .input--placeholder {
+/* -------- Command autocomplete -------- */
+#cmd-suggest {
+    height: auto;
+    max-height: 14;
+    margin: 0 1;
+    background: #161b22;
+    border: round #ffd56b;
+    padding: 0 1;
+}
+
+PromptInput > .hint {
+    color: #7d8590;
+    height: 1;
+    padding: 0 1;
+}
+
+PromptInput TextArea {
+    background: #0d1117;
+    border: round #30363d;
+    color: #e6edf3;
+    min-height: 1;
+    max-height: 6;
+    min-width: 20;
+    padding: 0 1;
+    width: 1fr;
+}
+
+PromptInput TextArea:focus {
+    border: round #ffd56b;
+}
+
+PromptInput TextArea > .text-area--cursor {
+    color: #ffd56b;
+    background: transparent;
+    text-style: reverse;
+}
+
+PromptInput TextArea > .text-area--placeholder {
     color: #545d68;
     text-style: italic;
 }
 
-InputPanel Button#send {
-    background: #ff8c42;
+PromptInput TextArea > .text-area--selection {
+    background: #1f6feb;
+}
+
+PromptInput Button#send {
+    background: #ffd56b;
     color: #0d1117;
     text-style: bold;
     border: none;
     width: 12;
-    margin-top: 1;
+    margin-top: 0;
     min-width: 12;
 }
 
-InputPanel Button#send:hover {
-    background: #ffa866;
+PromptInput Button#send:hover {
+    background: #ffe18c;
 }
 
-InputPanel Button#send:disabled {
+PromptInput Button#send:disabled {
     background: #30363d;
     color: #7d8590;
 }
 
-InputPanel .input-row {
-    height: 3;
+PromptInput .input-row {
+    height: auto;
     align: right top;
+    min-height: 1;
 }
 
-/* -------- Modal (help) -------- */
+PromptInput .prompt-char {
+    color: #ffd56b;
+    text-style: bold;
+    height: 1;
+    width: auto;
+    padding: 0 0 0 1;
+    content-align: center middle;
+}
+
+/* -------- Welcome screen -------- */
+WelcomeScreen {
+    align: center middle;
+    background: #0d1117;
+}
+
+WelcomeScreen > .welcome-art {
+    width: 58;
+    height: auto;
+    color: #e6edf3;
+}
+
+WelcomeScreen > .welcome-hint {
+    color: #7d8590;
+    margin-top: 2;
+    text-style: italic;
+}
+
+/* -------- Modal (dialog) -------- */
 ModalScreen {
     align: center middle;
+    background: #0d1117 80%;
 }
 
 ModalScreen > .modal {
@@ -219,12 +306,12 @@ ModalScreen > .modal {
     max-width: 90%;
     height: auto;
     background: #161b22;
-    border: round #ff8c42;
+    border: round #ffd56b;
     padding: 1 2;
 }
 
 ModalScreen > .modal > .title {
-    color: #ff8c42;
+    color: #ffd56b;
     text-style: bold;
     margin-bottom: 1;
 }
@@ -238,25 +325,105 @@ ModalScreen > .modal > .keys {
     color: #7d8590;
 }
 
-ModalScreen > .modal > .keys > .key {
-    color: #ff8c42;
-    text-style: bold;
+/* -------- Dialog actions -------- */
+.dialog-actions {
+    height: auto;
+    align: right middle;
+    margin-top: 1;
 }
 
-/* -------- Banner (welcome) -------- */
-Banner {
+.dialog-actions Button {
+    margin-left: 1;
+}
+
+/* -------- Diff viewer -------- */
+DiffViewer {
+    background: #0d1117;
+    padding: 1;
+}
+
+DiffViewer > .diff-header {
+    color: #ffd56b;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* -------- Permission dialog -------- */
+PermissionRequest {
     background: #161b22;
-    border: round #30363d;
+    border: round #ffd56b;
     padding: 1 2;
-    margin: 0 0 1 0;
-    color: #e6edf3;
 }
 
-Banner > .logo {
-    color: #ff8c42;
+PermissionRequest > .title {
+    color: #ffd56b;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+PermissionRequest > .tool-name {
+    color: #e6edf3;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* -------- Cost warning -------- */
+CostWarning {
+    background: #161b22;
+    border: round #ffd56b;
+    padding: 1 2;
+}
+
+CostWarning > .title {
+    color: #ffd56b;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* -------- Divider -------- */
+Divider {
+    color: #7d8590;
+    margin: 1 0;
+}
+
+/* -------- Loading state -------- */
+LoadingState {
+    color: #7d8590;
+    text-style: italic;
+}
+
+/* -------- Config form (interactive /openai, /shunxapi) -------- */
+ConfigFormScreen > .config-form {
+    width: 62;
+    max-width: 92%;
+    height: auto;
+    background: #161b22;
+    border: round #ffd56b;
+    padding: 1 2;
+}
+
+ConfigFormScreen > .config-form > .title {
+    color: #ffd56b;
     text-style: bold;
 }
 
-Banner > .tag {
+ConfigFormScreen > .config-form > .subtitle {
     color: #7d8590;
+    margin-bottom: 1;
+}
+
+ConfigFormScreen > .config-form > .field-label {
+    color: #e6edf3;
+    margin-top: 1;
+}
+
+ConfigFormScreen > .config-form Input {
+    background: #0d1117;
+    border: round #30363d;
+    color: #e6edf3;
+    margin-bottom: 1;
+}
+
+ConfigFormScreen > .config-form Input:focus {
+    border: round #ffd56b;
 }

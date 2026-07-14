@@ -105,8 +105,14 @@ pip install foxcode
 ### 快速开始
 
 ```bash
-# 启动交互式会话
+# 启动交互式会话 (CLI 模式)
 foxcode
+
+# 启动 TUI 图形终端界面
+foxcode --tui
+
+# 或通过 Python 直接启动 TUI
+python -c "from foxcode.tui import run_tui; run_tui()"
 
 # 直接提问
 foxcode "帮我分析这个项目的结构"
@@ -124,6 +130,74 @@ foxcode -m claude "帮我重构这段代码"
 foxcode -r
 ```
 
+### TUI 终端界面
+
+FoxCode 提供基于 Textual 构建的全功能 TUI（终端用户界面），1:1 复刻 Claude Code 的交互体验。
+
+#### TUI 键盘快捷键
+
+| 快捷键 | 动作 |
+|--------|------|
+| `Enter` | 发送消息 |
+| `Shift+Enter` | 换行 |
+| `Ctrl+L` | 清屏 |
+| `Ctrl+N` | 新会话 |
+| `Ctrl+S` | 保存会话 |
+| `Ctrl+B` | 切换侧栏 |
+| `Ctrl+T` | 循环模式 (yolo/plan/accept) |
+| `F1 / ?` | 帮助 |
+| `F11` | 全屏切换 |
+| `PageUp / PageDown` | 上下翻页 |
+| `Ctrl+A` | 全选文本 |
+| `Ctrl+E` | 光标到行尾 |
+| `Ctrl+K` | 删除到行尾 |
+| `Ctrl+W` | 删除词 |
+| `Ctrl+U` | 清空行 |
+| `Esc` | 取消 |
+| `Ctrl+C` | 仅在输入框中退出；在聊天区不退出（留给复制） |
+| `Ctrl+Q` | 退出 FoxCode |
+| `Ctrl+Y` | 复制上一条 AI 回复（静默，不提示） |
+| `C` | 复制选中的消息（先点击消息选中，静默） |
+| `D` | 删除选中的消息 |
+
+#### TUI 斜杠命令（本地指令，不发给 AI）
+
+以 `/` 开头的输入会被当作本地指令执行，而不是发送给 AI 代理。即使 AI 正在输出，命令也会立即执行。
+
+**命令解析顺序：**
+1. 先在 TUI 内置命令中查找（下表），命中即在 TUI 内执行；
+2. 若 TUI 不认识，则把整条命令**原样转交给 CLI 的命令处理器**（`cli._handle_command`）执行——因此 README「交互式命令」里那一长串 CLI 命令（`/init` `/features` `/index` `/search` `/kb` `/debug` `/test` `/doc` `/git` `/topic` 等）无需在 TUI 中重复实现，直接在 TUI 里输入即可；
+3. 只有 TUI 与 CLI 都不认识时，才在聊天区报错「未知命令」。
+
+| TUI 内置命令 | 说明 |
+|------|------|
+| `/help` | 显示 TUI 命令列表 |
+| `/clear` | 清空聊天（会取消正在进行的输出） |
+| `/save` | 保存当前会话 |
+| `/mode [name]` | 设置运行模式：`yolo` / `plan` / `accept_edits` |
+| `/new` | 开始新会话（会取消正在进行的输出） |
+| `/sidebar` | 切换侧栏 |
+| `/fullscreen` 或 `/fs` | 切换全屏 |
+| `/theme [name]` | 切换主题（dark / light / dark-ansi / light-ansi / dark-daltonized / light-daltonized） |
+| `/history` | 显示输入历史 |
+| `/quit` 或 `/exit` | 退出 FoxCode |
+| `//text` | 发送一个以 `/` 开头的字面消息给 AI |
+
+> 其余所有 `/命令` 均转发给 CLI 执行，CLI 输出会被捕获并显示在聊天区。TUI 通过临时重定向 CLI 的 `console` 来避免破坏终端界面。
+
+#### TUI 特性
+
+- **多行输入**: 支持 Shift+Enter 换行的 TextArea
+- **命令历史**: Up/Down 导航历史命令
+- **消息操作栏**: 光标选中消息后显示 E=编辑/C=复制/D=删除/J=跳转
+- **动画 Spinner**: Linux 标准 `-/\\|` 旋转动画，带停滞检测和 Glimmer 扫光效果
+- **Clawd 吉祥物**: ASCII 狐狸吉祥物，支持 4 种姿态动画
+- **全屏模式**: F11 切换全屏，隐藏侧栏扩展主面板
+- **会话持久化**: 自动保存/恢复会话到 `~/.foxcode/sessions/`
+- **6 套主题**: dark / light / dark-ansi / light-ansi / dark-daltonized / light-daltonized
+- **品牌色**: `#ffd56b` 暖金色
+- **对话框系统**: 帮助、确认、权限请求、Diff 查看器、成本警告
+
 ### 命令行选项
 
 | 选项 | 说明 |
@@ -137,6 +211,7 @@ foxcode -r
 | `--list-sessions` | 列出所有会话 |
 | `--config` | 显示配置 |
 | `--debug` | 启用调试模式 |
+| `--tui` | 启用 TUI 图形终端界面 |
 | `--no-tui` | 禁用 TUI 界面 |
 | `--version, -v` | 显示版本 |
 | `--help, -h` | 显示帮助 |
@@ -337,9 +412,32 @@ src/foxcode/
 │   ├── context_compressor.py # 上下文压缩
 │   └── context_reset.py     # 上下文重置
 │
-├── tui/                     # TUI 界面
+├── tui/                     # TUI 界面 (Textual)
 │   ├── __init__.py
-│   └── app.py               # 终端应用
+│   ├── app.py               # 主应用入口
+│   ├── icons.py             # 公开图标库
+│   ├── theme.py             # 6 套主题系统
+│   ├── styles.tcss          # TCSS 样式表
+│   ├── screens/
+│   │   ├── repl.py          # REPL 主屏
+│   │   └── welcome.py       # 欢迎屏
+│   ├── widgets/
+│   │   ├── spinner.py       # Spinner 动画系统
+│   │   ├── logo.py          # Clawd 吉祥物 + Logo
+│   │   ├── message.py       # 消息渲染
+│   │   ├── message_list.py  # 虚拟消息列表
+│   │   ├── prompt_input.py  # 多行输入
+│   │   ├── sidebar.py       # 侧栏会话列表
+│   │   ├── dialog.py        # 对话框系统
+│   │   ├── diff_viewer.py   # Diff 查看器
+│   │   ├── permission.py    # 权限请求
+│   │   └── cost_dialog.py   # 成本警告
+│   └── design_system/
+│       ├── divider.py       # 分割线
+│       ├── tabs.py          # 选项卡
+│       ├── progress.py      # 进度条
+│       ├── status_icon.py   # 状态图标
+│       └── themed_box.py    # 主题容器
 │
 ├── types/                   # 类型定义
 │   ├── __init__.py

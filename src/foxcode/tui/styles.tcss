@@ -186,6 +186,7 @@ PromptInput {
     background: #161b22;
     border-top: solid #30363d;
     padding: 0 1;
+    position: relative;
 }
 
 /* -------- Status bar (below input) -------- */
@@ -198,7 +199,11 @@ PromptInput {
 }
 
 /* -------- Command autocomplete -------- */
+/* Absolutely positioned so showing/hiding it never changes the layout of
+   the input box (it overlays the chat area above instead). */
 #cmd-suggest {
+    position: absolute;
+    offset: 0 0;
     height: auto;
     max-height: 14;
     margin: 0 1;

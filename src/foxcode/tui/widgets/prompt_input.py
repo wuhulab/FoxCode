@@ -105,6 +105,15 @@ class _SendTextArea(TextArea):
                 event.stop()
                 event.prevent_default()
                 return
+            # In command mode, reveal the completion list on Up even if it
+            # is not currently visible. This never moves the input box.
+            if prompt is not None and prompt.text.startswith("/") \
+                    and not prompt.text.startswith("//"):
+                prompt.update_suggestions(self.text)
+                if prompt.suggest_visible():
+                    event.stop()
+                    event.prevent_default()
+                    return
         elif event.key == "escape":
             if suggest_active:
                 prompt.hide_suggestions()
@@ -188,6 +197,9 @@ class PromptInput(Vertical):
             self.hide_suggestions()
             return
         self.suggest.set_options(matches)
+        # The popup is positioned absolutely (see styles.tcss) so toggling it
+        # on/off never changes the layout of the input box - it overlays the
+        # content below the input row instead of growing the panel.
         self.suggest.display = True
 
     def suggest_visible(self) -> bool:

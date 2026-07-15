@@ -100,7 +100,7 @@ class REPLScreen(Screen):
     SUB_TITLE = ""
 
     BINDINGS: ClassVar[list[Binding]] = [
-        Binding("ctrl+c", "ctrl_c", "Copy", show=True, priority=True),
+        Binding("ctrl+c", "ctrl_c", "Copy/Quit", show=True, priority=True),
         Binding("ctrl+q", "quit", "Quit", show=True),
         Binding("ctrl+y", "copy_last", "Copy last", show=False),
         Binding("ctrl+l", "clear_chat", "Clear", show=True),
@@ -675,16 +675,17 @@ class REPLScreen(Screen):
 
     @safe
     def action_ctrl_c(self):
-        """Copy like a normal terminal: the focused message, the selected
-        text in the input, or (as a fallback) the last assistant reply."""
+        """Copy when there is a selection, otherwise quit (like a normal
+        shell). Inside the input box: a selection is copied, an empty
+        selection exits the TUI."""
         focused = self.focused
-        # Inside the input: copy any selected text, else the whole input.
+        # Inside the input: copy any selected text, else quit.
         if focused is self.prompt_input.text_area:
             sel = self.prompt_input.text_area.selected_text
             if sel:
                 self._copy_text(sel)
             else:
-                self._copy_text(self.prompt_input.text)
+                self.action_quit()
             return
         # A focused message box -> copy its full content.
         if isinstance(focused, MessageWidget):

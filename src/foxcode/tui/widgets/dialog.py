@@ -124,7 +124,7 @@ class HelpDialog(Dialog):
                 ("Ctrl+B", "toggle sidebar"),
                 ("Ctrl+T", "cycle mode"),
                 ("F1 / ?", "this help"),
-                ("Ctrl+C", "copy focused message / input selection"),
+                ("Ctrl+C", "copy selection / input (no selection -> quit)"),
             ]
             lines: list[Text] = []
             for key, desc in shortcuts:

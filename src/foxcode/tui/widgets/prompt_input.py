@@ -147,10 +147,13 @@ class PromptInput(Vertical):
             )
             self.text_area._prompt = self
             yield self.text_area
+        # The popup is created here but NOT yielded into PromptInput.
+        # It is moved to PromptInput's parent (#main-panel) in on_mount so
+        # its height is governed by the parent panel (~34 rows) instead of
+        # being squashed by PromptInput's max-height: 9.
         self.suggest = CommandSuggest()
         self.suggest._prompt = self
         self.suggest.display = False
-        yield self.suggest
         self.send_btn = Button(f"{ICONS.send} Send", id="send")
         yield self.send_btn
         yield Static(
@@ -159,6 +162,24 @@ class PromptInput(Vertical):
             f"Up/Down history {ICONS.middle_dot} F1 help",
             classes="hint",
         )
+
+    async def on_mount(self):
+        # Mount suggest as a sibling immediately before PromptInput inside
+        # #main-panel.  Because chat precedes it in the Vertical layout,
+        # suggest's static region y is exactly PromptInput's top edge.
+        # position:absolute prevents it from advancing y, so PromptInput
+        # and chat never shift, while overlay:screen gives it a full-screen
+        # clip so it cannot be cropped by overflow:hidden.
+        if self.suggest.parent is not self.parent:
+            if self.suggest.parent is not None:
+                await self.suggest.remove()
+            await self.parent.mount(self.suggest, before=self)
+
+    @on(events.Resize)
+    def _on_resize(self, event: events.Resize):
+        # Keep the popup flush above PromptInput after terminal resizes.
+        if self.suggest_visible():
+            self._position_suggestions()
 
     @on(_SendTextArea.Submitted)
     def _on_text_area_submitted(self, event: _SendTextArea.Submitted):
@@ -197,13 +218,27 @@ class PromptInput(Vertical):
             self.hide_suggestions()
             return
         self.suggest.set_options(matches)
-        # The popup is positioned absolutely (see styles.tcss) so toggling it
-        # on/off never changes the layout of the input box - it overlays the
-        # content below the input row instead of growing the panel.
+        # For position:absolute widgets Textual resets the origin to (0,0)
+        # of the parent content box.  We therefore compute a positive offset
+        # so the popup bottom edge sits flush with PromptInput's top border.
+        anchor = self.region.y - self.parent.region.y
+        popup_height_guess = min(len(matches) + 2, 14)
+        self.suggest.offset = (0, anchor - popup_height_guess)
         self.suggest.display = True
+        self.call_after_refresh(self._position_suggestions)
 
     def suggest_visible(self) -> bool:
         return self.suggest.display
+
+    def _position_suggestions(self):
+        if not self.suggest.display:
+            return
+        # Tighten to the exact rendered height after layout.
+        popup_height = self.suggest.region.height
+        if not popup_height:
+            return
+        anchor = self.region.y - self.parent.region.y
+        self.suggest.offset = (0, anchor - popup_height)
 
     def suggest_move(self, delta: int):
         if not self.suggest_visible():

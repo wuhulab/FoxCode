@@ -199,10 +199,14 @@ PromptInput {
 }
 
 /* -------- Command autocomplete -------- */
-/* Absolutely positioned so showing/hiding it never changes the layout of
-   the input box (it overlays the chat area above instead). */
+/* overlay:screen keeps the popup out of PromptInput's total_region so it
+   never affects auto-height. position:absolute resets the origin to the
+   parent content box, so the popup is offset downward so its bottom edge
+   sits flush against PromptInput's top border. The compositor gives overlay
+   widgets a full-screen clip so they are never cropped by overflow:hidden. */
 #cmd-suggest {
     position: absolute;
+    overlay: screen;
     offset: 0 0;
     height: auto;
     max-height: 14;

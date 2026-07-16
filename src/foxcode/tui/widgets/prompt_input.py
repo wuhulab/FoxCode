@@ -83,6 +83,13 @@ class _SendTextArea(TextArea):
     async def _on_key(self, event: events.Key) -> None:
         prompt = getattr(self, "_prompt", None)
         suggest_active = prompt is not None and prompt.suggest_visible()
+        if event.key == "shift+enter":
+            event.stop()
+            event.prevent_default()
+            self.insert("\n")
+            if prompt is not None:
+                prompt.update_suggestions(self.text)
+            return
         if event.key == "enter":
             if suggest_active and prompt.suggest.selected_command:
                 prompt.accept_suggestion()

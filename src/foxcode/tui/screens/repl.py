@@ -31,7 +31,7 @@ from textual.containers import Horizontal, Vertical
 from textual.events import MouseDown
 from textual.reactive import reactive
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Input, ListItem, ListView, Static, TextArea
+from textual.widgets import Button, Footer, Header, Input, Static, TextArea
 
 from foxcode import __version__
 from foxcode.tui.icons import ICONS
@@ -43,7 +43,7 @@ from foxcode.tui.widgets.message import ConfigPanelWidget, MessageWidget
 from foxcode.tui.widgets.message_list import VirtualMessageList
 from foxcode.tui.widgets.prompt_input import PromptInput
 from foxcode.tui.widgets.session_menu import SessionMenu
-from foxcode.tui.widgets.sidebar import Sidebar
+from foxcode.tui.widgets.sidebar import Sidebar, SessionRow
 from foxcode.tui.widgets.spinner import SpinnerWidget
 
 SESSION_DIR = Path.home() / ".foxcode" / "sessions"
@@ -340,16 +340,15 @@ class REPLScreen(Screen):
         finally:
             self._refreshing_sessions = False
 
-    @on(ListView.Selected, "#sessions")
-    def _on_session_selected(self, event: ListView.Selected):
+    @on(SessionRow.Selected)
+    def _on_session_selected(self, event: SessionRow.Selected):
         # Ignore selections fired while we rebuild the list.
         if getattr(self, "_refreshing_sessions", False):
             return
-        sid = getattr(event.item, "data_sid", None)
+        sid = event.sid
         if not sid:
             return
-        with self.prevent(ListView.Selected):
-            self._load_tui_session(sid)
+        self._load_tui_session(sid)
 
     @safe
     def _load_tui_session(self, sid: str, announce: bool = True):
@@ -432,17 +431,17 @@ class REPLScreen(Screen):
             self._dismiss_session_menu()
 
     def _maybe_open_session_menu(self, event: MouseDown):
-        # Locate the session ListItem under the cursor.
+        # Locate the session row under the cursor.
         w = event.widget
         item = None
         while w is not None:
-            if isinstance(w, ListItem):
+            if isinstance(w, SessionRow):
                 item = w
                 break
             w = w.parent
         if item is None or item.parent is not self.sidebar.sessions:
             return
-        sid = getattr(item, "data_sid", None)
+        sid = item.sid
         if not sid:
             return
         self._open_session_menu(sid, int(event.screen_x), int(event.screen_y))
@@ -470,6 +469,11 @@ class REPLScreen(Screen):
             self._rename_session(sid)
         elif action == "删除":
             self._delete_session(sid)
+
+    @on(SessionRow.MenuClicked)
+    def _on_session_menu_clicked(self, event: SessionRow.MenuClicked):
+        """Handle ⋮ click on a sidebar session entry."""
+        self._open_session_menu(event.sid, event.x, event.y)
 
     def _rename_session(self, sid: str):
         path = SESSION_DIR / f"{sid}.json"

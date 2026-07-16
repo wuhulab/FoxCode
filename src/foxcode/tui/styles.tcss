@@ -62,19 +62,20 @@ Sidebar > .section {
     text-style: bold;
 }
 
-Sidebar ListView {
+Sidebar #sessions {
     background: transparent;
     height: 1fr;
     padding: 0 1;
 }
 
-Sidebar ListItem {
+Sidebar #sessions SessionRow {
     background: transparent;
     color: #e6edf3;
     padding: 0 1;
+    height: auto;
 }
 
-Sidebar ListItem.--highlight {
+Sidebar #sessions SessionRow.--highlight {
     background: #1c2128;
     color: #ffd56b;
 }

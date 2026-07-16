@@ -2,7 +2,7 @@
 
 ### 赞助商
 
-[便宜好用的api聚合站](https://ai-api2.shunx.top/)
+[Fai](https://Fai.shunx.top/)
 
 [English](README_EN.md) | [简体中文](README.md)
 
@@ -20,6 +20,23 @@
 
 3，维护问题：帮助管理 GitHub 问题，包括修复 bug、优化性能、添加新功能等
 
+### Future
+
+#### 贡献者奖励计划
+
+(贡献者奖励计划由Fai提供)
+
+我们将视贡献情况给予不同奖励
+
+奖励使用模型包括：gpt-oss-120b，laguna-xs-2.1等等
+
+（请查看issue和pr，重复的不给予奖励）
+
+#### TODO
+
+- [ ] 进一步完善TUI
+
+- [ ] 修复TUI历史聊天的3个点的BUG
 
 #### 怎么做？
 

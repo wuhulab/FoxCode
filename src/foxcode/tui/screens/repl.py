@@ -36,7 +36,7 @@ from textual.widgets import Button, Footer, Header, Input, Static, TextArea
 from foxcode import __version__
 from foxcode.tui.icons import ICONS
 from foxcode.tui.theme import get_theme, status_color
-from foxcode.tui.widgets.dialog import HelpDialog, ConfirmDialog, TextInputDialog
+from foxcode.tui.widgets.dialog import HelpDialog, ConfirmDialog, TextInputDialog, MessageViewScreen
 from foxcode.tui.widgets.logo import WelcomeBanner
 from foxcode.tui.widgets.config_form import ConfigFormScreen
 from foxcode.tui.widgets.message import ConfigPanelWidget, MessageWidget
@@ -102,7 +102,7 @@ class REPLScreen(Screen):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("ctrl+c", "ctrl_c", "Copy", show=True, priority=True),
         Binding("ctrl+q", "quit", "Quit", show=True),
-        Binding("ctrl+y", "copy_last", "Copy last", show=False),
+        Binding("ctrl+y", "copy_last", "Copy block", show=True),
         Binding("ctrl+l", "clear_chat", "Clear", show=True),
         Binding("ctrl+n", "new_session", "New", show=True),
         Binding("ctrl+s", "save_session", "Save", show=True),
@@ -113,6 +113,7 @@ class REPLScreen(Screen):
         Binding("pageup", "page_up", "Page Up", show=False),
         Binding("pagedown", "page_down", "Page Down", show=False),
         Binding("f11", "toggle_fullscreen", "Fullscreen", show=False),
+        Binding("v", "view_message", "View text", show=False),
     ]
 
     sidebar_visible: reactive[bool] = reactive(True)
@@ -762,10 +763,33 @@ class REPLScreen(Screen):
 
     @safe
     def action_copy_last(self):
+        """Copy the currently focused message in full, or fall back to the
+        last assistant reply.
+        """
+        focused = self.focused
+        if isinstance(focused, MessageWidget):
+            self._copy_text(focused.text_body)
+            return
         for m in reversed(list(self.chat.query(MessageWidget))):
             if m.role == "assistant":
                 self._copy_text(m.text_body)
                 return
+
+    @safe
+    def action_view_message(self):
+        """Open a read-only TextArea modal for the focused message so the
+        user can Shift+Arrow select arbitrary text and copy with Ctrl+C.
+        """
+        focused = self.focused
+        if not isinstance(focused, MessageWidget) or not focused.text_body:
+            return
+        def _on_close(_result=None):
+            self.call_after_refresh(self.prompt_input.focus_input)
+
+        self.app.push_screen(
+            MessageViewScreen(focused.text_body, title=f"{focused.role} message"),
+            _on_close,
+        )
 
     # ------------------------------------------------------------------
     # Slash commands (local instruction execution, not sent to the agent)

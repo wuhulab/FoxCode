@@ -72,6 +72,7 @@ from foxcode.core.updater import (
 _shutdown_requested = False  # 是否请求关闭
 _current_agent: FoxCodeAgent | None = None  # 当前代理实例
 _watchdog: ProcessWatchdog | None = None  # 进程看门狗
+_launch_tui = False  # /tui 命令触发后启动 TUI 模式
 _update_checker_started = False  # 更新检查器是否已启动
 
 # 确保日志目录存在
@@ -1217,6 +1218,62 @@ def run(
         _current_agent = None
         logger.info("FoxCode 运行结束")
 
+    # /tui 命令触发后，退出当前交互模式并启动 TUI
+    global _launch_tui
+    if _launch_tui:
+        _launch_tui = False
+        try:
+            if config.output_topic == OutputTopic.MINIMALISM:
+                print("启动 TUI 模式...")
+            else:
+                console.print("[cyan]启动 TUI 模式...[/cyan]")
+            from foxcode.tui.app import run_tui
+            run_tui(agent=agent, config=config)
+        except Exception as e:
+            logger.error(f"启动 TUI 失败: {e}")
+            if config.output_topic == OutputTopic.MINIMALISM:
+                print(f"启动 TUI 失败: {e}")
+            else:
+                console.print(f"[red]启动 TUI 失败: {markup.escape(str(e))}[/red]")
+
+
+def _prompt_for_api_key_if_missing(agent: FoxCodeAgent, config: Config) -> bool:
+    """
+    首次启动时若未配置 API Key，自动启动 /openai 配置向导
+
+    返回 True 表示可以继续运行，False 表示用户未配置且无法继续
+    """
+    try:
+        config.model.get_effective_api_key()
+        return True
+    except ValueError:
+        # 未配置 API Key，启动交互式配置
+        if config.output_topic == OutputTopic.MINIMALISM:
+            print("首次启动，需要配置模型 API 信息...")
+        else:
+            console.print(
+                "\n[yellow]欢迎使用 FoxCode！检测到尚未配置 API Key，启动配置向导...[/yellow]"
+            )
+            console.print(
+                "[dim]提示: 你也可以在启动后随时输入 /openai 命令进行配置[/dim]\n"
+            )
+
+        _handle_openai_command(agent, config)
+
+        # 配置后再次检查
+        try:
+            config.model.get_effective_api_key()
+            return True
+        except ValueError:
+            if config.output_topic == OutputTopic.MINIMALISM:
+                print("未配置 API Key，退出运行")
+            else:
+                console.print("\n[red]未配置有效的 API Key，FoxCode 无法运行。[/red]")
+                console.print(
+                    "[dim]请运行 foxcode 并输入 /openai 命令完成配置。[/dim]"
+                )
+            return False
+
 
 # 运行单次提示
 async def _run_single_prompt(
@@ -1237,6 +1294,8 @@ async def _run_single_prompt(
         console.print("[bold green]FoxCode:[/bold green]")
 
     try:
+        if config is None or not _prompt_for_api_key_if_missing(agent, config):
+            return
         await agent.initialize()
 
         # 极简模式：使用缓冲器处理输出
@@ -1296,6 +1355,8 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
 
     # 初始化代理
     try:
+        if not _prompt_for_api_key_if_missing(agent, config):
+            return
         await agent.initialize()
         logger.info("代理初始化成功")
     except Exception as e:
@@ -1530,6 +1591,11 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
 
     elif cmd_name == "/help":
         print_help()
+
+    elif cmd_name == "/tui":
+        global _launch_tui
+        _launch_tui = True
+        return False
 
     elif cmd_name == "/clear":
         agent.clear_conversation()

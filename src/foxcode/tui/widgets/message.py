@@ -43,6 +43,7 @@ class MessageWidget(Static):
         self._thinking = thinking
         self._message_color = message_color
         self._is_response = role == "assistant" and not thinking
+        self._finalized = False
         super().__init__()
 
     def append_text(self, chunk: str):
@@ -51,6 +52,13 @@ class MessageWidget(Static):
 
     def finalize(self):
         self._thinking = False
+        self._finalized = True
+        if self.role == "assistant" and self._body:
+            theme = get_theme()
+            self._md_cache = Markdown(
+                self._body,
+                code_theme=getattr(theme, "code_theme", "monokai"),
+            )
         self.refresh()
 
     @property
@@ -84,11 +92,19 @@ class MessageWidget(Static):
         if self._thinking:
             inactive = getattr(theme, "inactive", "#7d8590")
             lines.append(Text(self._body, style=Style(color=inactive, italic=True)))
+        elif self._finalized and self.role == "assistant":
+            # 流式完成后使用 Markdown 渲染 assistant 回复
+            from rich.console import Group as RichGroup
+            md = getattr(self, "_md_cache", None)
+            if md is None:
+                md = Markdown(
+                    self._body,
+                    code_theme=getattr(theme, "code_theme", "monokai"),
+                )
+                self._md_cache = md
+            return RichGroup(*lines, md)
         elif self.role in ("assistant", "tool"):
-            # Render the full body verbatim. The agent embeds control tokens
-            # like [say]/[tool]/[result] inside assistant/tool output; running
-            # it through Markdown + from_markup would strip those tokens and
-            # omit the model's spoken content and tool calls.
+            # 流式过程中保持纯文本，避免不完整的 Markdown 语法导致渲染错误
             lines.append(Text(self._body))
         else:
             lines.append(Text(self._body))

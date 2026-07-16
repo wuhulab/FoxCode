@@ -442,6 +442,15 @@ class UIConfig(BaseModel):
     mouse_support: bool = True
 
 
+class TUIConfig(BaseModel):
+    """TUI 终端界面配置"""
+
+    sidebar_visible: bool = Field(default=True, description="是否显示右侧侧边栏")
+    fullscreen: bool = Field(default=False, description="是否启用全屏模式")
+    cli_log_enabled: bool = Field(default=True, description="是否在 TUI 中显示 CLI 日志输出")
+    welcome_enabled: bool = Field(default=True, description="启动时是否显示欢迎界面")
+
+
 class EvaluatorCriteriaConfig(BaseModel):
     """
     评估器评估标准配置
@@ -714,6 +723,7 @@ class Config(BaseSettings):
     model: ModelConfig = Field(default_factory=ModelConfig)
     tools: ToolConfig = Field(default_factory=ToolConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
+    tui: TUIConfig = Field(default_factory=TUIConfig, description="TUI 界面配置")
     long_running: LongRunningConfig = Field(default_factory=LongRunningConfig)
     playwright: PlaywrightConfig = Field(default_factory=PlaywrightConfig)
     sandbox: SandboxConfigModel = Field(default_factory=SandboxConfigModel)
@@ -999,6 +1009,46 @@ class Config(BaseSettings):
             import logging
 
             logging.getLogger(__name__).error(f"保存模型配置失败: {e}")
+            return False
+
+    def save_tui_config(self) -> bool:
+        """
+        保存当前 TUI 配置到配置文件
+
+        Returns:
+            是否保存成功
+        """
+        try:
+            config_path = self.get_config_file_path()
+
+            existing_config = {}
+            if config_path.exists():
+                try:
+                    with open(config_path, "rb") as f:
+                        existing_config = tomllib.load(f)
+                except Exception:
+                    existing_config = {}
+
+            existing_config["tui"] = {
+                "sidebar_visible": self.tui.sidebar_visible,
+                "fullscreen": self.tui.fullscreen,
+                "cli_log_enabled": self.tui.cli_log_enabled,
+                "welcome_enabled": self.tui.welcome_enabled,
+            }
+
+            try:
+                import tomli_w
+
+                with open(config_path, "wb") as f:
+                    tomli_w.dump(existing_config, f)
+                return True
+            except ImportError:
+                return self._write_simple_config(config_path, existing_config)
+
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).error(f"保存 TUI 配置失败: {e}")
             return False
 
     def _get_base_config_dict(self) -> dict[str, Any]:

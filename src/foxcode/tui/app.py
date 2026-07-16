@@ -56,9 +56,18 @@ class FoxCodeApp(App):
         self._repl: REPLScreen | None = None
 
     def on_mount(self):
-        """Show welcome screen first, then transition to REPL."""
+        """Show welcome screen first (unless disabled), then transition to REPL."""
         theme = get_theme()
         self.styles.background = getattr(theme, "background", "#0d1117")
+
+        # 检查配置是否禁用了欢迎界面
+        show_welcome = True
+        if self.config is not None and hasattr(self.config, "tui"):
+            show_welcome = getattr(self.config.tui, "welcome_enabled", True)
+
+        if not show_welcome:
+            self._show_repl()
+            return
 
         def _on_welcome_dismiss(result=None):
             self._show_repl()
@@ -84,6 +93,27 @@ def run_tui(agent=None, config=None) -> None:
         from foxcode.tui import run_tui
         run_tui()
     """
+    import logging
+
     _ensure_utf8()
-    app = FoxCodeApp(agent=agent, config=config)
-    app.run()
+
+    # 抑制终端日志输出，避免破坏 TUI 界面
+    # 文件日志 handler 仍正常工作，终端输出在 TUI 关闭后自动恢复
+    _tui_old_log_level = None
+    try:
+        from foxcode.cli import _stream_handler as _cli_stream
+        _tui_old_log_level = _cli_stream.level
+        _cli_stream.setLevel(logging.CRITICAL + 1)
+    except Exception:
+        _cli_stream = None
+        _tui_old_log_level = None
+
+    try:
+        app = FoxCodeApp(agent=agent, config=config)
+        app.run()
+    finally:
+        if _cli_stream is not None and _tui_old_log_level is not None:
+            try:
+                _cli_stream.setLevel(_tui_old_log_level)
+            except Exception:
+                pass

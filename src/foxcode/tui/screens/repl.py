@@ -135,6 +135,14 @@ class REPLScreen(Screen):
         self._pending_menu_sid = None
         SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
+        # 从配置加载 TUI 状态
+        if config is not None and hasattr(config, "tui"):
+            tui_cfg = config.tui
+            if hasattr(tui_cfg, "sidebar_visible"):
+                self.sidebar_visible = tui_cfg.sidebar_visible
+            if hasattr(tui_cfg, "fullscreen"):
+                self.fullscreen = tui_cfg.fullscreen
+
     def watch_busy(self, busy: bool):
         """Reactive watcher: update UI when busy state changes."""
         if hasattr(self, "prompt_input") and self.prompt_input is not None:
@@ -166,6 +174,18 @@ class REPLScreen(Screen):
     # ------------------------------------------------------------------
 
     def on_mount(self):
+        # 应用从配置加载的 TUI 状态
+        try:
+            if self.sidebar is not None:
+                self.sidebar.display = self.sidebar_visible
+        except Exception:
+            pass
+        try:
+            if self.fullscreen:
+                if self.sidebar is not None:
+                    self.sidebar.display = False
+        except Exception:
+            pass
         try:
             self._show_banner()
         except Exception:
@@ -392,7 +412,10 @@ class REPLScreen(Screen):
             role = m.get("role", "system")
             content = m.get("content", "")
             if content:
-                self.chat.add_message(MessageWidget(role, content))
+                widget = MessageWidget(role, content)
+                if role == "assistant":
+                    widget.finalize()
+                self.chat.add_message(widget)
         self._refresh_sessions_list()
         self._refresh_status()
         # Scroll to the newest message only after the screen is fully laid
@@ -600,6 +623,7 @@ class REPLScreen(Screen):
     def action_toggle_sidebar(self):
         self.sidebar_visible = not self.sidebar_visible
         self.sidebar.display = self.sidebar_visible
+        self._persist_tui_state()
 
     @safe
     def action_cycle_mode(self):
@@ -619,6 +643,19 @@ class REPLScreen(Screen):
             self.sidebar.display = True
             self.sidebar_visible = True
         self._system(f"Fullscreen {ICONS.forward} {'on' if self.fullscreen else 'off'}")
+        self._persist_tui_state()
+
+    def _persist_tui_state(self):
+        """将当前 TUI 状态持久化到配置文件中。"""
+        cfg = self.config
+        if cfg is None or not hasattr(cfg, "tui"):
+            return
+        try:
+            cfg.tui.sidebar_visible = self.sidebar_visible
+            cfg.tui.fullscreen = self.fullscreen
+            cfg.save_tui_config()
+        except Exception:
+            pass
 
     @safe
     def action_page_up(self):
@@ -742,6 +779,9 @@ class REPLScreen(Screen):
         ("/new", "start a new session"),
         ("/sidebar", "toggle the sidebar"),
         ("/fullscreen", "toggle fullscreen (alias /fs)"),
+        ("/cli-log [on|off]", "toggle CLI log display in TUI"),
+        ("/welcome [on|off]", "toggle welcome screen on startup"),
+        ("/delete [all]", "delete current/all messages (confirm required)"),
         ("/theme [name]", "switch theme"),
         ("/history", "show input history"),
         ("/quit", "quit FoxCode (alias /exit)"),
@@ -757,6 +797,9 @@ class REPLScreen(Screen):
         "sidebar": "_cmd_sidebar",
         "fullscreen": "_cmd_fullscreen",
         "fs": "_cmd_fullscreen",
+        "cli-log": "_cmd_cli_log",
+        "welcome": "_cmd_welcome",
+        "delete": "_cmd_delete",
         "theme": "_cmd_theme",
         "history": "_cmd_history",
         "quit": "_cmd_quit",
@@ -784,13 +827,21 @@ class REPLScreen(Screen):
 
     def _run_cli_command(self, text: str):
         name = text.split()[0] if text.split() else ""
+
+        # 检查当前是否允许显示 CLI 日志
+        def _allow_cli_log() -> bool:
+            cfg = self.config
+            return cfg is None or not hasattr(cfg, "tui") or cfg.tui.cli_log_enabled
+
         try:
             from foxcode import cli as fox_cli
         except Exception:
-            self._system(f"Unknown command: /{name}. Type /help for commands.")
+            if _allow_cli_log():
+                self._system(f"Unknown command: /{name}. Type /help for commands.")
             return
         if self.agent is None and self.config is None:
-            self._system(f"Unknown command: /{name}. Type /help for commands.")
+            if _allow_cli_log():
+                self._system(f"Unknown command: /{name}. Type /help for commands.")
             return
         cli_text = text if text.startswith("/") else "/" + text
         buf = io.StringIO()
@@ -801,17 +852,29 @@ class REPLScreen(Screen):
         fox_cli.console = cap
         sys.stdout = buf
         sys.stdin = io.StringIO("\n" * 64)
+        result = True
+        exc_info = None
         try:
             result = fox_cli._handle_command(cli_text, self.agent, self.config)
         except EOFError:
             result = True
         except Exception as exc:
-            self._system(f"CLI command error (/{name}): {exc}")
-            return
+            exc_info = exc
         finally:
             fox_cli.console = old_console
             sys.stdout = old_stdout
             sys.stdin = old_stdin
+
+        # 当 cli_log_enabled 为 False 时不显示 CLI 日志输出
+        if not _allow_cli_log():
+            if result is False:
+                self.action_quit()
+            return
+
+        if exc_info is not None:
+            self._system(f"CLI command error (/{name}): {exc_info}")
+            return
+
         raw = _STRIP_TAGS.sub("", buf.getvalue())
         lines = [
             ln for ln in raw.splitlines()
@@ -1027,6 +1090,94 @@ class REPLScreen(Screen):
 
     def _cmd_quit(self, args):
         self.action_quit()
+
+    def _cmd_cli_log(self, args):
+        cfg = self.config
+        if cfg is None or not hasattr(cfg, "tui"):
+            self._system("TUI 配置不可用")
+            return
+        if not args:
+            state = "on" if cfg.tui.cli_log_enabled else "off"
+            self._system(f"CLI log display is {state}. Usage: /cli-log on | off")
+            return
+        arg = args[0].lower()
+        if arg == "on":
+            cfg.tui.cli_log_enabled = True
+            self._system("CLI log display enabled")
+        elif arg == "off":
+            cfg.tui.cli_log_enabled = False
+            self._system("CLI log display disabled")
+        else:
+            self._system("Usage: /cli-log on | off")
+            return
+        try:
+            cfg.save_tui_config()
+        except Exception:
+            pass
+
+    def _cmd_welcome(self, args):
+        cfg = self.config
+        if cfg is None or not hasattr(cfg, "tui"):
+            self._system("TUI 配置不可用")
+            return
+        if not args:
+            state = "on" if cfg.tui.welcome_enabled else "off"
+            self._system(f"Welcome screen is {state}. Usage: /welcome on | off")
+            return
+        arg = args[0].lower()
+        if arg == "on":
+            cfg.tui.welcome_enabled = True
+            self._system("Welcome screen enabled")
+        elif arg == "off":
+            cfg.tui.welcome_enabled = False
+            self._system("Welcome screen disabled")
+        else:
+            self._system("Usage: /welcome on | off")
+            return
+        try:
+            cfg.save_tui_config()
+        except Exception:
+            pass
+
+    def _cmd_delete(self, args):
+        arg = args[0].lower() if args else ""
+        if arg == "all":
+            def _on_confirm(confirmed: bool | None):
+                if confirmed:
+                    self._session_messages.clear()
+                    self.chat.clear_messages()
+                    self._system("All messages deleted")
+                else:
+                    self._system("Delete cancelled")
+                self.prompt_input.focus_input()
+
+            self.app.push_screen(
+                ConfirmDialog(
+                    title="⚠️ 确认删除",
+                    body="确定要删除所有消息吗？此操作不可恢复。",
+                    confirm_text="删除",
+                ),
+                _on_confirm,
+            )
+            return
+        # 默认删除当前/最近的消息（清空当前会话）
+        def _on_confirm_current(confirmed: bool | None):
+            if confirmed:
+                self._session_messages.clear()
+                self.chat.clear_messages()
+                self._system("Current session messages deleted")
+            else:
+                self._system("Delete cancelled")
+            self.prompt_input.focus_input()
+
+        self.app.push_screen(
+            ConfirmDialog(
+                title="⚠️ 确认删除",
+                body="确定要清空当前会话的所有消息吗？",
+                confirm_text="删除",
+            ),
+            _on_confirm_current,
+        )
 
     # ------------------------------------------------------------------
     # Streaming

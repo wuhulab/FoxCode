@@ -1059,86 +1059,141 @@ class FoxCodeAgent:
 
         return escaped
 
+    @staticmethod
+    def _sanitize_tool_call_text(text: str) -> str:
+        """清理模型输出中的常见噪声，恢复可被解析的工具调用格式。
+
+        处理的噪声包括：
+        - ``[say]`` TUI 标签残留
+        - markdown 代码块围栏 (`` ```xml ``, `` ```python `` 等)
+        - 常见 tag 拼写错误 (``<tool_function>`` → ``<function>`` 等)
+        - 全角符号 (``＜ ＞ ＝ ；`` 等)
+        - 不完整的 ``<function=NAME`` 后缺少 ``>`` 的情况
+        - 旧的 ``<tool_result>`` 残留块
+        - 旧的 ``<tool_execute>`` 残留块
+        """
+        # 注意：保留 [say] 标签，bracket 解析器需要它作为边界/污染检测信号
+        # 1. 移除 markdown 代码块围栏行
+        text = re.sub(r'^```\w*\s*$', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^```\s*$', '', text, flags=re.MULTILINE)
+
+        # 3. 常见拼写修复
+        text = re.sub(r'<tool_function\s*=', '<function=', text, flags=re.IGNORECASE)
+        text = re.sub(r'<tool_function\b', '<function', text, flags=re.IGNORECASE)
+        text = re.sub(r'</tool_function\s*>', '</function>', text, flags=re.IGNORECASE)
+
+        text = re.sub(r'<tool_parameter\s*=', '<parameter=', text, flags=re.IGNORECASE)
+        text = re.sub(r'<tool_parameter\b', '<parameter', text, flags=re.IGNORECASE)
+        text = re.sub(r'</tool_parameter\s*>', '</parameter>', text, flags=re.IGNORECASE)
+
+        # 4. 移除旧的完整 tool_result / tool_execute 残留块
+        text = re.sub(r'<tool_result\b.*?</tool_result\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<tool_execute\b.*?</tool_execute\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
+
+        # 5. 全角符号修正
+        text = text.replace('＜', '<').replace('＞', '>').replace('＝', '=').replace('；', ';')
+
+        # 6. 补全不完整的标签头
+        text = re.sub(r'<function=([A-Za-z_]\w*)(?=[\s<])', r'<function=\1>', text)
+        text = re.sub(r'<function\s+([A-Za-z_]\w*)(?=[\s<])', r'<function \1>', text)
+
+        return text
+
     def _parse_tool_call(self, text: str) -> tuple[str | None, dict[str, str] | None, str]:
         """
         解析工具调用
-        
-        从文本中解析 XML 格式的工具调用
-        
+
+        从文本中解析 XML 格式的工具调用（支持多种变体与噪声）
+
         Args:
             text: 包含工具调用的文本
-            
+
         Returns:
             (工具名称, 参数字典, 剩余文本) 如果找到工具调用
             (None, None, 原文本) 如果没有找到工具调用
         """
-        # ---- 模糊匹配 <function=NAME>...</function> ----
-        func_start = re.search(r'<function=', text)
+        sanitized = self._sanitize_tool_call_text(text)
+
+        # ---- 模糊匹配 <function=NAME>...</function> 及其常见变体 ----
+        func_start = re.search(r'<function=', sanitized, re.IGNORECASE)
         if not func_start:
-            # 退化兼容复制粘贴场景中的 [tool] NAME / <tool_name>NAME</tool_name> 格式
-            return self._parse_tool_call_bracket(text)
+            # 也尝试 <tool_function= 或 <function NAME> 等变体
+            for alt_pat in (r'<tool_function=', r'<function\s+'):
+                func_start = re.search(alt_pat, sanitized, re.IGNORECASE)
+                if func_start:
+                    break
 
-        # 提取工具名（兼容 <function=NAME> 与 <function NAME>）
-        name_at = text[func_start.start():]
-        m_name = re.match(r'<function=([^>]+)>', name_at) or re.match(
-            r'<function\s+([^>\s]+)\s*>', name_at
-        )
-        if not m_name:
-            return None, None, text
+        if func_start:
+            # 提取工具名（兼容 <function=NAME>、<function NAME>、<function NAME >）
+            name_at = sanitized[func_start.start():]
+            m_name = re.match(r'<function=([^>]+)>', name_at, re.IGNORECASE) or re.match(
+                r'<function\s+([^>\s]+)\s*>', name_at, re.IGNORECASE
+            )
+            if m_name:
+                tool_name = m_name.group(1).strip()
+                after_open = func_start.start() + m_name.end()
 
-        tool_name = m_name.group(1).strip()
-        after_open = func_start.start() + m_name.end()
+                # 函数调用结束位置：</function> 或下一个 <function= 或文本末尾
+                call_end = len(sanitized)
+                m_close = re.search(r'</function\s*>', sanitized[after_open:], re.IGNORECASE)
+                if m_close:
+                    call_end = after_open + m_close.start()
+                else:
+                    m_next = re.search(r'<function=', sanitized[after_open:], re.IGNORECASE)
+                    if m_next:
+                        call_end = after_open + m_next.start()
 
-        # 函数调用结束位置：</function> 或下一个 <function= 或文本末尾
-        call_end = len(text)
-        m_close = re.search(r'</function\s*>', text[after_open:])
-        if m_close:
-            call_end = after_open + m_close.start()
-        else:
-            m_next = re.search(r'<function=', text[after_open:])
-            if m_next:
-                call_end = after_open + m_next.start()
+                params_text = sanitized[after_open:call_end]
+                pre_text = sanitized[:func_start.start()]
+                post_text = sanitized[call_end:]
+                remaining = pre_text + post_text
 
-        params_text = text[after_open:call_end]
-        pre_text = text[:func_start.start()]
-        post_text = text[call_end:]
-        remaining = pre_text + post_text
+                # 工具名校验：含中文 / 占位符则忽略
+                if any('\u4e00' <= c <= '\u9fff' for c in tool_name):
+                    logger.warning(f"Ignoring invalid tool name (contains Chinese): {tool_name}")
+                elif tool_name.lower() in ["工具名称", "tool_name", "xxx", "name"]:
+                    logger.warning(f"Ignoring placeholder tool name: {tool_name}")
+                else:
+                    # 有效工具名（含模糊匹配）
+                    try:
+                        valid_tool_names = [t["name"] for t in registry.list_tools()]
+                    except Exception:
+                        # 如果无法获取注册表，使用默认列表
+                        valid_tool_names = [
+                            "read_file", "write_file", "edit_file", "list_directory",
+                            "glob", "grep", "search_codebase", "shell_execute",
+                            "delete_file", "search_in_file", "shell_check_status", "shell_stop",
+                            "end"
+                        ]
+                    if tool_name not in valid_tool_names:
+                        # 尝试模糊匹配
+                        from difflib import get_close_matches
+                        matches = get_close_matches(tool_name, valid_tool_names, n=1, cutoff=0.6)
+                        if matches:
+                            logger.info(f"Tool name '{tool_name}' might be a typo for '{matches[0]}'")
+                            tool_name = matches[0]
+                        else:
+                            logger.warning(f"Unknown tool name: {tool_name}, available tools: {valid_tool_names}")
+                            tool_name = None
 
-        # 工具名校验：含中文 / 占位符则忽略
-        if any('\u4e00' <= c <= '\u9fff' for c in tool_name):
-            logger.warning(f"Ignoring invalid tool name (contains Chinese): {tool_name}")
-            return None, None, text
-        if tool_name.lower() in ["工具名称", "tool_name", "xxx", "name"]:
-            logger.warning(f"Ignoring placeholder tool name: {tool_name}")
-            return None, None, text
+                    if tool_name:
+                        # 容错解析参数（兼容缺名 / 缺闭合标签 / 把 '=' 写成空格）
+                        params = self._parse_parameters_fuzzy(params_text, tool_name)
 
-        # 有效工具名（含模糊匹配）
-        try:
-            valid_tool_names = [t["name"] for t in registry.list_tools()]
-        except Exception:
-            # 如果无法获取注册表，使用默认列表
-            valid_tool_names = [
-                "read_file", "write_file", "edit_file", "list_directory",
-                "glob", "grep", "search_codebase", "shell_execute",
-                "delete_file", "search_in_file", "shell_check_status", "shell_stop",
-                "end"
-            ]
-        if tool_name not in valid_tool_names:
-            # 尝试模糊匹配
-            from difflib import get_close_matches
-            matches = get_close_matches(tool_name, valid_tool_names, n=1, cutoff=0.6)
-            if matches:
-                logger.info(f"Tool name '{tool_name}' might be a typo for '{matches[0]}'")
-                tool_name = matches[0]
-            else:
-                logger.warning(f"Unknown tool name: {tool_name}, available tools: {valid_tool_names}")
-                return None, None, text
+                        logger.info(f"Parsed tool call: {tool_name}, params: {params}")
+                        return tool_name, params, remaining
 
-        # 容错解析参数（兼容缺名 / 缺闭合标签 / 把 '=' 写成空格）
-        params = self._parse_parameters_fuzzy(params_text, tool_name)
+        # 退化兼容复制粘贴场景中的 [tool] NAME / <tool_name>NAME</tool_name> 格式
+        result = self._parse_tool_call_bracket(sanitized)
+        if result[0] is not None:
+            return result
 
-        logger.info(f"Parsed tool call: {tool_name}, params: {params}")
-        return tool_name, params, remaining
+        # 最后再尝试原始文本（防止 sanitize 误删了有效内容）
+        result = self._parse_tool_call_bracket(text)
+        if result[0] is not None:
+            return result
+
+        return None, None, text
 
     def _parse_parameters_fuzzy(self, params_text: str, tool_name: str) -> dict[str, str]:
         """容错解析 <parameter> 标签，兼容以下模型常见错误输出：
@@ -1148,7 +1203,7 @@ class FoxCodeAgent:
         - 把 ``=`` 写成空格：``<parameter>name>value``（恢复 name）
         - 缺少闭合标签 ``</parameter>`` 或缺少 ``>``：值取到下一个标签或末尾
         """
-        param_open = re.compile(r'<parameter(?:\s*=\s*([^>\s]*))?\s*>')
+        param_open = re.compile(r'<parameter(?:\s*=\s*([^>\s]*))?\s*>', re.IGNORECASE)
         opens = [
             (mo.start(), mo.end(), mo.group(1))
             for mo in param_open.finditer(params_text)
@@ -1175,7 +1230,7 @@ class FoxCodeAgent:
             val_end = len(params_text)
             if i + 1 < len(opens):
                 val_end = min(val_end, opens[i + 1][0])
-            m_close = re.search(r'</parameter\s*>', params_text[val_start:])
+            m_close = re.search(r'</parameter\s*>', params_text[val_start:], re.IGNORECASE)
             if m_close:
                 val_end = min(val_end, val_start + m_close.start())
 
@@ -1218,16 +1273,17 @@ class FoxCodeAgent:
         """兼容复制粘贴场景的非标准工具调用格式：
 
         - ``[tool] list_directory S:\\path``（方括号 + 行内位置参数）
+        - ``[tool] shell_execute \\ndel x.svg``（方括号 + 跨行位置参数，直到空行或边界）
         - ``<tool_name>read_file</tool_name>`` + ``<parameter>...</parameter>``
         - 以上可能被 ``<tool_result>...</tool_result>`` 包裹
         """
         # 1) 提取工具名
-        m_name = re.search(r'<tool_name>\s*([^<>\s]+)\s*</tool_name>', text)
+        m_name = re.search(r'<tool_name>\s*([^<>\s]+)\s*</tool_name>', text, re.IGNORECASE)
         if m_name:
             tool_name = m_name.group(1).strip()
             start = m_name.start()
         else:
-            m_tool = re.search(r'\[tool\]\s*([A-Za-z_]\w*)', text)
+            m_tool = re.search(r'\[tool\]\s*([A-Za-z_]\w*)', text, re.IGNORECASE)
             if not m_tool:
                 return None, None, text
             tool_name = m_tool.group(1).strip()
@@ -1259,32 +1315,92 @@ class FoxCodeAgent:
                 logger.warning(f"Unknown tool name: {tool_name}, available tools: {valid_tool_names}")
                 return None, None, text
 
-        # 2) 计算调用结束位置（</tool_result> 或最后一个 </parameter> 或 [tool] 行尾）
+        # 2) 计算调用结束位置
         end = len(text)
-        m_res = re.search(r'</tool_result\s*>', text[start:])
-        if m_res:
-            end = start + m_res.end()
-        else:
-            last_close = None
-            for mc in re.finditer(r'</parameter\s*>', text[start:]):
-                last_close = mc
-            if last_close:
-                end = start + last_close.end()
+        if m_name:
+            # <tool_name> 模式：用 </tool_result> 或最后一个 </parameter> 或下一个 <tool_name>
+            m_res = re.search(r'</tool_result\s*>', text[start:], re.IGNORECASE)
+            if m_res:
+                end = start + m_res.end()
             else:
-                nl = text.find('\n', start)
-                end = nl if nl != -1 else len(text)
+                last_close = None
+                for mc in re.finditer(r'</parameter\s*>', text[start:], re.IGNORECASE):
+                    last_close = mc
+                if last_close:
+                    end = start + last_close.end()
+                else:
+                    m_next = re.search(r'<tool_name\s*>', text[start+1:], re.IGNORECASE)
+                    if m_next:
+                        end = start + 1 + m_next.start()
+                    else:
+                        end = len(text)
+        else:
+            # [tool] 模式：先判断同一行是否有参数
+            line_end = text.find('\n', start)
+            if line_end == -1:
+                line_end = len(text)
+            call_span_line = text[start:line_end]
+            m_tool_line = re.search(r'\[tool\]\s*([A-Za-z_]\w*)\s*(.*)', call_span_line, re.IGNORECASE)
+            if m_tool_line and m_tool_line.group(2).strip():
+                # 有行内参数，仅取本行
+                end = line_end
+            else:
+                # 无行内参数，允许多行扩展（直到边界）
+                boundaries = []
+                boundary_patterns = [
+                    r'\n\s*\n',               # 空行
+                    r'<function\s*[=(\s)]',    # 下一个 <function=
+                    r'\[tool\]',              # 下一个 [tool]
+                    r'\[say\]',               # TUI 流式输出标签
+                    r'<tool_result\s*',       # 下一个 <tool_result> 开头
+                    r'</tool_execute\s*>',     # tool_execute 闭合标签
+                    r'</function\s*>',         # 下一个 </function>
+                    r'</tool_result\s*>',     # 下一个 </tool_result>
+                    r'</parameter\s*>',       # 参数闭合标签（如果存在）
+                    r'\n```\w*$',             # markdown 代码块围栏
+                    r'\n---\s*\n',            # markdown 分隔线
+                ]
+                for pat in boundary_patterns:
+                    bm = re.search(pat, text[start+1:], re.IGNORECASE)
+                    if bm:
+                        boundaries.append(start + 1 + bm.start())
+                if boundaries:
+                    end = min(boundaries)
+                else:
+                    end = len(text)
 
         call_span = text[start:end]
         params = self._parse_parameters_fuzzy(call_span, tool_name)
 
-        # 3) 处理 [tool] NAME 行内位置参数（如 [tool] list_directory S:\\path）
-        m_tool_line = re.search(r'\[tool\]\s*([A-Za-z_]\w*)\s*(.*)', call_span)
-        if m_tool_line:
-            inline = m_tool_line.group(2).strip()
-            if inline and not params:
-                order = self._get_tool_param_order(tool_name)
-                if order:
-                    params[order[0]] = inline
+        # 3) 处理 [tool] NAME 行内/跨行位置参数
+        if not m_name:
+            m_tool_line = re.search(r'\[tool\]\s*([A-Za-z_]\w*)\s*(.*)', call_span, re.DOTALL | re.IGNORECASE)
+            if m_tool_line:
+                inline = m_tool_line.group(2).strip()
+                # 防污染：如果 inline 中包含流式标签、历史结果块、markdown 围栏等噪声，应忽略
+                contaminated = bool(
+                    re.search(
+                        r'\[say\]|</?tool_result\s*>|</?function\s*>|</?tool_execute\s*>|^```',
+                        inline,
+                        re.IGNORECASE,
+                    )
+                )
+                if inline and not params and not contaminated:
+                    order = self._get_tool_param_order(tool_name)
+                    if order:
+                        params[order[0]] = inline
+                elif contaminated:
+                    logger.warning(f"Discarding contaminated inline param for {tool_name}: {inline[:80]!r}")
+
+        # 空参防空转：对高风险工具，如果 bracket 解析后没有任何参数，视为未找到调用
+        if not params and not m_name:
+            try:
+                tool_obj = registry.get_tool(tool_name)
+                if getattr(tool_obj, "dangerous", False):
+                    logger.warning(f"Rejecting empty dangerous bracket call: {tool_name}")
+                    return None, None, text
+            except Exception:
+                pass
 
         remaining = text[:start] + text[end:]
         logger.info(f"Parsed (bracket) tool call: {tool_name}, params: {params}")

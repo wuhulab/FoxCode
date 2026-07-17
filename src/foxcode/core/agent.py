@@ -1188,8 +1188,15 @@ class FoxCodeAgent:
         if result[0] is not None:
             return result
 
-        # 最后再尝试原始文本（防止 sanitize 误删了有效内容）
-        result = self._parse_tool_call_bracket(text)
+        # Fallback：在去除原始文本中的历史 <tool_result>/<tool_execute> 块后重试
+        # 防止 sanitizer 误删了被 markdown 围栏包裹的有效 bracket 调用
+        fallback_text = re.sub(
+            r'<tool_result\b.*?</tool_result\s*>', '', text, flags=re.DOTALL | re.IGNORECASE
+        )
+        fallback_text = re.sub(
+            r'<tool_execute\b.*?</tool_execute\s*>', '', fallback_text, flags=re.DOTALL | re.IGNORECASE
+        )
+        result = self._parse_tool_call_bracket(fallback_text)
         if result[0] is not None:
             return result
 

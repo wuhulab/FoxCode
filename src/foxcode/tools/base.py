@@ -945,3 +945,16 @@ def tool(cls: type[BaseTool]) -> type[BaseTool]:
             ...
     """
     return registry.register(cls)
+
+
+@tool
+class EndTool(BaseTool):
+    """结束工作流工具 - 用于显式终止当前工作流"""
+
+    name = "end"
+    description = "结束当前工作流，表示任务已完成。在完成所有工作后必须调用此工具。"
+    category = ToolCategory.SYSTEM
+    parameters = []
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        return ToolResult(success=True, output="")

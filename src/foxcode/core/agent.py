@@ -185,6 +185,8 @@ You have tools to read files, execute commands, and search code.
 
 **RULE 3: NEVER say "please provide", "please share", "please tell me"!**
 
+**RULE 4: When you have finished all work, you MUST call the `end` tool to end the workflow. Do not stop without a tool call!**
+
 ================================================================================
 ## EXAMPLES
 ================================================================================
@@ -231,6 +233,7 @@ Your response (output immediately, do NOT talk):
 | search_codebase | Semantic search | query |
 | shell_execute | Run command | command |
 | design_check | Check design tokens & compliance | action (tokens/rules/check) |
+| end | End the current workflow | |
 
 ================================================================================
 ## TOOL CALL FORMAT
@@ -302,6 +305,8 @@ You have tools to read files, execute commands, and search code.
 
 **RULE 3: NEVER say "please provide", "please share", "please tell me"!**
 
+**RULE 4: When you have finished all work, you MUST call the `end` tool to end the workflow. Do not stop without a tool call!**
+
 ================================================================================
 ## YOUR TASK
 ================================================================================
@@ -327,6 +332,7 @@ First, create the `.foxcode/` directory if it does not exist, then create the fi
 | edit_file | Edit a file: replace (old_text,new_text) or insert after a line (line,content) | file_path + (old_text,new_text) or (line,content) |
 | glob | Find files | pattern |
 | shell_execute | Run command | command |
+| end | End the current workflow | |
 
 ================================================================================
 ## TOOL CALL FORMAT
@@ -376,6 +382,8 @@ You have tools to read files, execute commands, and search code.
 
 **RULE 3: NEVER say "please provide", "please share", "please tell me"!**
 
+**RULE 4: When you have finished all work, you MUST call the `end` tool to end the workflow. Do not stop without a tool call!**
+
 ================================================================================
 ## TOOLS
 ================================================================================
@@ -388,6 +396,7 @@ You have tools to read files, execute commands, and search code.
 | grep | Search content | pattern |
 | glob | Find files | pattern |
 | shell_execute | Run command | command |
+| end | End the current workflow | |
 
 ================================================================================
 ## TOOL CALL FORMAT
@@ -1111,7 +1120,8 @@ class FoxCodeAgent:
             valid_tool_names = [
                 "read_file", "write_file", "edit_file", "list_directory",
                 "glob", "grep", "search_codebase", "shell_execute",
-                "delete_file", "search_in_file", "shell_check_status", "shell_stop"
+                "delete_file", "search_in_file", "shell_check_status", "shell_stop",
+                "end"
             ]
         if tool_name not in valid_tool_names:
             # 尝试模糊匹配
@@ -1236,7 +1246,8 @@ class FoxCodeAgent:
             valid_tool_names = [
                 "read_file", "write_file", "edit_file", "list_directory",
                 "glob", "grep", "search_codebase", "shell_execute",
-                "delete_file", "search_in_file", "shell_check_status", "shell_stop"
+                "delete_file", "search_in_file", "shell_check_status", "shell_stop",
+                "end"
             ]
         if tool_name not in valid_tool_names:
             from difflib import get_close_matches
@@ -1463,10 +1474,20 @@ class FoxCodeAgent:
             # ==================== 4. 解析工具调用 ====================
             tool_name, tool_params, remaining_text = self._parse_tool_call(full_response)
 
-            if tool_name is None:
-                # 没有工具调用，结束循环
-                logger.debug("No tool call detected, ending conversation")
+            if tool_name == "end":
+                logger.debug("End tool called, ending conversation")
                 break
+
+            if tool_name is None:
+                # 没有工具调用，提示AI必须使用end工具
+                logger.debug("No tool call detected, prompting for end tool")
+                self.session.add_user_message(
+                    "You have responded without calling a tool. "
+                    "When you have completed all work, you MUST call the `end` tool to finish. "
+                    "Do not reply with free text. Call the end tool now."
+                )
+                yield "\n[info] 等待结束工具调用...\n"
+                continue
 
             # ==================== 5. 检查重复调用 ====================
             tool_key = self._make_tool_key(tool_name, tool_params or {})

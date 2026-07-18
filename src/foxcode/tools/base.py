@@ -88,6 +88,7 @@ class ToolParameter(BaseModel):
     required: bool = True
     default: Any = None
     enum: list[str] | None = None
+    max_length: int | None = None
 
 
 @dataclass
@@ -509,7 +510,7 @@ class BaseTool(abc.ABC):
                     raise ValueError(f"参数 {param.name} 必须是字符串类型")
 
             max_length = getattr(param, 'max_length', 100000)
-            if len(value) > max_length:
+            if max_length is not None and len(value) > max_length:
                 raise ValueError(f"参数 {param.name} 长度超过限制 ({len(value)} > {max_length})")
 
             if param.name in ('file_path', 'path', 'directory'):

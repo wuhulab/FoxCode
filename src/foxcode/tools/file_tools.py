@@ -703,6 +703,7 @@ class WriteFileTool(BaseTool):
             type="string",
             description="Content to write to the file",
             required=True,
+            max_length=None,
         ),
     ]
 
@@ -892,6 +893,7 @@ class EditFileTool(BaseTool):
             ),
             required=False,
             default="",
+            max_length=None,
         ),
         ToolParameter(
             name="new_text",
@@ -902,6 +904,7 @@ class EditFileTool(BaseTool):
             ),
             required=False,
             default="",
+            max_length=None,
         ),
         ToolParameter(
             name="line",
@@ -919,6 +922,7 @@ class EditFileTool(BaseTool):
             description="Insert mode: text to insert after the given line",
             required=False,
             default="",
+            max_length=None,
         ),
     ]
 

@@ -756,6 +756,20 @@ class Config(BaseSettings):
         if self.session_dir is None:
             self.session_dir = self.working_dir / ".foxcode" / "sessions"
 
+        # 自动提升过小的 max_tokens，避免长内容写入时模型输出被截断。
+        # 旧默认值 4096 对大文件写入明显不够，如果用户配置文件残留旧值，
+        # 这里会按模型能力自动提升到合理上限。
+        if self.model.max_tokens <= 4096:
+            model_name = self.model.model_name.lower()
+            if "claude" in model_name:
+                self.model.max_tokens = 8192
+            elif "gpt-4o" in model_name:
+                self.model.max_tokens = 16384
+            elif "deepseek" in model_name:
+                self.model.max_tokens = 8192
+            else:
+                self.model.max_tokens = 8192
+
     @classmethod
     def load_from_file(cls, config_path: Path | None = None) -> dict[str, Any]:
         """

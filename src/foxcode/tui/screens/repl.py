@@ -1212,10 +1212,54 @@ class REPLScreen(Screen):
 
     @work(exclusive=True, group="chat")
     async def _stream_worker(self, user_input: str):
-        placeholder = self._assistant_thinking()
-        full = ""
+        """Consume agent.chat() stream, parse tags, and render each piece
+        into its own MessageWidget so users see AI speech, tool calls,
+        and tool results appear one-by-one in real time.
+        """
+        _TAG_RE = re.compile(r'\[(say|tool|result|/result|info|warn|error)\]', re.IGNORECASE)
+        _ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+        assistant_widget: MessageWidget | None = None
+        tool_widget: MessageWidget | None = None
+        assistant_full = ""
         started = time.time()
         token_count = 0
+
+        _buf = ""
+        _mode = "say"
+
+        def _ensure_assistant():
+            nonlocal assistant_widget
+            if assistant_widget is None:
+                assistant_widget = MessageWidget("assistant", "")
+                self.chat.add_message(assistant_widget)
+            return assistant_widget
+
+        def _ensure_tool():
+            nonlocal tool_widget
+            if tool_widget is None:
+                tool_widget = MessageWidget("tool", "")
+                self.chat.add_message(tool_widget)
+            return tool_widget
+
+        def _flush_buf():
+            nonlocal _buf, assistant_full
+            text = _buf
+            _buf = ""
+            if not text:
+                return
+            if _mode == "say":
+                _ensure_assistant().append_text(text)
+                assistant_full += text
+            elif _mode in ("tool", "result"):
+                _ensure_tool().append_text(text)
+            elif _mode == "info":
+                self._system(f"[info] {text.rstrip(chr(10))}")
+            elif _mode == "warn":
+                self._system(f"[warn] {text.rstrip(chr(10))}")
+            elif _mode == "error":
+                self._system(f"[error] {text.rstrip(chr(10))}")
+
         try:
             if self.agent and hasattr(self.agent, "chat") and callable(getattr(self.agent, "chat", None)):
                 self.spinner.mode = "responding"
@@ -1223,34 +1267,71 @@ class REPLScreen(Screen):
                 async for chunk in self.agent.chat(user_input):
                     if not chunk:
                         continue
-                    full += chunk
-                    placeholder.append_text(chunk)
+                    chunk = _ANSI_RE.sub("", chunk)
+                    _buf += chunk
+
+                    while _buf:
+                        m = _TAG_RE.search(_buf)
+                        if not m:
+                            _flush_buf()
+                            break
+
+                        before = _buf[:m.start()]
+                        _buf = _buf[m.end():]
+                        if before:
+                            tmp = _buf
+                            _buf = before
+                            _flush_buf()
+                            _buf = tmp
+
+                        tag = m.group(1).lower()
+                        if tag == "say":
+                            _mode = "say"
+                        elif tag == "tool":
+                            _mode = "tool"
+                            tool_widget = None
+                        elif tag == "result":
+                            _mode = "result"
+                            tool_widget = None
+                        elif tag == "/result":
+                            _mode = "raw"
+                            tool_widget = None
+                        elif tag == "info":
+                            _mode = "info"
+                        elif tag == "warn":
+                            _mode = "warn"
+                        elif tag == "error":
+                            _mode = "error"
+
                     token_count += len(chunk) // 4
                     self.spinner.update_tokens(token_count)
                     self._scroll_end()
             else:
-                await self._simulate_stream(placeholder)
-                full = placeholder.text_body if placeholder and hasattr(placeholder, "text_body") else ""
-                token_count = len(full) // 4
+                assistant_widget = self._assistant_thinking()
+                await self._simulate_stream(assistant_widget)
+                assistant_full = assistant_widget.text_body if assistant_widget else ""
+                token_count = len(assistant_full) // 4
+                if assistant_widget:
+                    assistant_widget.finalize()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             err = f"\n\n[error] {exc}"
-            if placeholder:
-                placeholder.append_text(err)
-            full += err
+            if assistant_widget:
+                assistant_widget.append_text(err)
+                assistant_full += err
             self._system(f"Error: {exc}")
         finally:
-            if placeholder and hasattr(placeholder, "finalize"):
-                placeholder.finalize()
+            if assistant_widget and hasattr(assistant_widget, "finalize"):
+                assistant_widget.finalize()
             elapsed = time.time() - started
             self._token_count += token_count
             self.busy = False
             self._stop_spinner()
             self._refresh_header()
             self._refresh_status()
-            if full:
-                self._session_messages.append({"role": "assistant", "content": full, "ts": _now()})
+            if assistant_full.strip():
+                self._session_messages.append({"role": "assistant", "content": assistant_full, "ts": _now()})
                 self._system(f"done {ICONS.middle_dot} {elapsed:.1f}s {ICONS.middle_dot} {_fmt_tokens(token_count)} tok")
             else:
                 self._system("(no response)")

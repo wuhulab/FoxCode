@@ -1134,8 +1134,12 @@ class FoxCodeAgent:
                 after_open = func_start.start() + m_name.end()
 
                 # 函数调用结束位置：</function> 或下一个 <function= 或文本末尾
+                # 注意：content 参数内部可能包含 "</function>",
+                # 因此取最后一个 </function> 作为真正的结束标记（系统提示要求一次只调用一个工具）。
                 call_end = len(sanitized)
-                m_close = re.search(r'</function\s*>', sanitized[after_open:], re.IGNORECASE)
+                m_close = None
+                for mc in re.finditer(r'</function\s*>', sanitized[after_open:], re.IGNORECASE):
+                    m_close = mc
                 if m_close:
                     call_end = after_open + m_close.start()
                 else:
@@ -1233,21 +1237,36 @@ class FoxCodeAgent:
                     name = m_rec.group(1)
                     val_start = val_start + m_rec.end()
 
+            # 先确定参数名（后续需要判断是否为长文本参数）
+            inferred_name = name
+            if inferred_name is None:
+                inferred_name = self._infer_param_name(declared_order, assigned)
+            if inferred_name is None:
+                continue
+            inferred_name = inferred_name.strip()
+
             # 计算值的结束位置：下一个 <parameter、或 </parameter>、或末尾
             val_end = len(params_text)
             if i + 1 < len(opens):
                 val_end = min(val_end, opens[i + 1][0])
-            m_close = re.search(r'</parameter\s*>', params_text[val_start:], re.IGNORECASE)
-            if m_close:
-                val_end = min(val_end, val_start + m_close.start())
+            # 长文本参数（content / new_text / old_text）的值内部可能恰好出现
+            # "</parameter>"，此时用第一个 </parameter> 截断会丢失内容。
+            # 采用启发式策略：取最后一个 </parameter> 作为结束标签，因为
+            # 真正闭合当前参数的标签通常位于所有内嵌同类字符串之后。
+            if inferred_name in ("content", "new_text", "old_text"):
+                last_close = None
+                for mc in re.finditer(r'</parameter\s*>', params_text[val_start:val_end], re.IGNORECASE):
+                    last_close = mc
+                if last_close:
+                    val_end = min(val_end, val_start + last_close.start())
+            else:
+                m_close = re.search(r'</parameter\s*>', params_text[val_start:val_end], re.IGNORECASE)
+                if m_close:
+                    val_end = min(val_end, val_start + m_close.start())
 
             value = params_text[val_start:val_end]
 
-            if name is None:
-                # 未提供参数名时，按工具声明的参数顺序推断
-                name = self._infer_param_name(declared_order, assigned)
-            if name is None:
-                continue
+            name = inferred_name
 
             name = name.strip()
             if name in params:
@@ -1477,16 +1496,13 @@ class FoxCodeAgent:
         # AI可能会多次调用工具，直到完成任务
         total_response = ""
 
-        # 用于过滤XML工具调用的缓冲区
-        # 不让用户看到原始的XML工具调用代码
-        xml_buffer = ""
-        in_xml_tool_call = False
-        _in_say_mode = False
-
         while True:
-            # 获取模型响应
+            # 获取模型响应（每个循环独立初始化流式缓冲，避免跨轮次状态泄漏）
             full_response = ""
             retry_count = 0
+            xml_buffer = ""
+            in_xml_tool_call = False
+            _in_say_mode = False
 
             # 重试循环：处理API限流、超时等临时错误
             while retry_count < MAX_RETRIES:
@@ -1516,7 +1532,7 @@ class FoxCodeAgent:
                                 if idx > 0:
                                     yield "[say] " + xml_buffer[:idx]
                                 xml_buffer = xml_buffer[idx:]
-                            elif len(xml_buffer) > 100:
+                            elif len(xml_buffer) > 30:
                                 # 缓冲区足够长但没有检测到XML，输出内容
                                 if not _in_say_mode:
                                     _in_say_mode = True
@@ -1526,8 +1542,9 @@ class FoxCodeAgent:
                         else:
                             # 在XML模式中，检测结束标记
                             if "</function>" in xml_buffer:
-                                # 找到结束标记，输出之后的内容
-                                idx = xml_buffer.find("</function>") + len("</function>")
+                                # 使用最后一个 </function> 作为结束标记，因为 content
+                                # 参数内部可能恰好包含 "</function>" 字符串。
+                                idx = xml_buffer.rfind("</function>") + len("</function>")
                                 remaining = xml_buffer[idx:]
                                 in_xml_tool_call = False
                                 xml_buffer = ""
@@ -1602,6 +1619,30 @@ class FoxCodeAgent:
                 break
 
             if tool_name is None:
+                # 检测是否是因为模型输出被截断导致的解析失败
+                sanitized = self._sanitize_tool_call_text(full_response)
+                has_open = bool(
+                    re.search(r'<function[\s=]', sanitized, re.IGNORECASE)
+                    or re.search(r'\[tool\]\s*\w+', sanitized, re.IGNORECASE)
+                )
+                has_close = bool(
+                    re.search(r'</function\s*>', sanitized, re.IGNORECASE)
+                )
+                if has_open and not has_close:
+                    logger.warning("模型输出似乎被截断（未闭合的工具调用标签）")
+                    yield (
+                        "\n[warn] 模型输出被截断：检测到未闭合的工具调用标签。"
+                        "如果正在写入长文件，请尝试将文件拆分为多个小文件，"
+                        "或检查 max_tokens 配置是否足够大。\n"
+                    )
+                    self.session.add_user_message(
+                        "Your previous tool call was cut off and is incomplete. "
+                        "If you were writing or editing a large file, please break it "
+                        "into smaller pieces (e.g. multiple write_file calls). "
+                        "Then continue with the next tool call."
+                    )
+                    continue
+
                 # 没有工具调用，提示AI必须使用end工具
                 logger.debug("No tool call detected, prompting for end tool")
                 self.session.add_user_message(

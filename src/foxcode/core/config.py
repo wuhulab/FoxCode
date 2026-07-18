@@ -447,6 +447,7 @@ class TUIConfig(BaseModel):
 
     sidebar_visible: bool = Field(default=True, description="是否显示右侧侧边栏")
     fullscreen: bool = Field(default=False, description="是否启用全屏模式")
+    system_log_enabled: bool = Field(default=True, description="是否在 TUI 中显示系统日志消息")
     cli_log_enabled: bool = Field(default=True, description="是否在 TUI 中显示 CLI 日志输出")
     welcome_enabled: bool = Field(default=True, description="启动时是否显示欢迎界面")
 

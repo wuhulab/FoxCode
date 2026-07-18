@@ -52,6 +52,7 @@ from foxcode.tools.base import (
     ToolResult,
     tool,
 )
+from foxcode.utils.ainotread import is_ainotread
 
 logger = logging.getLogger(__name__)
 
@@ -170,13 +171,13 @@ class GrepTool(BaseTool):
                     error=f"无效的正则表达式: {e}",
                 )
 
-            # 获取要搜索的文件
+            # 获取要搜索的文件，过滤 .ainotread 命中的文件
             if base_path.is_file():
-                files = [base_path]
+                files = [base_path] if not is_ainotread(base_path) else []
             else:
                 files = [
                     f for f in base_path.rglob("*")
-                    if f.is_file() and fnmatch.fnmatch(f.name, glob)
+                    if f.is_file() and fnmatch.fnmatch(f.name, glob) and not is_ainotread(f)
                 ]
 
             # 搜索文件
@@ -316,6 +317,10 @@ class SearchCodebaseTool(BaseTool):
                         "node_modules", ".git", "__pycache__",
                         "venv", ".venv", "dist", "build",
                     ]):
+                        continue
+
+                    # 跳过 .ainotread 命中的文件
+                    if is_ainotread(file_path):
                         continue
 
                     try:

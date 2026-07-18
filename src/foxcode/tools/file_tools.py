@@ -32,8 +32,6 @@ FoxCode 文件操作工具 - 安全的文件系统操作
 - DeleteFileTool: 删除文件（危险操作）
 """
 
-from __future__ import annotations
-
 import fnmatch
 import hashlib
 import logging
@@ -46,6 +44,7 @@ from typing import Any
 
 import aiofiles
 
+from foxcode.utils.ainotread import is_ainotread
 from foxcode.utils.encoding import decode_bytes
 from foxcode.tools.base import (
     BaseTool,
@@ -620,6 +619,14 @@ class ReadFileTool(BaseTool):
                     success=False,
                     output="",
                     error=f"路径不是文件: {file_path}",
+                )
+
+            # .ainotread 检查：阻止 AI 读取被命中的文件
+            if is_ainotread(path):
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"此文件被 .ainotread 规则阻止，AI 不可读取: {file_path}",
                 )
 
             file_size = path.stat().st_size
@@ -1210,6 +1217,8 @@ class ListDirectoryTool(BaseTool):
 
             if recursive:
                 for item in dir_path.rglob(pattern):
+                    if is_ainotread(item):
+                        continue
                     rel_path = item.relative_to(dir_path)
                     if item.is_dir():
                         items.append(f"📁 {rel_path}/")
@@ -1219,6 +1228,8 @@ class ListDirectoryTool(BaseTool):
             else:
                 for item in sorted(dir_path.iterdir(), key=lambda x: (not x.is_dir(), x.name)):
                     if not fnmatch.fnmatch(item.name, pattern):
+                        continue
+                    if is_ainotread(item):
                         continue
 
                     if item.is_dir():
@@ -1304,6 +1315,14 @@ class SearchInFileTool(BaseTool):
                     success=False,
                     output="",
                     error=f"文件不存在: {file_path}",
+                )
+
+            # .ainotread 检查
+            if is_ainotread(path):
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"此文件被 .ainotread 规则阻止，AI 不可读取: {file_path}",
                 )
 
             # 读取文件（二进制模式）
@@ -1511,7 +1530,7 @@ class GlobTool(BaseTool):
                 )
 
             # 执行 glob
-            matches = list(base_path.glob(pattern))
+            matches = [m for m in base_path.glob(pattern) if not is_ainotread(m)]
 
             # 排序（按修改时间）
             matches.sort(key=lambda x: x.stat().st_mtime, reverse=True)

@@ -137,12 +137,15 @@ class REPLScreen(Screen):
         SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
         # 从配置加载 TUI 状态
+        self.system_log_enabled = True
         if config is not None and hasattr(config, "tui"):
             tui_cfg = config.tui
             if hasattr(tui_cfg, "sidebar_visible"):
                 self.sidebar_visible = tui_cfg.sidebar_visible
             if hasattr(tui_cfg, "fullscreen"):
                 self.fullscreen = tui_cfg.fullscreen
+            if hasattr(tui_cfg, "system_log_enabled"):
+                self.system_log_enabled = tui_cfg.system_log_enabled
 
     def watch_busy(self, busy: bool):
         """Reactive watcher: update UI when busy state changes."""
@@ -224,6 +227,8 @@ class REPLScreen(Screen):
     # ------------------------------------------------------------------
 
     def _system(self, text: str):
+        if not getattr(self, "system_log_enabled", True):
+            return
         try:
             self.chat.add_message(MessageWidget("system", f"{_now()} {text}"))
         except Exception:
@@ -654,6 +659,7 @@ class REPLScreen(Screen):
         try:
             cfg.tui.sidebar_visible = self.sidebar_visible
             cfg.tui.fullscreen = self.fullscreen
+            cfg.tui.system_log_enabled = self.system_log_enabled
             cfg.save_tui_config()
         except Exception:
             pass
@@ -803,6 +809,7 @@ class REPLScreen(Screen):
         ("/new", "start a new session"),
         ("/sidebar", "toggle the sidebar"),
         ("/fullscreen", "toggle fullscreen (alias /fs)"),
+        ("/log [on|off]", "toggle system log display in TUI"),
         ("/cli-log [on|off]", "toggle CLI log display in TUI"),
         ("/welcome [on|off]", "toggle welcome screen on startup"),
         ("/delete [all]", "delete current/all messages (confirm required)"),
@@ -821,6 +828,7 @@ class REPLScreen(Screen):
         "sidebar": "_cmd_sidebar",
         "fullscreen": "_cmd_fullscreen",
         "fs": "_cmd_fullscreen",
+        "log": "_cmd_log",
         "cli-log": "_cmd_cli_log",
         "welcome": "_cmd_welcome",
         "delete": "_cmd_delete",
@@ -1114,6 +1122,23 @@ class REPLScreen(Screen):
 
     def _cmd_quit(self, args):
         self.action_quit()
+
+    def _cmd_log(self, args):
+        if not args:
+            state = "on" if self.system_log_enabled else "off"
+            self._system(f"System log display is {state}. Usage: /log on | off")
+            return
+        arg = args[0].lower()
+        if arg == "on":
+            self.system_log_enabled = True
+            self._system("System log display enabled")
+        elif arg == "off":
+            self.system_log_enabled = False
+            self._system("System log display disabled")
+        else:
+            self._system("Usage: /log on | off")
+            return
+        self._persist_tui_state()
 
     def _cmd_cli_log(self, args):
         cfg = self.config

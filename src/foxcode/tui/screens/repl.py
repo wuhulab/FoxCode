@@ -226,8 +226,8 @@ class REPLScreen(Screen):
     # Message helpers
     # ------------------------------------------------------------------
 
-    def _system(self, text: str):
-        if not getattr(self, "system_log_enabled", True):
+    def _system(self, text: str, *, force: bool = False):
+        if not force and not getattr(self, "system_log_enabled", True):
             return
         try:
             self.chat.add_message(MessageWidget("system", f"{_now()} {text}"))
@@ -597,7 +597,7 @@ class REPLScreen(Screen):
         self.chat.clear_messages()
         self._show_banner()
         self._session_messages.clear()
-        self._system("Chat cleared")
+        self._system("Chat cleared", force=True)
 
     @safe
     def action_new_session(self):
@@ -618,12 +618,12 @@ class REPLScreen(Screen):
         self._show_banner()
         self._refresh_sessions_list()
         self._refresh_status()
-        self._system(f"New session {self._session_id[:8]}")
+        self._system(f"New session {self._session_id[:8]}", force=True)
 
     @safe
     def action_save_session(self):
         self._save_session()
-        self._system(f"Saved session {self._session_id[:8]}")
+        self._system(f"Saved session {self._session_id[:8]}", force=True)
 
     @safe
     def action_toggle_sidebar(self):
@@ -637,7 +637,7 @@ class REPLScreen(Screen):
         self.mode = self._run_modes[self._run_mode_index]
         self.prompt_input.set_mode(self.mode)
         self._refresh_header()
-        self._system(f"Mode {ICONS.forward} {self.mode}")
+        self._system(f"Mode {ICONS.forward} {self.mode}", force=True)
 
     @safe
     def action_toggle_fullscreen(self):
@@ -648,7 +648,7 @@ class REPLScreen(Screen):
         else:
             self.sidebar.display = True
             self.sidebar_visible = True
-        self._system(f"Fullscreen {ICONS.forward} {'on' if self.fullscreen else 'off'}")
+        self._system(f"Fullscreen {ICONS.forward} {'on' if self.fullscreen else 'off'}", force=True)
         self._persist_tui_state()
 
     def _persist_tui_state(self):
@@ -716,7 +716,7 @@ class REPLScreen(Screen):
     @safe
     def action_cancel(self):
         if self.busy:
-            self._system("Cancelled")
+            self._system("Cancelled", force=True)
             self.busy = False
             self._stop_spinner()
             self.prompt_input.focus_input()
@@ -853,7 +853,7 @@ class REPLScreen(Screen):
             try:
                 getattr(self, method)(args)
             except Exception as exc:
-                self._system(f"Command error (/{name}): {exc}")
+                self._system(f"Command error (/{name}): {exc}", force=True)
             return
         self._run_cli_command(raw)
 
@@ -869,11 +869,11 @@ class REPLScreen(Screen):
             from foxcode import cli as fox_cli
         except Exception:
             if _allow_cli_log():
-                self._system(f"Unknown command: /{name}. Type /help for commands.")
+                self._system(f"Unknown command: /{name}. Type /help for commands.", force=True)
             return
         if self.agent is None and self.config is None:
             if _allow_cli_log():
-                self._system(f"Unknown command: /{name}. Type /help for commands.")
+                self._system(f"Unknown command: /{name}. Type /help for commands.", force=True)
             return
         cli_text = text if text.startswith("/") else "/" + text
         buf = io.StringIO()
@@ -904,7 +904,7 @@ class REPLScreen(Screen):
             return
 
         if exc_info is not None:
-            self._system(f"CLI command error (/{name}): {exc_info}")
+            self._system(f"CLI command error (/{name}): {exc_info}", force=True)
             return
 
         raw = _STRIP_TAGS.sub("", buf.getvalue())
@@ -1039,7 +1039,7 @@ class REPLScreen(Screen):
         lines.append(f"  {ICONS.bullet} //text  send a literal message starting with /")
         lines.append("")
         lines.append("Any other /command is forwarded to the CLI and run there.")
-        self._system("\n".join(lines))
+        self._system("\n".join(lines), force=True)
 
     def _cmd_clear(self, args):
         self._cancel_stream()
@@ -1051,14 +1051,15 @@ class REPLScreen(Screen):
 
     def _cmd_save(self, args):
         self.action_save_session()
+        self._system(f"Saved session {self._session_id[:8]}", force=True)
 
     def _cmd_mode(self, args):
         if not args:
-            self._system(f"Current mode: {self.mode}. Options: {', '.join(self._run_modes)}")
+            self._system(f"Current mode: {self.mode}. Options: {', '.join(self._run_modes)}", force=True)
             return
         target = args[0].lower()
         if target not in self._run_modes:
-            self._system(f"Unknown mode: {target}. Options: {', '.join(self._run_modes)}")
+            self._system(f"Unknown mode: {target}. Options: {', '.join(self._run_modes)}", force=True)
             return
         self._run_mode_index = self._run_modes.index(target)
         self.mode = target
@@ -1082,11 +1083,11 @@ class REPLScreen(Screen):
                 pass
         self._refresh_header()
         self._refresh_status()
-        self._system(f"Mode {ICONS.forward} {self.mode}")
+        self._system(f"Mode {ICONS.forward} {self.mode}", force=True)
 
     def _cmd_sidebar(self, args):
         self.action_toggle_sidebar()
-        self._system(f"Sidebar {ICONS.forward} {'on' if self.sidebar_visible else 'off'}")
+        self._system(f"Sidebar {ICONS.forward} {'on' if self.sidebar_visible else 'off'}", force=True)
 
     def _cmd_fullscreen(self, args):
         self.action_toggle_fullscreen()
@@ -1095,30 +1096,30 @@ class REPLScreen(Screen):
         from foxcode.tui.theme import list_themes, set_theme
 
         if not args:
-            self._system(f"Available themes: {', '.join(list_themes())}. Current: {get_theme().fox}")
+            self._system(f"Available themes: {', '.join(list_themes())}. Current: {get_theme().fox}", force=True)
             return
         name = args[0].lower()
         if name not in list_themes():
-            self._system(f"Unknown theme: {name}. Options: {', '.join(list_themes())}")
+            self._system(f"Unknown theme: {name}. Options: {', '.join(list_themes())}", force=True)
             return
         set_theme(name)
         theme = get_theme()
         self.app.styles.background = getattr(theme, "background", "#0d1117")
         self.app.refresh()
         self._refresh_header()
-        self._system(f"Theme {ICONS.forward} {name}")
+        self._system(f"Theme {ICONS.forward} {name}", force=True)
 
     def _cmd_history(self, args):
         history = self.prompt_input.get_history()
         if not history:
-            self._system("No history yet.")
+            self._system("No history yet.", force=True)
             return
         shown = history[-20:]
         lines = [f"{ICONS.fox} Input history ({len(history)}):"]
         for i, item in enumerate(shown, start=max(1, len(history) - 19)):
             snippet = item if len(item) <= 60 else item[:57] + "..."
             lines.append(f"  {i}. {snippet}")
-        self._system("\n".join(lines))
+        self._system("\n".join(lines), force=True)
 
     def _cmd_quit(self, args):
         self.action_quit()
@@ -1126,38 +1127,38 @@ class REPLScreen(Screen):
     def _cmd_log(self, args):
         if not args:
             state = "on" if self.system_log_enabled else "off"
-            self._system(f"System log display is {state}. Usage: /log on | off")
+            self._system(f"System log display is {state}. Usage: /log on | off", force=True)
             return
         arg = args[0].lower()
         if arg == "on":
             self.system_log_enabled = True
-            self._system("System log display enabled")
+            self._system("System log display enabled", force=True)
         elif arg == "off":
             self.system_log_enabled = False
-            self._system("System log display disabled")
+            self._system("System log display disabled", force=True)
         else:
-            self._system("Usage: /log on | off")
+            self._system("Usage: /log on | off", force=True)
             return
         self._persist_tui_state()
 
     def _cmd_cli_log(self, args):
         cfg = self.config
         if cfg is None or not hasattr(cfg, "tui"):
-            self._system("TUI 配置不可用")
+            self._system("TUI 配置不可用", force=True)
             return
         if not args:
             state = "on" if cfg.tui.cli_log_enabled else "off"
-            self._system(f"CLI log display is {state}. Usage: /cli-log on | off")
+            self._system(f"CLI log display is {state}. Usage: /cli-log on | off", force=True)
             return
         arg = args[0].lower()
         if arg == "on":
             cfg.tui.cli_log_enabled = True
-            self._system("CLI log display enabled")
+            self._system("CLI log display enabled", force=True)
         elif arg == "off":
             cfg.tui.cli_log_enabled = False
-            self._system("CLI log display disabled")
+            self._system("CLI log display disabled", force=True)
         else:
-            self._system("Usage: /cli-log on | off")
+            self._system("Usage: /cli-log on | off", force=True)
             return
         try:
             cfg.save_tui_config()
@@ -1167,21 +1168,21 @@ class REPLScreen(Screen):
     def _cmd_welcome(self, args):
         cfg = self.config
         if cfg is None or not hasattr(cfg, "tui"):
-            self._system("TUI 配置不可用")
+            self._system("TUI 配置不可用", force=True)
             return
         if not args:
             state = "on" if cfg.tui.welcome_enabled else "off"
-            self._system(f"Welcome screen is {state}. Usage: /welcome on | off")
+            self._system(f"Welcome screen is {state}. Usage: /welcome on | off", force=True)
             return
         arg = args[0].lower()
         if arg == "on":
             cfg.tui.welcome_enabled = True
-            self._system("Welcome screen enabled")
+            self._system("Welcome screen enabled", force=True)
         elif arg == "off":
             cfg.tui.welcome_enabled = False
-            self._system("Welcome screen disabled")
+            self._system("Welcome screen disabled", force=True)
         else:
-            self._system("Usage: /welcome on | off")
+            self._system("Usage: /welcome on | off", force=True)
             return
         try:
             cfg.save_tui_config()
@@ -1195,9 +1196,9 @@ class REPLScreen(Screen):
                 if confirmed:
                     self._session_messages.clear()
                     self.chat.clear_messages()
-                    self._system("All messages deleted")
+                    self._system("All messages deleted", force=True)
                 else:
-                    self._system("Delete cancelled")
+                    self._system("Delete cancelled", force=True)
                 self.prompt_input.focus_input()
 
             self.app.push_screen(
@@ -1214,9 +1215,9 @@ class REPLScreen(Screen):
             if confirmed:
                 self._session_messages.clear()
                 self.chat.clear_messages()
-                self._system("Current session messages deleted")
+                self._system("Current session messages deleted", force=True)
             else:
-                self._system("Delete cancelled")
+                self._system("Delete cancelled", force=True)
             self.prompt_input.focus_input()
 
         self.app.push_screen(

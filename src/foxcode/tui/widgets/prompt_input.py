@@ -28,6 +28,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/new", "新建会话"),
     ("/sidebar", "切换侧边栏"),
     ("/fullscreen", "全屏 (别名 /fs)"),
+    ("/log", "切换系统日志显示 on|off"),
     ("/cli-log", "切换 CLI 日志显示 on|off"),
     ("/welcome", "切换欢迎界面 on|off"),
     ("/delete", "删除当前消息 (all 删除所有)"),
@@ -96,9 +97,6 @@ class _SendTextArea(TextArea):
         if event.key == "enter":
             if suggest_active and prompt.suggest.selected_command:
                 prompt.accept_suggestion()
-                event.stop()
-                event.prevent_default()
-                return
             self.post_message(self.Submitted(self.text))
             event.stop()
             event.prevent_default()

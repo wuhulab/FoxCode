@@ -13,6 +13,9 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Static
 
 from foxcode.tui.theme import get_theme
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigFormScreen(ModalScreen):
@@ -61,6 +64,7 @@ class ConfigFormScreen(ModalScreen):
         try:
             self.query_one("#field-" + self._fields[0]["key"], Input).focus()
         except Exception:
+            logger.warning("自动聚焦第一个表单字段失败", exc_info=True)
             pass
 
     def _collect(self) -> dict:

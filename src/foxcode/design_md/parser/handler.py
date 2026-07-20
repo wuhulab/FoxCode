@@ -67,7 +67,7 @@ class ParserHandler:
             return self._merge_code_blocks(blocks, sections, document_sections)
 
         except Exception as e:
-            logger.error("解析器发生未知错误: %s", e)
+            logger.error("解析器发生未知错误: %s", e, exc_info=True)
             return ParserResult(
                 success=False,
                 error=ParserError(

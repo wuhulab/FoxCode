@@ -305,6 +305,7 @@ class SessionTracker:
             try:
                 tracker._start_time = datetime.fromisoformat(data["start_time"])
             except Exception:
+                logger.warning("解析 start_time 失败", exc_info=True)
                 pass
         return tracker
 
@@ -436,7 +437,7 @@ class OpenSpaceManager:
                     self._ai_auto_summarize = state.get("ai_auto_summarize", False)
                     self._logger.info(f"OpenSpace 状态: {'启用' if self._enabled else '禁用'}, AI自动总结: {'启用' if self._ai_auto_summarize else '禁用'}")
             except Exception as e:
-                self._logger.warning(f"加载状态文件失败: {e}")
+                self._logger.warning(f"加载状态文件失败: {e}", exc_info=True)
                 self._enabled = True
                 self._ai_auto_summarize = False
 
@@ -449,7 +450,7 @@ class OpenSpaceManager:
                     "ai_auto_summarize": self._ai_auto_summarize,
                 }, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            self._logger.error(f"保存状态文件失败: {e}")
+            self._logger.error(f"保存状态文件失败: {e}", exc_info=True)
 
     @property
     def enabled(self) -> bool:
@@ -519,7 +520,7 @@ class OpenSpaceManager:
                     self._experiences[exp.id] = exp
                     loaded += 1
             except Exception as e:
-                self._logger.error(f"加载经验文件失败 {exp_file}: {e}")
+                self._logger.error(f"加载经验文件失败 {exp_file}: {e}", exc_info=True)
 
         self._logger.info(f"加载了 {loaded} 条经验")
         return loaded
@@ -549,7 +550,7 @@ class OpenSpaceManager:
             return True
 
         except Exception as e:
-            self._logger.error(f"保存经验失败: {e}")
+            self._logger.error(f"保存经验失败: {e}", exc_info=True)
             return False
 
     def delete(self, exp_id: str) -> bool:
@@ -575,7 +576,7 @@ class OpenSpaceManager:
             return True
 
         except Exception as e:
-            self._logger.error(f"删除经验失败: {e}")
+            self._logger.error(f"删除经验失败: {e}", exc_info=True)
             return False
 
     def get(self, exp_id: str) -> Experience | None:

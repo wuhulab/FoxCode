@@ -332,7 +332,7 @@ class MultiAgentOrchestrator:
         try:
             self.session.switch_agent_role(new_role)
         except Exception as e:
-            logger.warning(f"通知会话切换角色失败: {e}")
+            logger.warning(f"通知会话切换角色失败: {e}", exc_info=True)
 
         logger.info(f"代理角色切换: {old_role.value} -> {new_role.value}")
 
@@ -541,7 +541,7 @@ class MultiAgentOrchestrator:
             return report
 
         except Exception as e:
-            logger.error(f"评估任务 {task.id} 时发生错误: {e}")
+            logger.error(f"评估任务 {task.id} 时发生错误: {e}", exc_info=True)
             self._stats["evaluations_failed"] += 1
             raise
 
@@ -632,7 +632,7 @@ class MultiAgentOrchestrator:
                 )
 
             except Exception as e:
-                logger.error(f"生成-评估循环出错: {e}")
+                logger.error(f"生成-评估循环出错: {e}", exc_info=True)
                 last_error = str(e)
                 revision_count += 1
 
@@ -794,7 +794,7 @@ class MultiAgentOrchestrator:
                     return False
 
             except Exception as e:
-                logger.error(f"上下文重置过程中发生错误: {e}")
+                logger.error(f"上下文重置过程中发生错误: {e}", exc_info=True)
                 return False
 
         return False
@@ -851,7 +851,7 @@ class MultiAgentOrchestrator:
         try:
             self.session.restore_from_artifact(artifact)
         except Exception as e:
-            logger.warning(f"恢复会话状态失败: {e}")
+            logger.warning(f"恢复会话状态失败: {e}", exc_info=True)
 
         logger.info(
             f"已从 HandoffArtifact 恢复协调器状态 - "

@@ -225,7 +225,7 @@ class KnowledgeBase:
             logger.info(f"知识库异步初始化完成，已加载 {len(self._knowledge)} 条知识")
 
         except Exception as e:
-            logger.error(f"知识库初始化失败: {e}")
+            logger.error(f"知识库初始化失败: {e}", exc_info=True)
             raise
 
     async def _init_embedding_model(self) -> None:
@@ -265,7 +265,7 @@ class KnowledgeBase:
             logger.info(f"已加载 {len(self._knowledge)} 条知识")
 
         except Exception as e:
-            logger.error(f"加载知识失败: {e}")
+            logger.error(f"加载知识失败: {e}", exc_info=True)
 
     def _update_indexes(self, knowledge: Knowledge) -> None:
         """更新索引"""
@@ -318,7 +318,7 @@ class KnowledgeBase:
                 embedding = self._embedding_model.encode(text)
                 return embedding.tolist()
         except Exception as e:
-            logger.warning(f"生成嵌入失败: {e}")
+            logger.warning(f"生成嵌入失败: {e}", exc_info=True)
             return None
 
     async def store(self, knowledge: Knowledge) -> str:
@@ -694,7 +694,7 @@ class KnowledgeBase:
             return True
 
         except Exception as e:
-            logger.error(f"保存知识库失败: {e}")
+            logger.error(f"保存知识库失败: {e}", exc_info=True)
             return False
 
     def get_statistics(self) -> dict[str, Any]:

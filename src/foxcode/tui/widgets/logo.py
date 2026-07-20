@@ -16,6 +16,9 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
 
 from foxcode.tui.theme import get_theme
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Mascot ASCII art lives in standalone .txt files so it can be edited without
 # touching code. See src/foxcode/tui/assets/mascot/.
@@ -35,6 +38,7 @@ def _load_art(filename: str) -> str:
     try:
         return (ART_DIR / filename).read_text(encoding="utf-8")
     except Exception:
+        logger.warning("读取 ASCII 艺术文件失败: %s", filename, exc_info=True)
         return ""
 
 

@@ -201,7 +201,7 @@ class DesignModeManager:
             return self._cached_tokens
 
         except Exception as e:
-            logger.error("加载设计令牌失败: %s", e)
+            logger.error("加载设计令牌失败: %s", e, exc_info=True)
             return ""
 
 

@@ -235,7 +235,7 @@ class SensitiveDataMasker:
             try:
                 masked_text = pattern.pattern.sub(pattern.replacement, masked_text)
             except Exception as e:
-                logger.debug(f"脱敏模式 {pattern.name} 应用失败: {e}")
+                logger.debug(f"脱敏模式 {pattern.name} 应用失败: {e}", exc_info=True)
 
         return masked_text
 
@@ -299,6 +299,7 @@ class SensitiveDataMasker:
             else:
                 return "***PATH***"
         except Exception:
+            logger.warning("路径掩码失败，返回默认掩码", exc_info=True)
             return "***PATH***"
 
     def detect_sensitive_data(self, text: str) -> list[dict[str, Any]]:
@@ -428,6 +429,7 @@ class SensitiveLogFilter(logging.Filter):
                         masked = "***PATH***"
                     text = text.replace(match, masked)
                 except Exception:
+                    logger.warning("路径替换掩码失败，使用默认掩码", exc_info=True)
                     text = text.replace(match, "***PATH***")
 
         return text

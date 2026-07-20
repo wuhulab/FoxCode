@@ -1,7 +1,10 @@
 """FoxCode PySide Desktop GUI - 主窗口"""
+import logging
 import sys
 import asyncio
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -39,6 +42,7 @@ class AgentWorker(QObject):
             result = loop.run_until_complete(self._run_chat())
             self.finished.emit(result)
         except Exception as exc:
+            logger.warning(f"聊天线程异常: {exc}", exc_info=True)
             self.error.emit(str(exc))
         finally:
             loop.close()

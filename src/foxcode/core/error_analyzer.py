@@ -625,7 +625,7 @@ class ErrorAnalyzer:
             return "\n".join(context_parts)
 
         except Exception as e:
-            logger.debug(f"获取上下文失败: {e}")
+            logger.debug(f"获取上下文失败: {e}", exc_info=True)
             return ""
 
     def classify_error(self, error: Exception) -> ErrorClassification:

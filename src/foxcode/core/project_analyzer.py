@@ -630,7 +630,7 @@ class ProjectAnalyzer:
                             line_count = self._count_file_lines(file_path)
                             language_counts[language] += line_count
                         except Exception as e:
-                            logger.debug(f"无法读取文件 {file_path}: {e}")
+                            logger.debug(f"无法读取文件 {file_path}: {e}", exc_info=True)
                             language_counts[language] += 1
 
             tech_stack.languages = dict(language_counts)
@@ -777,7 +777,7 @@ class ProjectAnalyzer:
                     security_scores.append(self._score_security(file_path, content))
 
                 except Exception as e:
-                    logger.debug(f"无法分析文件 {file_path}: {e}")
+                    logger.debug(f"无法分析文件 {file_path}: {e}", exc_info=True)
 
             if style_scores:
                 score.code_style = sum(style_scores) / len(style_scores) * 100
@@ -1139,6 +1139,7 @@ class ProjectAnalyzer:
         try:
             lines = self._count_file_lines(file_path)
         except Exception:
+            logger.warning(f"统计文件行数失败: {file_path}", exc_info=True)
             lines = 0
 
         name = file_path.name
@@ -1167,6 +1168,7 @@ class ProjectAnalyzer:
             with open(file_path, encoding='utf-8', errors='ignore') as f:
                 return sum(1 for _ in f)
         except Exception:
+            logger.warning(f"读取文件行数失败: {file_path}", exc_info=True)
             return 0
 
     def _matches_patterns(self, text: str, patterns: list[re.Pattern]) -> bool:
@@ -1303,7 +1305,7 @@ class ProjectAnalyzer:
                             frameworks.add(name)
 
             except Exception as e:
-                logger.debug(f"解析 pyproject.toml 失败: {e}")
+                logger.debug(f"解析 pyproject.toml 失败: {e}", exc_info=True)
 
         package_json_path = project_path / "package.json"
         if package_json_path.exists():
@@ -1343,7 +1345,7 @@ class ProjectAnalyzer:
                             frameworks.add(name)
 
             except Exception as e:
-                logger.debug(f"解析 package.json 失败: {e}")
+                logger.debug(f"解析 package.json 失败: {e}", exc_info=True)
 
         tech_stack.frameworks = sorted(frameworks)
 
@@ -1371,6 +1373,7 @@ class ProjectAnalyzer:
                         if re.search(pattern, content, re.IGNORECASE):
                             databases.add(db_name)
                 except Exception:
+                    logger.warning(f"读取数据库检测文件失败: {file_path}", exc_info=True)
                     continue
 
         tech_stack.databases = sorted(databases)

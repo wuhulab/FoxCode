@@ -276,7 +276,7 @@ class ProgressManager:
             self.progress_file.parent.mkdir(parents=True, exist_ok=True)
             logger.debug(f"进度文件目录已确保存在: {self.progress_file.parent}")
         except Exception as e:
-            logger.error(f"创建进度文件目录失败: {e}")
+            logger.error(f"创建进度文件目录失败: {e}", exc_info=True)
             raise
 
     @property
@@ -326,7 +326,7 @@ class ProgressManager:
             return self._data
 
         except Exception as e:
-            logger.error(f"创建进度文件失败: {e}")
+            logger.error(f"创建进度文件失败: {e}", exc_info=True)
             raise
 
     def load(self) -> ProgressData:
@@ -347,7 +347,7 @@ class ProgressManager:
             return self._data
 
         except Exception as e:
-            logger.error(f"加载进度文件失败: {e}")
+            logger.error(f"加载进度文件失败: {e}", exc_info=True)
             raise
 
     def _parse_markdown(self, content: str) -> ProgressData:
@@ -443,7 +443,7 @@ class ProgressManager:
             self.progress_file.write_text(content, encoding="utf-8")
             logger.debug(f"进度文件已保存: {self.progress_file}")
         except Exception as e:
-            logger.error(f"保存进度文件失败: {e}")
+            logger.error(f"保存进度文件失败: {e}", exc_info=True)
             raise
 
     def update_status(
@@ -468,7 +468,7 @@ class ProgressManager:
             logger.info(f"进度状态已更新: 当前任务={current_task}")
 
         except Exception as e:
-            logger.error(f"更新进度状态失败: {e}")
+            logger.error(f"更新进度状态失败: {e}", exc_info=True)
             raise
 
     def add_work_record(
@@ -499,7 +499,7 @@ class ProgressManager:
             logger.info(f"工作记录已添加: 会话 {session_id}, {len(tasks)} 个任务")
 
         except Exception as e:
-            logger.error(f"添加工作记录失败: {e}")
+            logger.error(f"添加工作记录失败: {e}", exc_info=True)
             raise
 
     def add_todo(
@@ -521,7 +521,7 @@ class ProgressManager:
             logger.info(f"待办事项已添加: {content}")
 
         except Exception as e:
-            logger.error(f"添加待办事项失败: {e}")
+            logger.error(f"添加待办事项失败: {e}", exc_info=True)
             raise
 
     def complete_todo(self, content: str) -> bool:
@@ -546,7 +546,7 @@ class ProgressManager:
             return False
 
         except Exception as e:
-            logger.error(f"完成待办事项失败: {e}")
+            logger.error(f"完成待办事项失败: {e}", exc_info=True)
             raise
 
     def remove_todo(self, content: str) -> bool:
@@ -571,7 +571,7 @@ class ProgressManager:
             return False
 
         except Exception as e:
-            logger.error(f"移除待办事项失败: {e}")
+            logger.error(f"移除待办事项失败: {e}", exc_info=True)
             raise
 
     def add_issue(self, description: str, solution: str = "") -> None:
@@ -592,7 +592,7 @@ class ProgressManager:
             logger.info(f"问题记录已添加: {description}")
 
         except Exception as e:
-            logger.error(f"添加问题记录失败: {e}")
+            logger.error(f"添加问题记录失败: {e}", exc_info=True)
             raise
 
     def add_next_step(self, step: str) -> None:
@@ -608,7 +608,7 @@ class ProgressManager:
             logger.info(f"下一步计划已添加: {step}")
 
         except Exception as e:
-            logger.error(f"添加下一步计划失败: {e}")
+            logger.error(f"添加下一步计划失败: {e}", exc_info=True)
             raise
 
     def clear_next_steps(self) -> None:
@@ -619,7 +619,7 @@ class ProgressManager:
             logger.info("下一步计划已清空")
 
         except Exception as e:
-            logger.error(f"清空下一步计划失败: {e}")
+            logger.error(f"清空下一步计划失败: {e}", exc_info=True)
             raise
 
     def get_summary(self, max_length: int = 2000) -> str:
@@ -676,7 +676,7 @@ class ProgressManager:
             return summary
 
         except Exception as e:
-            logger.error(f"获取进度摘要失败: {e}")
+            logger.error(f"获取进度摘要失败: {e}", exc_info=True)
             return f"获取进度摘要失败: {e}"
 
     def get_pending_todos(self) -> list[ProgressEntry]:
@@ -840,7 +840,7 @@ class ProgressManager:
             try:
                 self._save()
             except Exception as e:
-                logger.warning(f"上下文退出时保存进度失败: {e}")
+                logger.warning(f"上下文退出时保存进度失败: {e}", exc_info=True)
 
 
 # ==================== 便捷函数 ====================

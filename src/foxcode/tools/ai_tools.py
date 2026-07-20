@@ -37,9 +37,12 @@ FoxCode AI工具模块 - AI相关功能的工具集
 - AI辅助：让AI帮助分析和决策
 """
 
+import logging
 from typing import Any
 
 from foxcode.tools import BaseTool, ToolParameter, ToolResult, ToolCategory, tool
+
+logger = logging.getLogger(__name__)
 
 
 @tool
@@ -114,6 +117,7 @@ class AIChatTool(BaseTool):
                 output=response
             )
         except Exception as e:
+            logger.warning(f"AI聊天工具执行失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -174,6 +178,7 @@ class AICodeTool(BaseTool):
                 output=response
             )
         except Exception as e:
+            logger.warning(f"AI代码生成工具执行失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -234,6 +239,7 @@ class AISummarizeTool(BaseTool):
                 output=response
             )
         except Exception as e:
+            logger.warning(f"AI摘要工具执行失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",

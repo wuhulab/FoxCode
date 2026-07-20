@@ -105,7 +105,7 @@ class SessionEncryptor:
                 self._load_key(key_path)
                 logger.debug("已加载现有加密密钥")
             except Exception as e:
-                logger.warning(f"加载密钥失败: {e}")
+                logger.warning(f"加载密钥失败: {e}", exc_info=True)
                 if self.config.auto_generate_key:
                     self._generate_and_save_key(key_path)
                 else:
@@ -219,7 +219,7 @@ class SessionEncryptor:
                 )
                 logger.debug(f"已设置文件隐藏属性: {file_path}")
             except Exception as e:
-                logger.debug(f"设置 Windows 文件属性失败: {e}")
+                logger.debug(f"设置 Windows 文件属性失败: {e}", exc_info=True)
             return
 
         try:
@@ -256,7 +256,7 @@ class SessionEncryptor:
             logger.debug(f"已设置 Windows ACL 权限: {file_path}")
 
         except Exception as e:
-            logger.warning(f"设置 Windows ACL 权限失败: {e}")
+            logger.warning(f"设置 Windows ACL 权限失败: {e}", exc_info=True)
             # 回退到基本方法
             try:
                 import subprocess
@@ -266,6 +266,7 @@ class SessionEncryptor:
                     capture_output=True,
                 )
             except Exception:
+                logger.warning("设置文件权限回退失败", exc_info=True)
                 pass
 
     def encrypt(self, data: str | dict[str, Any]) -> str:
@@ -352,6 +353,7 @@ class SessionEncryptor:
         try:
             return data.startswith("gAAAAAB")
         except Exception:
+            logger.warning("检查加密状态失败", exc_info=True)
             return False
 
 
@@ -452,7 +454,7 @@ class SecureSessionStorage:
                 return storage_data.get("data", {})
 
         except Exception as e:
-            logger.error(f"加载会话数据失败: {e}")
+            logger.error(f"加载会话数据失败: {e}", exc_info=True)
             return None
 
     def delete(self, session_id: str) -> bool:

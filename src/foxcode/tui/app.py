@@ -20,6 +20,9 @@ from textual.binding import Binding
 from foxcode.tui.screens.repl import REPLScreen
 from foxcode.tui.screens.welcome import WelcomeScreen
 from foxcode.tui.theme import get_theme
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_utf8():
@@ -27,10 +30,12 @@ def _ensure_utf8():
         try:
             sys.stdout.reconfigure(encoding="utf-8")
         except Exception:
+            logger.warning("设置 stdout 编码为 UTF-8 失败", exc_info=True)
             pass
         try:
             sys.stderr.reconfigure(encoding="utf-8")
         except Exception:
+            logger.warning("设置 stderr 编码为 UTF-8 失败", exc_info=True)
             pass
 
 
@@ -105,6 +110,7 @@ def run_tui(agent=None, config=None) -> None:
         _tui_old_log_level = _cli_stream.level
         _cli_stream.setLevel(logging.CRITICAL + 1)
     except Exception:
+        logger.warning("获取 CLI stream handler 失败", exc_info=True)
         _cli_stream = None
         _tui_old_log_level = None
 
@@ -116,4 +122,5 @@ def run_tui(agent=None, config=None) -> None:
             try:
                 _cli_stream.setLevel(_tui_old_log_level)
             except Exception:
+                logger.warning("恢复 CLI stream 日志级别失败", exc_info=True)
                 pass

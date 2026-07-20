@@ -146,6 +146,7 @@ def safe_eval(expression: str, globals_dict: dict[str, Any], locals_dict: dict[s
         return result, None
 
     except Exception as e:
+        logger.warning("安全求值失败", exc_info=True)
         return None, f"{type(e).__name__}: {str(e)}"
 
 
@@ -451,7 +452,7 @@ class AdvancedDebugger:
                             if not result:
                                 return self._trace_func
                         except Exception as e:
-                            logger.warning(f"断点条件求值异常: {e}")
+                            logger.warning(f"断点条件求值异常: {e}", exc_info=True)
                             return self._trace_func
 
                     # 命中断点
@@ -487,6 +488,7 @@ class AdvancedDebugger:
                     if frame.f_lineno <= len(lines):
                         code_line = lines[frame.f_lineno - 1].strip()
             except Exception:
+                logger.warning("读取代码行失败", exc_info=True)
                 pass
 
             stack_frame = StackFrame(
@@ -631,7 +633,7 @@ class AdvancedDebugger:
             if self._pdb:
                 self._pdb.set_next(self._get_current_frame())
         except Exception as e:
-            logger.error(f"单步执行失败: {e}")
+            logger.error(f"单步执行失败: {e}", exc_info=True)
 
         return StopReason.STEP
 
@@ -651,7 +653,7 @@ class AdvancedDebugger:
             if self._pdb:
                 self._pdb.set_step()
         except Exception as e:
-            logger.error(f"单步执行失败: {e}")
+            logger.error(f"单步执行失败: {e}", exc_info=True)
 
         return StopReason.STEP
 
@@ -671,7 +673,7 @@ class AdvancedDebugger:
             if self._pdb:
                 self._pdb.set_return(self._get_current_frame())
         except Exception as e:
-            logger.error(f"单步执行失败: {e}")
+            logger.error(f"单步执行失败: {e}", exc_info=True)
 
         return StopReason.STEP
 
@@ -779,6 +781,7 @@ class AdvancedDebugger:
                 type=type(result).__name__,
             )
         except Exception as e:
+            logger.warning("求值异常", exc_info=True)
             return EvaluationResult(
                 expression=expression,
                 error=f"{type(e).__name__}: {str(e)}",
@@ -820,7 +823,7 @@ class AdvancedDebugger:
             frame.locals[name] = evaluated
             return True
         except Exception as e:
-            logger.error(f"设置变量失败: {e}")
+            logger.error(f"设置变量失败: {e}", exc_info=True)
             return False
 
     def add_watch(self, expression: str) -> bool:

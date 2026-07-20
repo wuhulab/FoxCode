@@ -25,11 +25,14 @@
 """
 
 import importlib
+import logging
 import os
 import sys
 from typing import Dict, List, Type, Optional, Callable, Any
 
 from foxcode.core.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class CommandType:
@@ -134,8 +137,7 @@ class CommandManager:
                             for alias in module.COMMAND_ALIASES:
                                 self._command_aliases[alias] = command_name
                 except Exception as e:
-                    # 加载失败不中断，打印错误继续加载其他命令
-                    print(f"加载命令 {filename} 失败: {e}")
+                    logger.warning(f"加载命令 {filename} 失败: {e}")
 
     def _load_dynamic_commands(self):
         """
@@ -156,7 +158,7 @@ class CommandManager:
                     if hasattr(module, 'register_command'):
                         self.commands[command_name] = module
                 except Exception as e:
-                    print(f"加载动态命令 {command_name} 失败: {e}")
+                    logger.warning(f"加载动态命令 {command_name} 失败: {e}")
 
     def register_commands(self, cli):
         """

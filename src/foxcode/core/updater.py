@@ -338,7 +338,7 @@ class GitHubReleasesClient:
             logger.error(f"JSON 解析错误: {e}")
             return None
         except Exception as e:
-            logger.error(f"请求失败: {e}")
+            logger.error(f"请求失败: {e}", exc_info=True)
             return None
 
     def _get_current_version(self) -> str:
@@ -445,7 +445,7 @@ class GitHubReleasesClient:
                 draft=data.get("draft", False),
             )
         except Exception as e:
-            logger.error(f"解析 release 数据失败: {e}")
+            logger.error(f"解析 release 数据失败: {e}", exc_info=True)
             return None
 
 
@@ -531,7 +531,7 @@ class UpdateDownloader:
             logger.error(f"下载失败 (网络错误): {e.reason}")
             return None
         except Exception as e:
-            logger.error(f"下载失败: {e}")
+            logger.error(f"下载失败: {e}", exc_info=True)
             # 清理不完整的文件
             if filepath.exists():
                 filepath.unlink()
@@ -570,7 +570,7 @@ class UpdateDownloader:
                 return False
 
         except Exception as e:
-            logger.error(f"校验和验证失败: {e}")
+            logger.error(f"校验和验证失败: {e}", exc_info=True)
             return False
 
 
@@ -630,7 +630,7 @@ class UpdateInstaller:
             return success
 
         except Exception as e:
-            logger.error(f"安装更新失败: {e}")
+            logger.error(f"安装更新失败: {e}", exc_info=True)
             return False
 
     def _create_backup(self, target_dir: Path) -> Path | None:
@@ -653,7 +653,7 @@ class UpdateInstaller:
             return backup_path
 
         except Exception as e:
-            logger.error(f"创建备份失败: {e}")
+            logger.error(f"创建备份失败: {e}", exc_info=True)
             return None
 
     def _extract_zip(self, archive_path: Path, target_dir: Path) -> bool:
@@ -685,7 +685,7 @@ class UpdateInstaller:
             logger.error(f"无效的 ZIP 文件: {e}")
             return False
         except Exception as e:
-            logger.error(f"解压失败: {e}")
+            logger.error(f"解压失败: {e}", exc_info=True)
             return False
 
     def _extract_tar(self, archive_path: Path, target_dir: Path) -> bool:
@@ -714,7 +714,7 @@ class UpdateInstaller:
             return True
 
         except Exception as e:
-            logger.error(f"解压 TAR 文件失败: {e}")
+            logger.error(f"解压 TAR 文件失败: {e}", exc_info=True)
             return False
 
     def restore_backup(self, backup_path: Path, target_dir: Path) -> bool:
@@ -738,7 +738,7 @@ class UpdateInstaller:
             return True
 
         except Exception as e:
-            logger.error(f"恢复备份失败: {e}")
+            logger.error(f"恢复备份失败: {e}", exc_info=True)
             return False
 
 
@@ -821,7 +821,7 @@ class SourceCodeInstaller:
             logger.error(f"下载源码失败 (网络错误): {e.reason}")
             return None
         except Exception as e:
-            logger.error(f"下载源码失败: {e}")
+            logger.error(f"下载源码失败: {e}", exc_info=True)
             if filepath.exists():
                 filepath.unlink()
             return None
@@ -869,7 +869,7 @@ class SourceCodeInstaller:
             logger.error(f"无效的 ZIP 文件: {e}")
             return None
         except Exception as e:
-            logger.error(f"解压源码失败: {e}")
+            logger.error(f"解压源码失败: {e}", exc_info=True)
             return None
 
     def install_from_source(
@@ -950,7 +950,7 @@ class SourceCodeInstaller:
             logger.error("安装超时")
             return False, "安装超时，请检查网络连接或手动安装", False
         except Exception as e:
-            logger.error(f"安装失败: {e}")
+            logger.error(f"安装失败: {e}", exc_info=True)
             return False, str(e), False
 
     def _generate_update_script(self, source_dir: Path, upgrade: bool = True) -> Path:
@@ -1045,6 +1045,7 @@ read -p "按回车键退出..."
         try:
             os.chmod(sh_path, 0o755)
         except Exception:
+            logger.warning(f"设置脚本可执行权限失败: {sh_path}", exc_info=True)
             pass
 
         logger.info(f"已生成更新脚本: {bat_path}")
@@ -1058,7 +1059,7 @@ read -p "按回车键退出..."
                 shutil.rmtree(self.working_dir)
                 logger.info("临时文件已清理")
         except Exception as e:
-            logger.warning(f"清理临时文件失败: {e}")
+            logger.warning(f"清理临时文件失败: {e}", exc_info=True)
 
 
 class FoxCodeUpdater:
@@ -1186,7 +1187,7 @@ class FoxCodeUpdater:
 
             return config.get("update", {})
         except Exception as e:
-            logger.warning(f"加载更新配置失败: {e}")
+            logger.warning(f"加载更新配置失败: {e}", exc_info=True)
             return {}
 
     def _save_update_config(self, updates: dict[str, Any]) -> bool:
@@ -1212,6 +1213,7 @@ class FoxCodeUpdater:
                     with open(self.config_path, "rb") as f:
                         existing_config = tomllib.load(f)
                 except Exception:
+                    logger.warning("读取现有配置失败，使用空配置", exc_info=True)
                     existing_config = {}
 
             # 更新 update 配置
@@ -1231,7 +1233,7 @@ class FoxCodeUpdater:
                 return self._write_simple_config(existing_config)
 
         except Exception as e:
-            logger.error(f"保存更新配置失败: {e}")
+            logger.error(f"保存更新配置失败: {e}", exc_info=True)
             return False
 
     def _write_simple_config(self, config: dict) -> bool:
@@ -1266,7 +1268,7 @@ class FoxCodeUpdater:
 
             return True
         except Exception as e:
-            logger.error(f"写入配置失败: {e}")
+            logger.error(f"写入配置失败: {e}", exc_info=True)
             return False
 
     def _write_toml_value(self, f, key: str, value, indent: str = "") -> None:
@@ -1326,6 +1328,7 @@ class FoxCodeUpdater:
                 if elapsed.total_seconds() < interval_hours * 3600:
                     return False
             except Exception:
+                logger.warning("解析上次检查时间失败", exc_info=True)
                 pass
 
         return True
@@ -1466,7 +1469,7 @@ class FoxCodeUpdater:
                 )
 
         except Exception as e:
-            logger.error(f"检查更新失败: {e}")
+            logger.error(f"检查更新失败: {e}", exc_info=True)
             return UpdateResult(
                 status=UpdateStatus.CHECK_FAILED,
                 current_version=self.current_version,
@@ -1626,6 +1629,7 @@ class FoxCodeUpdater:
                     return current
                 current = current.parent
         except Exception:
+            logger.warning("检测模块路径失败", exc_info=True)
             pass
 
         # 尝试从 sys.path 检测
@@ -1989,10 +1993,10 @@ class BackgroundUpdateChecker:
                 try:
                     callback(self._result)
                 except Exception as e:
-                    logger.error(f"更新检查回调执行失败: {e}")
+                    logger.error(f"更新检查回调执行失败: {e}", exc_info=True)
 
         except Exception as e:
-            logger.error(f"后台更新检查异常: {e}")
+            logger.error(f"后台更新检查异常: {e}", exc_info=True)
             self._result = UpdateResult(
                 status=UpdateStatus.CHECK_FAILED,
                 current_version="unknown",

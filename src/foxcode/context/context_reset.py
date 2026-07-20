@@ -462,7 +462,7 @@ class ContextResetManager:
         except AttributeError as e:
             logger.error(f"获取上下文使用信息失败（属性错误）: {e}")
         except Exception as e:
-            logger.error(f"获取上下文使用信息失败: {e}")
+            logger.error(f"获取上下文使用信息失败: {e}", exc_info=True)
 
         return info
 
@@ -547,7 +547,7 @@ class ContextResetManager:
             artifact.save(handoff_path)
             logger.info(f"HandoffArtifact 已创建并保存: {handoff_path}")
         except Exception as e:
-            logger.error(f"保存 HandoffArtifact 失败: {e}")
+            logger.error(f"保存 HandoffArtifact 失败: {e}", exc_info=True)
             raise
 
         return artifact
@@ -603,7 +603,7 @@ class ContextResetManager:
             return True
 
         except Exception as e:
-            logger.error(f"恢复上下文失败: {e}")
+            logger.error(f"恢复上下文失败: {e}", exc_info=True)
             return False
 
     def load_latest_handoff(self) -> HandoffArtifact | None:
@@ -652,7 +652,7 @@ class ContextResetManager:
             logger.warning("HandoffArtifact 文件不存在")
             return None
         except Exception as e:
-            logger.error(f"加载 HandoffArtifact 失败: {e}")
+            logger.error(f"加载 HandoffArtifact 失败: {e}", exc_info=True)
             return None
 
     def load_handoff_by_session(self, session_id: str) -> HandoffArtifact | None:
@@ -689,7 +689,7 @@ class ContextResetManager:
             return artifact
 
         except Exception as e:
-            logger.error(f"加载会话 {session_id} 的 HandoffArtifact 失败: {e}")
+            logger.error(f"加载会话 {session_id} 的 HandoffArtifact 失败: {e}", exc_info=True)
             return None
 
     def reset_context(
@@ -750,7 +750,7 @@ class ContextResetManager:
                 session.save()
                 logger.debug(f"会话已保存: {old_session_id}")
             except Exception as e:
-                logger.warning(f"保存会话失败（将继续重置）: {e}")
+                logger.warning(f"保存会话失败（将继续重置）: {e}", exc_info=True)
 
             # 步骤 3: 清空对话
             session.clear()
@@ -844,6 +844,7 @@ class ContextResetManager:
             handoff_count = len(list(self.handoff_dir.glob("handoff_*.json")))
             stats["handoff_file_count"] = handoff_count
         except Exception:
+            logger.warning("统计 handoff 文件数失败", exc_info=True)
             stats["handoff_file_count"] = 0
 
         return stats
@@ -893,7 +894,7 @@ class ContextResetManager:
                         deleted_count += 1
                         logger.debug(f"已删除过期 handoff 文件: {file_path.name}")
                     except Exception as e:
-                        logger.warning(f"删除文件失败 {file_path}: {e}")
+                        logger.warning(f"删除文件失败 {file_path}: {e}", exc_info=True)
 
             # 如果删除后仍超过最大数量，继续删除最旧的
             remaining_files = list(self.handoff_dir.glob("handoff_*.json"))
@@ -906,13 +907,13 @@ class ContextResetManager:
                     deleted_count += 1
                     logger.debug(f"已删除超量 handoff 文件: {oldest.name}")
                 except Exception as e:
-                    logger.warning(f"删除文件失败 {oldest}: {e}")
+                    logger.warning(f"删除文件失败 {oldest}: {e}", exc_info=True)
 
             if deleted_count > 0:
                 logger.info(f"清理完成，共删除 {deleted_count} 个 handoff 文件")
 
         except Exception as e:
-            logger.error(f"清理 handoff 文件失败: {e}")
+            logger.error(f"清理 handoff 文件失败: {e}", exc_info=True)
 
         return deleted_count
 

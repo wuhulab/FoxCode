@@ -10,6 +10,9 @@ from textual.widgets import Button, Input, Static, TextArea
 from textual import on
 
 from foxcode.tui.theme import get_theme
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Dialog(ModalScreen):
@@ -142,6 +145,7 @@ class MessageViewScreen(ModalScreen):
                 import pyperclip
                 pyperclip.copy(sel)
         except Exception:
+            logger.warning("复制选中文本到剪贴板失败", exc_info=True)
             pass
 
 

@@ -11,7 +11,10 @@ dtcg/handler.py — DTCG emitter 实现。
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from foxcode.design_md.model.spec import (
     DesignSystemState,
@@ -53,6 +56,7 @@ class DtcgEmitterHandler:
 
             return DtcgEmitterResult(success=True, data=file_data)
         except Exception as e:
+            logger.warning(f"DTCG 发射失败: {e}", exc_info=True)
             return DtcgEmitterResult(success=False, error={"message": str(e)})
 
     def _map_colors(self, state: DesignSystemState) -> dict[str, Any] | None:

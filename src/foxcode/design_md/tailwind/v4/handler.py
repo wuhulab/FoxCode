@@ -7,9 +7,12 @@ tailwind/v4/handler.py — Tailwind v4 emitter 实现。
 
 from __future__ import annotations
 
+import logging
 import re
 
 from foxcode.design_md.model.spec import DesignSystemState, ResolvedDimension
+
+logger = logging.getLogger(__name__)
 from foxcode.design_md.tailwind.v4.spec import TailwindV4EmitterResult, TailwindV4ThemeData
 
 _CSS_IDENTIFIER_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9-]*$")
@@ -52,6 +55,7 @@ class TailwindV4EmitterHandler:
                 data={"theme": theme},
             )
         except Exception as e:
+            logger.warning(f"Tailwind v4 发射失败: {e}", exc_info=True)
             return TailwindV4EmitterResult(
                 success=False,
                 error={"message": str(e)},

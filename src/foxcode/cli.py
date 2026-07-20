@@ -128,7 +128,7 @@ def _on_update_check_complete(result: UpdateResult) -> None:
             # 检查失败，仅在调试模式下显示
             logger.debug(f"更新检查失败: {result.message}")
     except Exception as e:
-        logger.debug(f"处理更新检查结果时出错: {e}")
+        logger.debug(f"处理更新检查结果时出错: {e}", exc_info=True)
     finally:
         _update_checker_started = False
 
@@ -150,7 +150,7 @@ def _start_background_update_checker() -> None:
         start_background_update_check(callback=_on_update_check_complete)
         logger.debug("后台更新检查已启动")
     except Exception as e:
-        logger.debug(f"启动后台更新检查失败: {e}")
+        logger.debug(f"启动后台更新检查失败: {e}", exc_info=True)
         _update_checker_started = False
 
 
@@ -204,6 +204,7 @@ class SafeStreamHandler(logging.StreamHandler):
                 stream.write(safe_msg + self.terminator)
                 self.flush()
             except Exception:
+                logger.warning("回退日志格式失败", exc_info=True)
                 # 如果还是失败，只输出时间戳和级别
                 try:
                     fallback_msg = (
@@ -213,6 +214,7 @@ class SafeStreamHandler(logging.StreamHandler):
                     self.stream.write(fallback_msg + self.terminator)
                     self.flush()
                 except Exception:
+                    logger.warning("写入回退日志失败", exc_info=True)
                     pass  # 彻底失败时静默忽略
 
     @staticmethod
@@ -406,6 +408,7 @@ def _adjust_log_level_for_topic() -> None:
         elif output_topic == OutputTopic.DEFAULT:
             _stream_handler.setLevel(logging.WARNING)
     except Exception:
+        logger.warning("设置输出主题日志级别失败", exc_info=True)
         pass
 
 
@@ -469,7 +472,7 @@ def _setup_signal_handlers() -> None:
                 _current_agent.save_session()
                 logger.info("会话已保存")
             except Exception as e:
-                logger.error(f"保存会话失败: {e}")
+                logger.error(f"保存会话失败: {e}", exc_info=True)
 
     # 注册信号处理器（仅在主线程中有效）
     try:
@@ -507,14 +510,14 @@ def _cleanup_on_exit() -> None:
                 # 没有事件循环，创建一个新的
                 asyncio.run(_watchdog.stop())
         except Exception as e:
-            logger.warning(f"停止看门狗失败: {e}")
+            logger.warning(f"停止看门狗失败: {e}", exc_info=True)
 
         # 导出最终性能指标
         try:
             metrics_file = log_dir / "final_metrics.json"
             _watchdog.export_metrics_to_file(metrics_file)
         except Exception as e:
-            logger.warning(f"导出性能指标失败: {e}")
+            logger.warning(f"导出性能指标失败: {e}", exc_info=True)
 
     # 清理临时文件
     temp_dir = log_dir / "temp"
@@ -525,7 +528,7 @@ def _cleanup_on_exit() -> None:
             shutil.rmtree(temp_dir, ignore_errors=True)
             logger.debug("临时目录已清理")
         except Exception as e:
-            logger.warning(f"清理临时文件失败: {e}")
+            logger.warning(f"清理临时文件失败: {e}", exc_info=True)
 
     logger.info("FoxCode 进程已退出")
 
@@ -580,7 +583,7 @@ def _init_watchdog() -> ProcessWatchdog:
                 _current_agent.save_session()
                 console.print("[green]✅ 会话已自动保存[/green]")
             except Exception as e:
-                logger.error(f"自动保存会话失败: {e}")
+                logger.error(f"自动保存会话失败: {e}", exc_info=True)
                 console.print(f"[yellow]⚠️ 自动保存失败: {e}[/yellow]")
 
     watchdog.set_callbacks(
@@ -632,7 +635,7 @@ def _handle_unexpected_error(error: Exception) -> None:
             f.write(f"{'=' * 80}\n\n")
         logger.info(f"崩溃报告已保存到: {crash_report_path}")
     except Exception as e:
-        logger.error(f"保存崩溃报告失败: {e}")
+        logger.error(f"保存崩溃报告失败: {e}", exc_info=True)
 
     # 显示用户友好的错误信息
     console.print("\n")
@@ -1076,6 +1079,7 @@ def main(
         logger.info("用户中断 (Ctrl+C)")
         console.print("\n[yellow]用户中断[/yellow]")
     except Exception as e:
+        logger.warning("主入口捕获未处理异常", exc_info=True)
         # 全局异常处理：记录详细日志并显示友好信息
         _handle_unexpected_error(e)
         sys.exit(1)  # 只有在全局异常处理完成后才退出
@@ -1156,7 +1160,7 @@ def run(
         agent = FoxCodeAgent(config)
         _current_agent = agent  # 保存全局引用，用于信号处理时保存会话
     except Exception as e:
-        logger.error(f"初始化代理失败: {e}")
+        logger.error(f"初始化代理失败: {e}", exc_info=True)
         _handle_unexpected_error(e)
         return
 
@@ -1167,7 +1171,7 @@ def run(
                 await _watchdog.start()
                 logger.info("[OK] 进程看门狗监控已启动")
             except Exception as e:
-                logger.warning(f"启动看门狗失败: {e} (不影响主功能)")
+                logger.warning(f"启动看门狗失败: {e} (不影响主功能)", exc_info=True)
 
     # 恢复会话
     if resume or session_id:
@@ -1183,7 +1187,7 @@ def run(
         except FileNotFoundError:
             console.print("[yellow]未找到可恢复的会话[/yellow]")
         except Exception as e:
-            logger.error(f"恢复会话失败: {e}")
+            logger.error(f"恢复会话失败: {e}", exc_info=True)
             console.print(f"[red]恢复会话失败: {markup.escape(str(e))}[/red]")
 
     # 直接处理提示
@@ -1191,7 +1195,7 @@ def run(
         try:
             asyncio.run(_run_single_prompt(agent, prompt, config))
         except Exception as e:
-            logger.error(f"单次提示执行失败: {e}")
+            logger.error(f"单次提示执行失败: {e}", exc_info=True)
             _handle_unexpected_error(e)
         finally:
             _current_agent = None
@@ -1211,7 +1215,7 @@ def run(
         logger.info("用户中断交互模式")
         console.print("\n[yellow]用户中断[/yellow]")
     except Exception as e:
-        logger.error(f"运行模式执行失败: {e}")
+        logger.error(f"运行模式执行失败: {e}", exc_info=True)
         _handle_unexpected_error(e)
     finally:
         # 清理全局引用
@@ -1230,7 +1234,7 @@ def run(
             from foxcode.tui.app import run_tui
             run_tui(agent=agent, config=config)
         except Exception as e:
-            logger.error(f"启动 TUI 失败: {e}")
+            logger.error(f"启动 TUI 失败: {e}", exc_info=True)
             if config.output_topic == OutputTopic.MINIMALISM:
                 print(f"启动 TUI 失败: {e}")
             else:
@@ -1329,7 +1333,7 @@ async def _run_single_prompt(
             console.print("\n[yellow]执行被中断[/yellow]")
     except Exception as e:
         # 记录详细错误信息，但不直接退出（由调用方决定是否退出）
-        logger.error(f"单次提示执行失败: {type(e).__name__}: {e}")
+        logger.error(f"单次提示执行失败: {type(e).__name__}: {e}", exc_info=True)
         logger.debug(f"完整堆栈:\n{traceback.format_exc()}")
         if config and config.output_topic == OutputTopic.MINIMALISM:
             print(f"\n\033[31m[error]\033[0m {str(e)}")
@@ -1360,7 +1364,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
         await agent.initialize()
         logger.info("代理初始化成功")
     except Exception as e:
-        logger.error(f"代理初始化失败: {e}")
+        logger.error(f"代理初始化失败: {e}", exc_info=True)
         if config.output_topic == OutputTopic.MINIMALISM:
             print(f"\033[31m[error]\033[0m 初始化失败: {str(e)}")
         else:
@@ -1381,6 +1385,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             token_usage = agent.get_token_usage()
             total_tokens = token_usage.get("total_tokens", 0)
         except Exception:
+            logger.warning("获取token使用量失败", exc_info=True)
             total_tokens = 0
 
         # 极简模式：简洁提示符
@@ -1484,6 +1489,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                         console.print(f"[dim]⏱️ 响应时间: {response_time_ms:.0f}ms[/dim]")
 
             except Exception as chat_error:
+                logger.warning("聊天请求处理失败", exc_info=True)
                 # 记录失败请求
                 response_time_ms = (time.time() - request_start_time) * 1000
                 if _watchdog and request_id:
@@ -1508,7 +1514,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
         except Exception as e:
             consecutive_errors += 1
             logger.error(
-                f"交互错误 (第 {consecutive_errors}/{max_consecutive_errors} 次): {type(e).__name__}: {e}"
+                f"交互错误 (第 {consecutive_errors}/{max_consecutive_errors} 次): {type(e).__name__}: {e}", exc_info=True
             )
             logger.debug(f"错误堆栈:\n{traceback.format_exc()}")
 
@@ -1534,7 +1540,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                     agent.save_session()
                     console.print("[green]会话已自动保存[/green]")
                 except Exception as save_error:
-                    logger.error(f"自动保存会话失败: {save_error}")
+                    logger.error(f"自动保存会话失败: {save_error}", exc_info=True)
 
                 # 询问用户是否继续
                 try:
@@ -2062,6 +2068,7 @@ def _handle_init_command(agent: FoxCodeAgent, config: Config) -> None:
         console.print("[dim]  Windows: .foxcode\\init.bat[/dim]")
 
     except Exception as e:
+        logger.warning(f"生成初始化脚本失败: {e}", exc_info=True)
         console.print(f"[red]生成初始化脚本失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2081,6 +2088,7 @@ def _handle_progress_command(agent: FoxCodeAgent, config: Config) -> None:
         summary = agent.get_progress_summary()
         console.print(Panel(summary, title="项目进度", style="cyan"))
     except Exception as e:
+        logger.warning(f"获取进度失败: {e}", exc_info=True)
         console.print(f"[red]获取进度失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2133,6 +2141,7 @@ def _handle_features_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
             console.print(Panel(summary, title="📋 功能列表", style="green"))
 
     except Exception as e:
+        logger.warning(f"处理功能列表失败: {e}", exc_info=True)
         console.print(f"[red]处理功能列表失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2198,6 +2207,7 @@ def _handle_summary_command(agent: FoxCodeAgent, config: Config) -> None:
             console.print("[yellow]暂无会话摘要[/yellow]")
 
     except Exception as e:
+        logger.warning(f"获取会话摘要失败: {e}", exc_info=True)
         console.print(f"[red]获取会话摘要失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2233,6 +2243,7 @@ def _handle_next_command(agent: FoxCodeAgent, config: Config) -> None:
             console.print("[green]✅ 所有功能已完成！[/green]")
 
     except Exception as e:
+        logger.warning(f"获取下一个任务失败: {e}", exc_info=True)
         console.print(f"[red]获取下一个任务失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2434,6 +2445,7 @@ def _handle_workflow_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
                 console.print(f"  {status_icon} {phase.get_display_name()}{current}")
 
     except Exception as e:
+        logger.warning(f"处理工作流程命令失败: {e}", exc_info=True)
         console.print(f"[red]处理工作流程命令失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2495,6 +2507,7 @@ def _handle_phase_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             )
 
     except Exception as e:
+        logger.warning(f"处理阶段命令失败: {e}", exc_info=True)
         console.print(f"[red]处理阶段命令失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2760,6 +2773,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
             )
 
     except Exception as e:
+        logger.warning("处理 /work 命令失败", exc_info=True)
         console.print(f"[red]处理 /work 命令失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2849,7 +2863,7 @@ def _handle_session_end(agent: FoxCodeAgent, config: Config) -> None:
         console.print("[dim]会话摘要已保存[/dim]")
 
     except Exception as e:
-        logger.warning(f"保存会话摘要失败: {e}")
+        logger.warning(f"保存会话摘要失败: {e}", exc_info=True)
 
 
 # 处理 /stats 命令
@@ -2899,7 +2913,7 @@ def _handle_stats_command() -> None:
             console.print(f"\n[yellow]⚠️ 内存使用较高 ({metrics.memory_usage_mb:.1f}MB)[/yellow]")
 
     except Exception as e:
-        logger.error(f"获取统计信息失败: {e}")
+        logger.error(f"获取统计信息失败: {e}", exc_info=True)
         console.print(f"[red]获取统计信息失败: {markup.escape(str(e))}[/red]")
 
 
@@ -2959,7 +2973,7 @@ def _handle_health_command() -> None:
         )
 
     except Exception as e:
-        logger.error(f"获取健康状态失败: {e}")
+        logger.error(f"获取健康状态失败: {e}", exc_info=True)
         console.print(f"[red]获取健康状态失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3038,7 +3052,7 @@ def _start_tui_mode(
         except FileNotFoundError:
             console.print("[yellow]未找到可恢复的会话[/yellow]")
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"恢复会话失败: {exc}")
+            logger.warning(f"恢复会话失败: {exc}", exc_info=True)
 
     # 启动后台更新检查
     _start_background_update_checker()
@@ -3289,6 +3303,7 @@ def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             "[yellow]语义索引模块未安装，请安装: pip install sentence-transformers[/yellow]"
         )
     except Exception as e:
+        logger.warning("索引操作失败", exc_info=True)
         console.print(f"[red]索引操作失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3345,6 +3360,7 @@ def _handle_search_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
     except ImportError:
         console.print("[yellow]语义索引模块未安装[/yellow]")
     except Exception as e:
+        logger.warning("搜索失败", exc_info=True)
         console.print(f"[red]搜索失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3399,6 +3415,7 @@ def _handle_kb_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None)
             )
 
     except Exception as e:
+        logger.warning("知识库操作失败", exc_info=True)
         console.print(f"[red]知识库操作失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3457,6 +3474,7 @@ def _handle_analyze_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
             )
 
     except Exception as e:
+        logger.warning("项目分析失败", exc_info=True)
         console.print(f"[red]项目分析失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3515,6 +3533,7 @@ def _handle_debug_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
             console.print("[yellow]用法: /debug [start|break|continue|step|vars][/yellow]")
 
     except Exception as e:
+        logger.warning("调试操作失败", exc_info=True)
         console.print(f"[red]调试操作失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3551,6 +3570,7 @@ def _handle_profile_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
             console.print("[dim]使用 /profile <函数名> 来分析特定函数的性能[/dim]")
 
     except Exception as e:
+        logger.warning("性能分析失败", exc_info=True)
         console.print(f"[red]性能分析失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3712,6 +3732,7 @@ def _handle_format_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
                 console.print(f"[yellow]警告: {result.failed} 个文件格式化失败[/yellow]")
 
     except Exception as e:
+        logger.warning("代码格式化失败", exc_info=True)
         console.print(f"[red]代码格式化失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3755,6 +3776,7 @@ def _handle_refactor_command(agent: FoxCodeAgent, config: Config, cmd_arg: str |
         )
 
     except Exception as e:
+        logger.warning("重构分析失败", exc_info=True)
         console.print(f"[red]重构分析失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3786,6 +3808,7 @@ def _handle_test_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
             console.print("[yellow]用法: /test gen <file>[/yellow]")
 
     except Exception as e:
+        logger.warning("测试生成失败", exc_info=True)
         console.print(f"[red]测试生成失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3816,6 +3839,7 @@ def _handle_doc_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
             console.print("[yellow]用法: /doc gen <file>[/yellow]")
 
     except Exception as e:
+        logger.warning("文档生成失败", exc_info=True)
         console.print(f"[red]文档生成失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3863,6 +3887,7 @@ def _handle_git_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
             console.print("[yellow]用法: /git [commit|conflicts][/yellow]")
 
     except Exception as e:
+        logger.warning("Git 操作失败", exc_info=True)
         console.print(f"[red]Git 操作失败: {markup.escape(str(e))}[/red]")
 
 
@@ -3898,6 +3923,7 @@ def _handle_diagram_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | 
             console.print("[green]✅ 图表已生成[/green]")
 
     except Exception as e:
+        logger.warning("图表生成失败", exc_info=True)
         console.print(f"[red]图表生成失败: {markup.escape(str(e))}[/red]")
 
 
@@ -4138,6 +4164,7 @@ def _handle_space_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
     except ImportError as e:
         console.print(f"[red]OpenSpace 模块加载失败: {e}[/red]")
     except Exception as e:
+        logger.warning("OpenSpace 操作失败", exc_info=True)
         console.print(f"[red]OpenSpace 操作失败: {markup.escape(str(e))}[/red]")
 
 
@@ -4224,6 +4251,7 @@ def _handle_topic_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         )
 
     except Exception as e:
+        logger.warning("切换输出模式失败", exc_info=True)
         if config.output_topic == OutputTopic.MINIMALISM:
             print(f"\033[31m[error]\033[0m 切换输出模式失败: {str(e)}")
         else:
@@ -4444,6 +4472,7 @@ def _handle_mcp_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None
     except ImportError as e:
         console.print(f"[red]MCP 安装器模块加载失败: {e}[/red]")
     except Exception as e:
+        logger.warning("处理 /mcp 命令失败", exc_info=True)
         console.print(f"[red]处理 /mcp 命令失败: {markup.escape(str(e))}[/red]")
 
 
@@ -4743,7 +4772,7 @@ def _handle_update_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
         else:
             console.print(f"[red]更新模块加载失败: {markup.escape(str(e))}[/red]")
     except Exception as e:
-        logger.error(f"更新命令执行失败: {e}")
+        logger.error(f"更新命令执行失败: {e}", exc_info=True)
         if config.output_topic == OutputTopic.MINIMALISM:
             print(f"[update] 更新失败: {str(e)}")
         else:
@@ -4807,7 +4836,7 @@ def apply_model_settings(
             agent.model_provider = new_provider
             msg += "，已热加载新配置"
         except Exception as reload_err:  # noqa: BLE001
-            logger.warning(f"热加载失败，重启后生效: {reload_err}")
+            logger.warning(f"热加载失败，重启后生效: {reload_err}", exc_info=True)
             msg += "（热加载失败，重启后生效）"
     return msg
 
@@ -4896,7 +4925,7 @@ def _handle_openai_command(agent: FoxCodeAgent, config: Config) -> None:
             )
 
     except Exception as e:
-        logger.error(f"OpenAI 配置失败: {e}")
+        logger.error(f"OpenAI 配置失败: {e}", exc_info=True)
         console.print(f"[red]配置失败: {markup.escape(str(e))}[/red]")
 
 
@@ -4978,5 +5007,5 @@ def _handle_shunxapi_command(agent: FoxCodeAgent, config: Config) -> None:
             )
 
     except Exception as e:
-        logger.error(f"ShunxAPI 配置失败: {e}")
+        logger.error(f"ShunxAPI 配置失败: {e}", exc_info=True)
         console.print(f"[red]配置失败: {markup.escape(str(e))}[/red]")

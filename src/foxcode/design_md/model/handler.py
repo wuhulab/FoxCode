@@ -83,7 +83,7 @@ class ModelHandler:
             )
 
         except Exception as e:
-            logger.error("模型构建发生未知错误: %s", e)
+            logger.error("模型构建发生未知错误: %s", e, exc_info=True)
             return ModelResult(
                 designSystem=DesignSystemState(),
                 findings=[Finding(severity="error", message=f"模型构建意外错误: {e}")],

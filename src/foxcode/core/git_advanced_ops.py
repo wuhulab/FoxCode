@@ -560,7 +560,7 @@ class GitAdvancedOps:
                     conflict.suggestion = self._suggest_resolution(conflict)
 
                 except Exception as e:
-                    logger.debug(f"读取冲突文件失败: {e}")
+                    logger.debug(f"读取冲突文件失败: {e}", exc_info=True)
 
             conflicts.append(conflict)
 

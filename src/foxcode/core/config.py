@@ -944,6 +944,8 @@ class Config(BaseSettings):
                     with open(config_path, "rb") as f:
                         existing_config = tomllib.load(f)
                 except Exception:
+                    import logging
+                    logging.getLogger(__name__).warning("读取现有配置失败", exc_info=True)
                     existing_config = {}
 
             # 如果配置文件中没有模型配置，从当前 Config 对象获取
@@ -971,7 +973,7 @@ class Config(BaseSettings):
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).error(f"保存配置失败: {e}")
+            logging.getLogger(__name__).error(f"保存配置失败: {e}", exc_info=True)
             return False
 
     def save_model_config(self) -> bool:
@@ -991,6 +993,8 @@ class Config(BaseSettings):
                     with open(config_path, "rb") as f:
                         existing_config = tomllib.load(f)
                 except Exception:
+                    import logging
+                    logging.getLogger(__name__).warning("读取现有配置失败", exc_info=True)
                     existing_config = {}
 
             # 更新 model 配置
@@ -1023,7 +1027,7 @@ class Config(BaseSettings):
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).error(f"保存模型配置失败: {e}")
+            logging.getLogger(__name__).error(f"保存模型配置失败: {e}", exc_info=True)
             return False
 
     def save_tui_config(self) -> bool:
@@ -1042,6 +1046,8 @@ class Config(BaseSettings):
                     with open(config_path, "rb") as f:
                         existing_config = tomllib.load(f)
                 except Exception:
+                    import logging
+                    logging.getLogger(__name__).warning("读取现有配置失败", exc_info=True)
                     existing_config = {}
 
             existing_config["tui"] = {
@@ -1063,7 +1069,7 @@ class Config(BaseSettings):
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).error(f"保存 TUI 配置失败: {e}")
+            logging.getLogger(__name__).error(f"保存 TUI 配置失败: {e}", exc_info=True)
             return False
 
     def _get_base_config_dict(self) -> dict[str, Any]:
@@ -1120,7 +1126,7 @@ class Config(BaseSettings):
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).error(f"写入配置失败: {e}")
+            logging.getLogger(__name__).error(f"写入配置失败: {e}", exc_info=True)
             return False
 
     def _write_toml_value(self, f, key: str, value, indent: str = "") -> None:

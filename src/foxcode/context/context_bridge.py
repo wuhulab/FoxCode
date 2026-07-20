@@ -406,7 +406,7 @@ class ContextBridge:
         try:
             self.summary_file.parent.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.error(f"创建摘要文件目录失败: {e}")
+            logger.error(f"创建摘要文件目录失败: {e}", exc_info=True)
             raise
 
     def generate_summary(
@@ -465,7 +465,7 @@ class ContextBridge:
             self.summary_file.write_text(content, encoding="utf-8")
             logger.info(f"会话摘要已保存: {self.summary_file}")
         except Exception as e:
-            logger.error(f"保存会话摘要失败: {e}")
+            logger.error(f"保存会话摘要失败: {e}", exc_info=True)
             raise
 
     def load_summary(self) -> SessionSummary | None:
@@ -485,7 +485,7 @@ class ContextBridge:
             logger.info(f"已加载会话摘要: {summary.session_id}")
             return summary
         except Exception as e:
-            logger.error(f"加载会话摘要失败: {e}")
+            logger.error(f"加载会话摘要失败: {e}", exc_info=True)
             return None
 
     def append_summary(self, summary: SessionSummary) -> None:
@@ -510,7 +510,7 @@ class ContextBridge:
 
             logger.info(f"已追加摘要到历史文件: {history_file}")
         except Exception as e:
-            logger.error(f"追加摘要失败: {e}")
+            logger.error(f"追加摘要失败: {e}", exc_info=True)
             raise
 
     def inject_context(

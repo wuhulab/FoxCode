@@ -589,4 +589,4 @@ try:
     IconsClass.refresh_icon = _refresh_icon
     IconsClass.collapse_icon = _collapse_icon
 except Exception as e:
-    logger.debug(f"添加额外图标方法时出错（可能已存在）: {e}")
+    logger.debug(f"添加额外图标方法时出错（可能已存在）: {e}", exc_info=True)

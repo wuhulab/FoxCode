@@ -181,6 +181,7 @@ class EncodingBypassDetector:
                     if not any(p[1] == 'URL编码路径穿越' for p in detected):
                         detected.append(('url_decode', 'URL解码后包含路径穿越字符'))
         except Exception:
+            logger.warning("URL解码检测失败", exc_info=True)
             pass
 
         unicode_issues = self._check_unicode_confusables(command)
@@ -232,6 +233,7 @@ class EncodingBypassDetector:
                     break
                 normalized = decoded
         except Exception:
+            logger.warning("Unicode编码解码失败", exc_info=True)
             pass
 
         for char, confusables in self.UNICODE_CONFUSABLES.items():
@@ -608,6 +610,7 @@ class Sandbox:
                                     details={"pattern": pattern, "path": str(path_to_check)},
                                 )
                         except Exception:
+                            logger.warning("路径解析失败，保守处理", exc_info=True)
                             # 路径解析失败，保守处理
                             pass
                     # 如果是合法的子目录，不返回违规

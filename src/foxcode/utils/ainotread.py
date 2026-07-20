@@ -87,7 +87,7 @@ def _collect_ainotread_specs(
                 spec = pathspec.GitIgnoreSpec.from_lines(lines)
                 specs.append((d, spec))
             except Exception as e:
-                logger.warning(f"无法解析 .ainotread 文件 {ainotread_file}: {e}")
+                logger.warning(f"无法解析 .ainotread 文件 {ainotread_file}: {e}", exc_info=True)
 
     return specs
 
@@ -142,7 +142,7 @@ def is_ainotread(
         except ValueError:
             continue
         except Exception as e:
-            logger.debug(f".ainotread 检查异常: {e}")
+            logger.debug(f".ainotread 检查异常: {e}", exc_info=True)
 
     return ignored if ignored is not None else False
 
@@ -196,7 +196,7 @@ class AINotReadManager:
                 except ValueError:
                     continue
                 except Exception as e:
-                    logger.debug(f".ainotread 检查异常: {e}")
+                    logger.debug(f".ainotread 检查异常: {e}", exc_info=True)
             result = ignored if ignored is not None else False
 
         self._result_cache[cache_key] = result

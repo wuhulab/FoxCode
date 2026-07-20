@@ -269,7 +269,7 @@ class ConfirmationManager:
                     logger.info(f"用户拒绝操作: {request.tool_name} - {request.operation}")
                     return False
             except Exception as e:
-                logger.error(f"确认回调执行失败: {e}")
+                logger.error(f"确认回调执行失败: {e}", exc_info=True)
 
         logger.warning(f"没有确认回调，默认拒绝危险操作: {request.tool_name}")
         return False
@@ -370,9 +370,10 @@ class BaseTool(abc.ABC):
                         content = f.read()
                     return ToolResult(success=True, output=content)
                 except Exception as e:
+                    logger.warning(f"文件读取失败: {e}", exc_info=True)
                     return ToolResult(success=False, output="", error=str(e))
     
-    安全特性：
+     安全特性：
     - 参数验证：自动验证参数类型和必需性
     - 危险标记：dangerous=True的工具需要确认
     - 错误处理：统一捕获异常并返回错误结果
@@ -507,6 +508,7 @@ class BaseTool(abc.ABC):
                 try:
                     value = str(value)
                 except Exception:
+                    logger.warning(f"参数 {param.name} 类型转换失败", exc_info=True)
                     raise ValueError(f"参数 {param.name} 必须是字符串类型")
 
             max_length = getattr(param, 'max_length', 100000)
@@ -715,7 +717,7 @@ class ToolRegistry:
                 module_name = f"foxcode.tools.{name}_tools"
                 self.load_tools_from_module(module_name)
             except Exception as e:
-                logger.debug(f"动态加载工具模块失败: {e}")
+                logger.debug(f"动态加载工具模块失败: {e}", exc_info=True)
         
         if name not in self._tools:
             raise KeyError(f"工具不存在: {name}")
@@ -881,7 +883,7 @@ class ToolRegistry:
         except Exception as e:
             # 捕获所有异常，返回错误结果
             duration = time.time() - start_time
-            logger.error(f"工具 {name} 执行异常: {e}")
+            logger.error(f"工具 {name} 执行异常: {e}", exc_info=True)
 
             # 记录失败统计
             self._record_tool_usage(

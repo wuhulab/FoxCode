@@ -459,7 +459,7 @@ class StdioMCPServer(BaseMCPServer):
             self._logger.info(f"MCP server {self.name} started successfully")
 
         except Exception as e:
-            self._logger.error(f"Failed to start MCP server {self.name}: {e}")
+            self._logger.error(f"Failed to start MCP server {self.name}: {e}", exc_info=True)
             await self._cleanup()
             raise
 
@@ -487,7 +487,7 @@ class StdioMCPServer(BaseMCPServer):
                 self._writer.close()
                 await self._writer.wait_closed()
             except Exception:
-                pass
+                self._logger.warning("关闭 writer 时发生异常", exc_info=True)
 
         if self._process:
             try:
@@ -498,7 +498,7 @@ class StdioMCPServer(BaseMCPServer):
                     self._process.kill()
                     await self._process.wait()
             except Exception:
-                pass
+                self._logger.warning("终止进程时发生异常", exc_info=True)
 
         self._process = None
         self._reader = None
@@ -552,7 +552,7 @@ class StdioMCPServer(BaseMCPServer):
                     self._tools.append(tool)
                     self._logger.debug(f"Loaded tool: {tool.name}")
         except Exception as e:
-            self._logger.warning(f"Failed to load tools: {e}")
+            self._logger.warning(f"Failed to load tools: {e}", exc_info=True)
 
     async def _load_resources(self) -> None:
         """加载资源列表"""
@@ -570,7 +570,7 @@ class StdioMCPServer(BaseMCPServer):
                     self._resources.append(resource)
                     self._logger.debug(f"Loaded resource: {resource.uri}")
         except Exception as e:
-            self._logger.warning(f"Failed to load resources: {e}")
+            self._logger.warning(f"Failed to load resources: {e}", exc_info=True)
 
     async def _load_prompts(self) -> None:
         """加载提示模板列表"""
@@ -587,7 +587,7 @@ class StdioMCPServer(BaseMCPServer):
                     self._prompts.append(prompt)
                     self._logger.debug(f"Loaded prompt: {prompt.name}")
         except Exception as e:
-            self._logger.warning(f"Failed to load prompts: {e}")
+            self._logger.warning(f"Failed to load prompts: {e}", exc_info=True)
 
     async def _send_request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """发送请求并等待响应"""
@@ -622,6 +622,7 @@ class StdioMCPServer(BaseMCPServer):
             return {"error": {"code": -1, "message": "Request timeout"}}
         except Exception as e:
             self._pending_requests.pop(request_id, None)
+            self._logger.warning(f"发送请求异常: {e}", exc_info=True)
             return {"error": {"code": -1, "message": str(e)}}
 
     async def _send_notification(self, method: str, params: dict[str, Any]) -> None:
@@ -671,7 +672,7 @@ class StdioMCPServer(BaseMCPServer):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self._logger.error(f"Read loop error: {e}")
+            self._logger.error(f"Read loop error: {e}", exc_info=True)
 
     async def _handle_notification(self, notification: dict[str, Any]) -> None:
         """处理服务器通知"""
@@ -707,7 +708,7 @@ class StdioMCPServer(BaseMCPServer):
                     break
                 self._logger.debug(f"[{self.name} stderr] {line.decode('utf-8').strip()}")
         except Exception:
-            pass
+            self._logger.warning("读取 stderr 时发生异常", exc_info=True)
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
         """调用工具"""
@@ -817,7 +818,7 @@ class MCPManager:
             return True
 
         except Exception as e:
-            self._logger.error(f"Failed to add server {config.name}: {e}")
+            self._logger.error(f"Failed to add server {config.name}: {e}", exc_info=True)
             return False
 
     def _update_mappings(self, server: BaseMCPServer) -> None:
@@ -874,7 +875,7 @@ class MCPManager:
             self._update_mappings(server)
             return True
         except Exception as e:
-            self._logger.error(f"Failed to start server {name}: {e}")
+            self._logger.error(f"Failed to start server {name}: {e}", exc_info=True)
             return False
 
     async def stop_server(self, name: str) -> bool:

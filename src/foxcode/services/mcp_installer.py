@@ -173,6 +173,7 @@ class MCPInstaller:
             validator = GitHubURLValidator(url=url)
             return True, f"有效的 GitHub 仓库: {validator.get_repo_info()[0]}/{validator.get_repo_info()[1]}"
         except Exception as e:
+            self._logger.warning(f"URL 验证失败: {e}", exc_info=True)
             return False, str(e)
 
     async def install_from_url(self, url: str, force: bool = False) -> InstallResult:
@@ -265,7 +266,7 @@ class MCPInstaller:
             )
 
         except Exception as e:
-            self._logger.error(f"安装失败: {e}")
+            self._logger.error(f"安装失败: {e}", exc_info=True)
             return InstallResult(
                 status=InstallStatus.FAILED,
                 install_type=InstallType.UNKNOWN,
@@ -309,7 +310,7 @@ class MCPInstaller:
             self._logger.error("git 命令未找到，请确保已安装 git")
             return False
         except Exception as e:
-            self._logger.error(f"克隆异常: {e}")
+            self._logger.error(f"克隆异常: {e}", exc_info=True)
             return False
 
     async def _detect_content(self, repo_path: Path) -> tuple[InstallType, list[SkillInfo], list[MCPServerInfo]]:
@@ -397,7 +398,7 @@ class MCPInstaller:
             )
 
         except Exception as e:
-            self._logger.warning(f"解析 skill 文件失败: {skill_file}, {e}")
+            self._logger.warning(f"解析 skill 文件失败: {skill_file}, {e}", exc_info=True)
             return None
 
     def _parse_skill_py_file(self, skill_file: Path) -> SkillInfo | None:
@@ -427,7 +428,7 @@ class MCPInstaller:
                             description = ast.get_docstring(node) or ""
                             break
             except Exception:
-                pass
+                self._logger.warning("解析 Python AST 时发生异常", exc_info=True)
 
             return SkillInfo(
                 name=name,
@@ -436,7 +437,7 @@ class MCPInstaller:
             )
 
         except Exception as e:
-            self._logger.warning(f"解析 Python skill 文件失败: {skill_file}, {e}")
+            self._logger.warning(f"解析 Python skill 文件失败: {skill_file}, {e}", exc_info=True)
             return None
 
     async def _parse_mcp_config(self, config_path: Path) -> list[MCPServerInfo]:
@@ -469,7 +470,7 @@ class MCPInstaller:
             return servers
 
         except Exception as e:
-            self._logger.warning(f"解析 MCP 配置失败: {config_path}, {e}")
+            self._logger.warning(f"解析 MCP 配置失败: {config_path}, {e}", exc_info=True)
             return []
 
     async def _parse_package_json(self, package_path: Path) -> list[MCPServerInfo]:
@@ -507,7 +508,7 @@ class MCPInstaller:
             return servers
 
         except Exception as e:
-            self._logger.warning(f"解析 package.json 失败: {package_path}, {e}")
+            self._logger.warning(f"解析 package.json 失败: {package_path}, {e}", exc_info=True)
             return []
 
     async def _install_skill(self, skill_info: SkillInfo) -> bool:
@@ -537,7 +538,7 @@ class MCPInstaller:
             return True
 
         except Exception as e:
-            self._logger.error(f"Skill 安装失败: {skill_info.name}, {e}")
+            self._logger.error(f"Skill 安装失败: {skill_info.name}, {e}", exc_info=True)
             return False
 
     async def _install_mcp_server(self, server_info: MCPServerInfo) -> bool:
@@ -572,7 +573,7 @@ class MCPInstaller:
             return True
 
         except Exception as e:
-            self._logger.error(f"MCP 服务器安装失败: {server_info.name}, {e}")
+            self._logger.error(f"MCP 服务器安装失败: {server_info.name}, {e}", exc_info=True)
             return False
 
     def list_installed_skills(self) -> list[SkillInfo]:
@@ -630,7 +631,7 @@ class MCPInstaller:
             self._logger.info(f"Skill 已卸载: {name}")
             return True
         except Exception as e:
-            self._logger.error(f"卸载 Skill 失败: {name}, {e}")
+            self._logger.error(f"卸载 Skill 失败: {name}, {e}", exc_info=True)
             return False
 
     def uninstall_mcp_server(self, name: str) -> bool:
@@ -653,7 +654,7 @@ class MCPInstaller:
             self._logger.info(f"MCP 服务器已卸载: {name}")
             return True
         except Exception as e:
-            self._logger.error(f"卸载 MCP 服务器失败: {name}, {e}")
+            self._logger.error(f"卸载 MCP 服务器失败: {name}, {e}", exc_info=True)
             return False
 
 

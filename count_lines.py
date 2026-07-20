@@ -11,8 +11,11 @@ FoxCode 代码统计脚本
     python count_lines.py
 """
 
+import logging
 from pathlib import Path
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 def count_lines(directory: Path, extensions: list[str] | None = None) -> dict:
@@ -87,6 +90,7 @@ def count_lines(directory: Path, extensions: list[str] | None = None) -> dict:
             })
             
         except Exception as e:
+            logger.warning(f"无法读取文件 {file_path}: {e}", exc_info=True)
             print(f"无法读取文件 {file_path}: {e}")
     
     return stats

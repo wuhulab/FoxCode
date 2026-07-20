@@ -195,7 +195,7 @@ class EncodingDetector:
             logger.debug(f"chardet 检测结果: {encoding} (置信度: {confidence:.2f})")
             return (encoding, confidence)
         except Exception as e:
-            logger.warning(f"chardet 检测失败: {e}")
+            logger.warning(f"chardet 检测失败: {e}", exc_info=True)
             return ("utf-8", 0.0)
 
     def _try_common_encodings(self, data: bytes) -> tuple[str | None, float]:

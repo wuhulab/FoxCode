@@ -12,6 +12,8 @@ import asyncio
 import contextlib
 import io
 import json
+import logging
+logger = logging.getLogger(__name__)
 import re
 import sys
 import time
@@ -52,6 +54,46 @@ MAX_MESSAGES = 200
 _STRIP_TAGS = re.compile(r"\[/?[a-zA-Z0-9_=#.,\s-]+\]")
 
 
+class _TUILogHandler(logging.Handler):
+    """将 CLI 日志记录转发到 TUI chat 的 logging handler."""
+
+    def __init__(self, repl_screen):
+        super().__init__()
+        self.repl = repl_screen
+        self.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+
+    def emit(self, record):
+        try:
+            if not getattr(self.repl, "_cli_log_enabled", True):
+                return
+            msg = self.format(record)
+            app = getattr(self.repl, "app", None)
+            if app is not None and not self._is_main_thread():
+                app.call_from_thread(lambda: self.repl._system(f"[cli-log] {msg}", force=True))
+            else:
+                self.repl._system(f"[cli-log] {msg}", force=True)
+        except Exception:
+            self._safe_log("TUILogHandler emit failed")
+
+    def _safe_log(self, text: str):
+        try:
+            app = getattr(self.repl, "app", None)
+            if app is not None and not self._is_main_thread():
+                app.call_from_thread(logger.warning, text)
+            else:
+                logger.warning(text)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _is_main_thread() -> bool:
+        try:
+            import threading
+            return threading.current_thread() is threading.main_thread()
+        except Exception:
+            return True
+
+
 def _now() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
@@ -72,6 +114,7 @@ def safe(fn):
         try:
             return fn(self, *args, **kwargs)
         except Exception as exc:
+            logger.warning(f"Error in {fn.__name__}: {exc}", exc_info=True)
             self._system(f"Error in {fn.__name__}: {exc}")
             if "--debug" in __import__("sys").argv:
                 traceback.print_exc()
@@ -138,6 +181,7 @@ class REPLScreen(Screen):
 
         # 从配置加载 TUI 状态
         self.system_log_enabled = True
+        self._cli_log_enabled = True
         if config is not None and hasattr(config, "tui"):
             tui_cfg = config.tui
             if hasattr(tui_cfg, "sidebar_visible"):
@@ -146,6 +190,19 @@ class REPLScreen(Screen):
                 self.fullscreen = tui_cfg.fullscreen
             if hasattr(tui_cfg, "system_log_enabled"):
                 self.system_log_enabled = tui_cfg.system_log_enabled
+            if hasattr(tui_cfg, "cli_log_enabled"):
+                self._cli_log_enabled = tui_cfg.cli_log_enabled
+
+        # 注册 TUI 日志处理器（将 CLI 日志转发到 chat）
+        self._tui_log_handler = _TUILogHandler(self)
+        logging.getLogger().addHandler(self._tui_log_handler)
+
+    def on_unmount(self):
+        try:
+            if hasattr(self, "_tui_log_handler"):
+                logging.getLogger().removeHandler(self._tui_log_handler)
+        except Exception:
+            logger.warning("on_unmount failed", exc_info=True)
 
     def watch_busy(self, busy: bool):
         """Reactive watcher: update UI when busy state changes."""
@@ -183,43 +240,44 @@ class REPLScreen(Screen):
             if self.sidebar is not None:
                 self.sidebar.display = self.sidebar_visible
         except Exception:
-            pass
+            logger.warning("on_mount sidebar display failed", exc_info=True)
         try:
             if self.fullscreen:
                 if self.sidebar is not None:
                     self.sidebar.display = False
         except Exception:
-            pass
+            logger.warning("on_mount fullscreen failed", exc_info=True)
         try:
             self._show_banner()
         except Exception:
-            pass
+            logger.warning("on_mount show_banner failed", exc_info=True)
         try:
             self._refresh_header()
         except Exception:
-            pass
+            logger.warning("on_mount refresh_header failed", exc_info=True)
         try:
             self._restore_session()
         except Exception:
-            pass
+            logger.warning("on_mount restore_session failed", exc_info=True)
         try:
             self._refresh_sessions_list()
         except Exception:
-            pass
+            logger.warning("on_mount refresh_sessions failed", exc_info=True)
         try:
             self.call_after_refresh(self.prompt_input.focus_input)
         except Exception:
+            logger.warning("on_mount call_after_refresh failed", exc_info=True)
             try:
                 self.prompt_input.focus_input()
             except Exception:
-                pass
+                logger.warning("on_mount focus_input failed", exc_info=True)
 
     def _show_banner(self):
         for old in list(self.chat.query(WelcomeBanner)):
             try:
                 old.remove()
             except Exception:
-                pass
+                logger.warning("_show_banner remove failed", exc_info=True)
         self.chat.mount(WelcomeBanner(classes="banner"))
 
     # ------------------------------------------------------------------
@@ -229,10 +287,13 @@ class REPLScreen(Screen):
     def _system(self, text: str, *, force: bool = False):
         if not force and not getattr(self, "system_log_enabled", True):
             return
+        chat = getattr(self, "chat", None)
+        if chat is None:
+            return
         try:
-            self.chat.add_message(MessageWidget("system", f"{_now()} {text}"))
+            chat.add_message(MessageWidget("system", f"{_now()} {text}"))
         except Exception:
-            pass
+            logger.warning("_system: 添加消息到聊天失败", exc_info=True)
 
     def _user(self, text: str):
         msg = MessageWidget("user", text)
@@ -245,6 +306,7 @@ class REPLScreen(Screen):
             self.chat.add_message(msg)
             return msg
         except Exception:
+            logger.warning("_assistant_thinking failed", exc_info=True)
             return None
 
     def _refresh_header(self):
@@ -255,7 +317,7 @@ class REPLScreen(Screen):
             model = self._read_model()
             self.sub_title = f"{model} {ICONS.middle_dot} {self.mode} {ICONS.middle_dot} {_fmt_tokens(self._token_count)} tok"
         except Exception:
-            pass
+            logger.warning("_refresh_header failed", exc_info=True)
         self._refresh_status()
 
     def _refresh_status(self):
@@ -266,7 +328,7 @@ class REPLScreen(Screen):
                 f"FoxCode TUI  模型: {model} | Token: {_fmt_tokens(self._token_count)} | 模式: {self.mode}"
             )
         except Exception:
-            pass
+            logger.warning("_refresh_status failed", exc_info=True)
 
     def _read_model(self) -> str:
         cfg = self.config
@@ -289,7 +351,7 @@ class REPLScreen(Screen):
         try:
             self.chat.scroll_end(animate=True)
         except Exception:
-            pass
+            logger.warning("_scroll_end failed", exc_info=True)
 
     # ------------------------------------------------------------------
     # Spinner
@@ -319,6 +381,7 @@ class REPLScreen(Screen):
             }
             path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception as exc:
+            logger.warning(f"_save_session failed: {exc}", exc_info=True)
             self._system(f"Save failed: {exc}")
 
     def _restore_session(self):
@@ -330,6 +393,7 @@ class REPLScreen(Screen):
             sid = data.get("id", self._session_id)
             self._load_tui_session(sid, announce=False)
         except Exception as exc:
+            logger.warning(f"_restore_session failed: {exc}", exc_info=True)
             self._system(f"Restore failed: {exc}")
 
     # ------------------------------------------------------------------
@@ -344,6 +408,7 @@ class REPLScreen(Screen):
                 try:
                     data = json.loads(f.read_text(encoding="utf-8"))
                 except Exception:
+                    logger.warning("_list_tui_sessions load failed", exc_info=True)
                     continue
                 sessions.append(
                     {
@@ -354,7 +419,7 @@ class REPLScreen(Screen):
                     }
                 )
         except Exception:
-            pass
+            logger.warning("_list_tui_sessions failed", exc_info=True)
         return sessions
 
     def _refresh_sessions_list(self):
@@ -362,7 +427,7 @@ class REPLScreen(Screen):
         try:
             self.sidebar.refresh_sessions(self._list_tui_sessions(), self._session_id)
         except Exception:
-            pass
+            logger.warning("_refresh_sessions_list failed", exc_info=True)
         finally:
             self._refreshing_sessions = False
 
@@ -387,6 +452,7 @@ class REPLScreen(Screen):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
+            logger.warning(f"_load_tui_session load failed: {exc}", exc_info=True)
             self._system(f"Load failed: {exc}")
             return
 
@@ -407,7 +473,7 @@ class REPLScreen(Screen):
                     if role and content:
                         conv.add_message(Message(role=role, content=content))
             except Exception:
-                pass
+                logger.warning("_load_tui_session agent session failed", exc_info=True)
 
         self._session_id = sid
         self._session_messages = list(messages)
@@ -488,7 +554,7 @@ class REPLScreen(Screen):
             try:
                 self._session_menu.remove()
             except Exception:
-                pass
+                logger.warning("_dismiss_session_menu remove failed", exc_info=True)
             self._session_menu = None
 
     def _on_session_menu_pick(self, action: str):
@@ -511,7 +577,7 @@ class REPLScreen(Screen):
             data = json.loads(path.read_text(encoding="utf-8"))
             current = data.get("name", "") or ""
         except Exception:
-            pass
+            logger.warning("_rename_session load failed", exc_info=True)
 
         def _on_result(new_name: str | None):
             if not new_name:
@@ -524,6 +590,7 @@ class REPLScreen(Screen):
                 self._refresh_sessions_list()
                 self._system(f"已重命名为：{new_name}")
             except Exception as exc:
+                logger.warning(f"_rename_session save failed: {exc}", exc_info=True)
                 self._system(f"重命名失败: {exc}")
 
         self.app.push_screen(
@@ -552,6 +619,7 @@ class REPLScreen(Screen):
                 self._refresh_sessions_list()
                 self._system(f"已删除会话 {sid[:8]}")
             except Exception as exc:
+                logger.warning(f"_delete_session failed: {exc}", exc_info=True)
                 self._system(f"删除失败: {exc}")
 
         self.app.push_screen(
@@ -610,7 +678,7 @@ class REPLScreen(Screen):
 
                 self.agent.session = Session(self.config)
             except Exception:
-                pass
+                logger.warning("action_new_session session failed", exc_info=True)
         self._session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self._session_messages.clear()
         self._token_count = 0
@@ -662,7 +730,7 @@ class REPLScreen(Screen):
             cfg.tui.system_log_enabled = self.system_log_enabled
             cfg.save_tui_config()
         except Exception:
-            pass
+            logger.warning("_persist_tui_state failed", exc_info=True)
 
     @safe
     def action_page_up(self):
@@ -765,6 +833,7 @@ class REPLScreen(Screen):
             pyperclip.copy(text)
             return True
         except Exception:
+            logger.warning("_copy_text pyperclip failed", exc_info=True)
             return False
 
     @safe
@@ -853,6 +922,7 @@ class REPLScreen(Screen):
             try:
                 getattr(self, method)(args)
             except Exception as exc:
+                logger.warning(f"Command error (/{name}): {exc}", exc_info=True)
                 self._system(f"Command error (/{name}): {exc}", force=True)
             return
         self._run_cli_command(raw)
@@ -862,12 +932,12 @@ class REPLScreen(Screen):
 
         # 检查当前是否允许显示 CLI 日志
         def _allow_cli_log() -> bool:
-            cfg = self.config
-            return cfg is None or not hasattr(cfg, "tui") or cfg.tui.cli_log_enabled
+            return getattr(self, "_cli_log_enabled", True)
 
         try:
             from foxcode import cli as fox_cli
         except Exception:
+            logger.warning("_run_cli_command import failed", exc_info=True)
             if _allow_cli_log():
                 self._system(f"Unknown command: /{name}. Type /help for commands.", force=True)
             return
@@ -891,6 +961,7 @@ class REPLScreen(Screen):
         except EOFError:
             result = True
         except Exception as exc:
+            logger.warning(f"_run_cli_command failed: {exc}", exc_info=True)
             exc_info = exc
         finally:
             fox_cli.console = old_console
@@ -914,9 +985,9 @@ class REPLScreen(Screen):
         ]
         output = "\n".join(lines).strip()
         if output:
-            self._system(output)
+            self._system(output, force=True)
         else:
-            self._system(f"Ran /{name}.")
+            self._system(f"Ran /{name}.", force=True)
         if result is False:
             self.action_quit()
 
@@ -998,6 +1069,7 @@ class REPLScreen(Screen):
                     infer_provider=infer,
                 )
             except Exception as exc:
+                logger.warning(f"_run_interactive_config failed: {exc}", exc_info=True)
                 self._system(f"配置失败: {exc}")
                 return
             self._show_config_panel(kind, save_msg)
@@ -1028,7 +1100,7 @@ class REPLScreen(Screen):
             try:
                 self.workers.cancel_group(self, "chat")
             except Exception:
-                pass
+                logger.warning("_cancel_stream failed", exc_info=True)
             self.busy = False
             self._stop_spinner()
 
@@ -1070,17 +1142,17 @@ class REPLScreen(Screen):
                 try:
                     cfg.run_mode = target
                 except Exception:
-                    pass
+                    logger.warning("_cmd_mode set run_mode failed", exc_info=True)
             elif hasattr(cfg, "mode"):
                 try:
                     cfg.mode = target
                 except Exception:
-                    pass
+                    logger.warning("_cmd_mode set cfg.mode failed", exc_info=True)
         if self.agent and hasattr(self.agent, "set_mode"):
             try:
                 self.agent.set_mode(target)
             except Exception:
-                pass
+                logger.warning("_cmd_mode agent.set_mode failed", exc_info=True)
         self._refresh_header()
         self._refresh_status()
         self._system(f"Mode {ICONS.forward} {self.mode}", force=True)
@@ -1153,9 +1225,11 @@ class REPLScreen(Screen):
         arg = args[0].lower()
         if arg == "on":
             cfg.tui.cli_log_enabled = True
+            self._cli_log_enabled = True
             self._system("CLI log display enabled", force=True)
         elif arg == "off":
             cfg.tui.cli_log_enabled = False
+            self._cli_log_enabled = False
             self._system("CLI log display disabled", force=True)
         else:
             self._system("Usage: /cli-log on | off", force=True)
@@ -1163,7 +1237,7 @@ class REPLScreen(Screen):
         try:
             cfg.save_tui_config()
         except Exception:
-            pass
+            logger.warning("_cmd_cli_log save failed", exc_info=True)
 
     def _cmd_welcome(self, args):
         cfg = self.config
@@ -1187,7 +1261,7 @@ class REPLScreen(Screen):
         try:
             cfg.save_tui_config()
         except Exception:
-            pass
+            logger.warning("_cmd_welcome save failed", exc_info=True)
 
     def _cmd_delete(self, args):
         arg = args[0].lower() if args else ""
@@ -1342,6 +1416,7 @@ class REPLScreen(Screen):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            logger.warning(f"_stream_worker failed: {exc}", exc_info=True)
             err = f"\n\n[error] {exc}"
             if assistant_widget:
                 assistant_widget.append_text(err)

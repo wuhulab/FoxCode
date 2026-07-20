@@ -425,7 +425,7 @@ class ProcessWatchdog:
             logger.info(f"性能指标已导出到: {file_path}")
 
         except Exception as e:
-            logger.error(f"导出性能指标失败: {e}")
+            logger.error(f"导出性能指标失败: {e}", exc_info=True)
 
     def _update_resource_metrics(self) -> None:
         """更新资源使用指标"""
@@ -451,7 +451,7 @@ class ProcessWatchdog:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"监控循环错误: {e}\n{traceback.format_exc()}")
+                logger.error(f"监控循环错误: {e}\n{traceback.format_exc()}", exc_info=True)
                 await asyncio.sleep(5)
 
     async def _check_health(self) -> None:
@@ -469,7 +469,7 @@ class ProcessWatchdog:
                     try:
                         self._on_memory_warning(metrics.memory_usage_mb)
                     except Exception as e:
-                        logger.error(f"内存警告回调失败: {e}")
+                        logger.error(f"内存警告回调失败: {e}", exc_info=True)
 
             if metrics.cpu_percent > self.cpu_threshold_percent:
                 logger.warning(
@@ -479,7 +479,7 @@ class ProcessWatchdog:
                     try:
                         self._on_cpu_warning(metrics.cpu_percent)
                     except Exception as e:
-                        logger.error(f"CPU 警告回调失败: {e}")
+                        logger.error(f"CPU 警告回调失败: {e}", exc_info=True)
 
     def _handle_error_threshold(self, error_count: int) -> None:
         """
@@ -494,14 +494,14 @@ class ProcessWatchdog:
             try:
                 self._on_error_threshold_reached(error_count)
             except Exception as e:
-                logger.error(f"错误达限回调失败: {e}")
+                logger.error(f"错误达限回调失败: {e}", exc_info=True)
 
         if self.enable_auto_recovery and self._on_auto_recovery_triggered:
             logger.info("触发自动恢复机制...")
             try:
                 self._on_auto_recovery_triggered()
             except Exception as e:
-                logger.error(f"自动恢复回调失败: {e}")
+                logger.error(f"自动恢复回调失败: {e}", exc_info=True)
 
     def _save_metrics_snapshot(self) -> None:
         """保存指标快照"""

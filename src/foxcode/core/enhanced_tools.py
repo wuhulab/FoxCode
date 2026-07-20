@@ -511,6 +511,7 @@ async def execute_snippet(
             "error": f"执行超时 ({timeout}秒)",
         }
     except Exception as e:
+        logger.warning(f"命令执行失败: {e}", exc_info=True)
         return {
             "success": False,
             "error": f"{type(e).__name__}: {str(e)}",

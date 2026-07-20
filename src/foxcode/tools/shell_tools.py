@@ -454,6 +454,7 @@ class ShellExecuteTool(BaseTool):
                         is_safe = True
                         break
                 except Exception:
+                    logger.warning("路径安全验证失败", exc_info=True)
                     pass
 
             # 如果目录在工作目录下，也认为是安全的
@@ -463,6 +464,7 @@ class ShellExecuteTool(BaseTool):
                 if str(resolved_dir).startswith(str(work_dir)):
                     is_safe = True
             except Exception:
+                logger.warning("工作目录路径解析失败", exc_info=True)
                 pass
 
             if is_safe:
@@ -639,7 +641,7 @@ class ShellExecuteTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"执行命令失败: {e}")
+            logger.error(f"执行命令失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -680,7 +682,7 @@ class ShellExecuteTool(BaseTool):
             process.kill()
             await command_manager.timeout_command(cmd_id)
         except Exception as e:
-            logger.error(f"异步命令执行失败: {e}")
+            logger.error(f"异步命令执行失败: {e}", exc_info=True)
             await command_manager.fail_command(cmd_id, str(e))
 
 

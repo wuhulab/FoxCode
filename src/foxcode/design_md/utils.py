@@ -10,9 +10,12 @@ utils.py — 工具函数。
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def read_input(file_path: str) -> str:
@@ -23,6 +26,7 @@ def read_input(file_path: str) -> str:
     try:
         return Path(file_path).read_text(encoding="utf-8")
     except Exception as e:
+        logger.warning(f"读取文件失败: {file_path}", exc_info=True)
         print(json.dumps({
             "error": "FILE_READ_ERROR",
             "message": str(e),

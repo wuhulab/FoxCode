@@ -97,7 +97,7 @@ class DesignCheckTool(BaseTool):
                 )
 
         except Exception as e:
-            logger.error("设计规范检查失败: %s", e)
+            logger.error("设计规范检查失败: %s", e, exc_info=True)
             return ToolResult(success=False, output="", error=str(e))
 
     def _find_design_file(self) -> Path | None:

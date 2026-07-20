@@ -514,7 +514,7 @@ class SkillManager:
             try:
                 await skill.initialize()
             except Exception as e:
-                self._logger.error(f"Failed to initialize skill {skill.name}: {e}")
+                self._logger.error(f"Failed to initialize skill {skill.name}: {e}", exc_info=True)
                 skill._state = SkillState.ERROR
 
     async def cleanup_all(self) -> None:
@@ -523,7 +523,7 @@ class SkillManager:
             try:
                 await skill.cleanup()
             except Exception as e:
-                self._logger.error(f"Failed to cleanup skill {skill.name}: {e}")
+                self._logger.error(f"Failed to cleanup skill {skill.name}: {e}", exc_info=True)
 
     def find_triggered_skills(self, context: SkillContext) -> list[BaseSkill]:
         """
@@ -577,7 +577,7 @@ class SkillManager:
 
         except Exception as e:
             skill._state = SkillState.ERROR
-            self._logger.error(f"Skill {name} execution failed: {e}")
+            self._logger.error(f"Skill {name} execution failed: {e}", exc_info=True)
             return SkillResult.fail(str(e))
 
     async def execute_triggered_skills(self, context: SkillContext) -> list[tuple[str, SkillResult]]:
@@ -707,7 +707,7 @@ class SkillManager:
                 if skill and self.register(skill):
                     loaded += 1
             except Exception as e:
-                self._logger.error(f"Failed to load skill from {skill_file}: {e}")
+                self._logger.error(f"Failed to load skill from {skill_file}: {e}", exc_info=True)
 
         # 加载 Markdown skill 文件 (.foxcode/skills/**/*.md)
         for skill_file in directory.glob("**/*.md"):
@@ -716,7 +716,7 @@ class SkillManager:
                 if skill and self.register(skill):
                     loaded += 1
             except Exception as e:
-                self._logger.error(f"Failed to load skill from markdown {skill_file}: {e}")
+                self._logger.error(f"Failed to load skill from markdown {skill_file}: {e}", exc_info=True)
 
         return loaded
 
@@ -782,7 +782,7 @@ class SkillManager:
             return MarkdownSkill()
 
         except Exception as e:
-            self._logger.error(f"Failed to parse markdown skill {file_path}: {e}")
+            self._logger.error(f"Failed to parse markdown skill {file_path}: {e}", exc_info=True)
             return None
 
     async def _load_skill_from_file(self, file_path: Path) -> BaseSkill | None:
@@ -1108,6 +1108,7 @@ class RuleBasedSkillGenerator(BaseSkill):
             
             return SkillResult.ok(f"成功生成并注册了 {len(generated_skills)} 个技能")
         except Exception as e:
+            logger.warning("技能生成失败", exc_info=True)
             return SkillResult.fail(f"生成技能失败: {str(e)}")
 
     def _parse_rules(self, content: str) -> dict[str, str]:

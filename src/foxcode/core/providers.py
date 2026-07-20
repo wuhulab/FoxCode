@@ -90,6 +90,7 @@ def _create_http_client(config: ModelConfig) -> httpx.AsyncClient | None:
             else:
                 client_kwargs["proxies"] = config.proxy_url
         except Exception:
+            logger.warning("httpx.Proxy 创建失败，使用 proxies 参数", exc_info=True)
             client_kwargs["proxies"] = config.proxy_url
         logger.info("使用代理: %s", config.proxy_url)
     return httpx.AsyncClient(**client_kwargs)
@@ -391,7 +392,7 @@ class OpenAIProvider(BaseModelProvider):
             encoding = tiktoken.encoding_for_model(self.config.model_name)
             return len(encoding.encode(text))
         except Exception:
-            # 简单估算：平均每 4 个字符约 1 个 token
+            logger.warning("tiktoken 编码失败，使用字符估算", exc_info=True)
             return len(text) // 4
 
 
@@ -483,6 +484,7 @@ class AnthropicProvider(BaseModelProvider):
             encoding = tiktoken.get_encoding("cl100k_base")
             return len(encoding.encode(text))
         except Exception:
+            logger.warning("tiktoken 编码失败，使用字符估算", exc_info=True)
             return len(text) // 4
 
 

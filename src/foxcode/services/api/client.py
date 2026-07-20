@@ -139,7 +139,7 @@ class OpenAIClient(BaseAPIClient):
                 },
             }
         except Exception as e:
-            self._logger.error(f"OpenAI 聊天完成 API 调用失败: {e}")
+            self._logger.error(f"OpenAI 聊天完成 API 调用失败: {e}", exc_info=True)
             raise
 
     async def text_completion(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
@@ -167,7 +167,7 @@ class OpenAIClient(BaseAPIClient):
                 },
             }
         except Exception as e:
-            self._logger.error(f"OpenAI 文本完成 API 调用失败: {e}")
+            self._logger.error(f"OpenAI 文本完成 API 调用失败: {e}", exc_info=True)
             raise
 
     async def embedding(self, text: str) -> list[float]:
@@ -178,7 +178,7 @@ class OpenAIClient(BaseAPIClient):
             # 返回一个示例嵌入向量
             return [0.1] * 1536
         except Exception as e:
-            self._logger.error(f"OpenAI 嵌入 API 调用失败: {e}")
+            self._logger.error(f"OpenAI 嵌入 API 调用失败: {e}", exc_info=True)
             raise
 
 
@@ -208,7 +208,7 @@ class AnthropicClient(BaseAPIClient):
                 },
             }
         except Exception as e:
-            self._logger.error(f"Anthropic 聊天完成 API 调用失败: {e}")
+            self._logger.error(f"Anthropic 聊天完成 API 调用失败: {e}", exc_info=True)
             raise
 
     async def text_completion(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
@@ -228,7 +228,7 @@ class AnthropicClient(BaseAPIClient):
                 },
             }
         except Exception as e:
-            self._logger.error(f"Anthropic 文本完成 API 调用失败: {e}")
+            self._logger.error(f"Anthropic 文本完成 API 调用失败: {e}", exc_info=True)
             raise
 
     async def embedding(self, text: str) -> list[float]:
@@ -239,7 +239,7 @@ class AnthropicClient(BaseAPIClient):
             # 返回一个示例嵌入向量
             return [0.1] * 1536
         except Exception as e:
-            self._logger.error(f"Anthropic 嵌入 API 调用失败: {e}")
+            self._logger.error(f"Anthropic 嵌入 API 调用失败: {e}", exc_info=True)
             raise
 
 

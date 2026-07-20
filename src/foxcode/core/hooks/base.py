@@ -189,7 +189,7 @@ class HookManager:
                     result = await result
                 results.append(result)
             except Exception as e:
-                self._logger.error(f"执行钩子 {hook_type.value} 时出错: {e}")
+                self._logger.error(f"执行钩子 {hook_type.value} 时出错: {e}", exc_info=True)
         
         return results
     

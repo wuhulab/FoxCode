@@ -440,7 +440,7 @@ class WorkflowManager:
         try:
             self.workflow_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.error(f"创建工作流程目录失败: {e}")
+            logger.error(f"创建工作流程目录失败: {e}", exc_info=True)
             raise
 
     def register_phase_executor(
@@ -539,7 +539,7 @@ class WorkflowManager:
                     self._workflows[workflow.id] = workflow
                     return workflow
             except Exception as e:
-                logger.warning(f"加载工作流程文件失败: {workflow_file}: {e}")
+                logger.warning(f"加载工作流程文件失败: {workflow_file}: {e}", exc_info=True)
 
         return None
 
@@ -628,7 +628,7 @@ class WorkflowManager:
 
             except Exception as e:
                 workflow.fail_phase(phase, str(e))
-                logger.error(f"阶段执行失败: {phase.get_display_name()}: {e}")
+                logger.error(f"阶段执行失败: {phase.get_display_name()}: {e}", exc_info=True)
                 raise
         else:
             # 没有执行器，标记为需要手动完成
@@ -735,7 +735,7 @@ class WorkflowManager:
                 json.dump(workflow.to_dict(), f, ensure_ascii=False, indent=2)
             logger.debug(f"工作流程已保存: {file_path}")
         except Exception as e:
-            logger.error(f"保存工作流程失败: {e}")
+            logger.error(f"保存工作流程失败: {e}", exc_info=True)
             raise
 
     def _load_workflow(self, workflow_id: str) -> WorkflowInstance | None:
@@ -751,7 +751,7 @@ class WorkflowManager:
                 data = json.load(f)
             return WorkflowInstance.from_dict(data)
         except Exception as e:
-            logger.error(f"加载工作流程失败: {workflow_id}: {e}")
+            logger.error(f"加载工作流程失败: {workflow_id}: {e}", exc_info=True)
             return None
 
     def delete_workflow(self, workflow_id: str) -> bool:
@@ -776,7 +776,7 @@ class WorkflowManager:
                 logger.info(f"工作流程已删除: {workflow_id}")
                 return True
             except Exception as e:
-                logger.error(f"删除工作流程文件失败: {e}")
+                logger.error(f"删除工作流程文件失败: {e}", exc_info=True)
                 return False
 
         return True
@@ -920,6 +920,7 @@ def create_default_test_executor(test_command: str = "pytest") -> Callable:
         except subprocess.TimeoutExpired:
             raise Exception("测试执行超时")
         except Exception as e:
+            logger.warning("测试执行错误", exc_info=True)
             raise Exception(f"测试执行错误: {e}")
 
     return executor
@@ -1085,7 +1086,7 @@ def create_default_evaluation_executor() -> Callable:
         except Exception as e:
             # 评估过程发生错误
             error_msg = f"评估执行错误: {e}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             raise Exception(error_msg)
 
     return executor

@@ -253,7 +253,7 @@ class GrepTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"Grep 搜索失败: {e}")
+            logger.error(f"Grep 搜索失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -365,7 +365,7 @@ class SearchCodebaseTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"代码库搜索失败: {e}")
+            logger.error(f"代码库搜索失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",

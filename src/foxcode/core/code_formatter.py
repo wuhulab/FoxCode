@@ -320,6 +320,7 @@ class CodeFormatter:
                     if "tool" in data and "ruff" in data["tool"]:
                         return FormatterType.RUFF
                 except Exception:
+                    logger.warning("解析 pyproject.toml 配置失败", exc_info=True)
                     pass
 
         # 检查 .prettierrc
@@ -388,7 +389,7 @@ class CodeFormatter:
                         config["quote_style"] = value
 
         except Exception as e:
-            logger.debug(f"解析 .editorconfig 失败: {e}")
+            logger.debug(f"解析 .editorconfig 失败: {e}", exc_info=True)
 
         return config
 
@@ -462,6 +463,7 @@ class CodeFormatter:
             )
 
         except Exception as e:
+            logger.warning(f"格式化文件失败: {e}", exc_info=True)
             return FormatResult(
                 success=False,
                 error=str(e),
@@ -615,7 +617,7 @@ class CodeFormatter:
             logger.error("格式化器执行超时")
             return input_code
         except Exception as e:
-            logger.error(f"格式化器执行失败: {e}")
+            logger.error(f"格式化器执行失败: {e}", exc_info=True)
             return input_code
 
     async def format_directory(

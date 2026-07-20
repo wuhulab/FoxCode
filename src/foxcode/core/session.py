@@ -168,7 +168,7 @@ class Session:
                 self.save()
             except Exception as e:
                 # 保存失败不应中断程序运行
-                logger.warning(f"自动保存会话失败（将继续运行）: {e}")
+                logger.warning(f"自动保存会话失败（将继续运行）: {e}", exc_info=True)
 
     def add_user_message(self, content: str) -> Message:
         """
@@ -286,7 +286,7 @@ class Session:
 
             logger.debug(f"会话已保存: {self.session_path}")
         except Exception as e:
-            logger.error(f"保存会话失败: {e}")
+            logger.error(f"保存会话失败: {e}", exc_info=True)
             raise
 
     @classmethod
@@ -318,6 +318,7 @@ class Session:
                 except ImportError:
                     raise ValueError("会话数据已加密，但加密模块不可用")
                 except Exception as e:
+                    logger.warning("解密会话数据失败", exc_info=True)
                     raise ValueError(f"解密会话数据失败: {e}")
             else:
                 data = storage_data.get("data", storage_data)
@@ -329,7 +330,7 @@ class Session:
             logger.info(f"会话已加载: {session_id}")
             return session
         except Exception as e:
-            logger.error(f"加载会话失败: {e}")
+            logger.error(f"加载会话失败: {e}", exc_info=True)
             raise
 
     def delete(self) -> None:
@@ -374,7 +375,7 @@ class Session:
                     "path": str(session_file),
                 })
             except Exception as e:
-                logger.warning(f"读取会话文件失败 {session_file}: {e}")
+                logger.warning(f"读取会话文件失败 {session_file}: {e}", exc_info=True)
 
         return sessions
 
@@ -514,7 +515,7 @@ class Session:
                 try:
                     feature_list.load()
                 except Exception as e:
-                    logger.warning(f"加载功能列表失败: {e}")
+                    logger.warning(f"加载功能列表失败: {e}", exc_info=True)
 
             # 加载摘要
             summary = context_bridge.load_summary()
@@ -527,7 +528,7 @@ class Session:
             }
 
         except Exception as e:
-            logger.error(f"加载进度信息失败: {e}")
+            logger.error(f"加载进度信息失败: {e}", exc_info=True)
             return {}
 
     def save_session_summary(
@@ -577,7 +578,7 @@ class Session:
             logger.info(f"会话摘要已保存: {self.session_id}")
 
         except Exception as e:
-            logger.error(f"保存会话摘要失败: {e}")
+            logger.error(f"保存会话摘要失败: {e}", exc_info=True)
             raise
 
     def update_progress(
@@ -616,7 +617,7 @@ class Session:
             logger.debug(f"进度已更新: {current_task}")
 
         except Exception as e:
-            logger.error(f"更新进度失败: {e}")
+            logger.error(f"更新进度失败: {e}", exc_info=True)
             raise
 
     # ==================== 工作流程相关方法 ====================

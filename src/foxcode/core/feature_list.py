@@ -497,7 +497,7 @@ class FeatureList:
             self.from_markdown(content)
             logger.info(f"已加载功能列表: {self.file_path}")
         except Exception as e:
-            logger.error(f"加载功能列表失败: {e}")
+            logger.error(f"加载功能列表失败: {e}", exc_info=True)
             raise
 
     def save(self) -> None:
@@ -509,7 +509,7 @@ class FeatureList:
             self.file_path.write_text(content, encoding="utf-8")
             logger.debug(f"功能列表已保存: {self.file_path}")
         except Exception as e:
-            logger.error(f"保存功能列表失败: {e}")
+            logger.error(f"保存功能列表失败: {e}", exc_info=True)
             raise
 
     def to_markdown(self) -> str:
@@ -672,7 +672,7 @@ class FeatureList:
             logger.info(f"已从 Markdown 导入 {len(self.features)} 个功能")
 
         except Exception as e:
-            logger.error(f"解析 Markdown 失败: {e}")
+            logger.error(f"解析 Markdown 失败: {e}", exc_info=True)
             raise ValueError(f"解析 Markdown 失败: {e}")
 
     def delete_feature(self, feature_id: str) -> bool:

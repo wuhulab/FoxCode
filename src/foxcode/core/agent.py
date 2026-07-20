@@ -72,6 +72,7 @@ def _extract_http_detail(error: Exception) -> str:
             url = getattr(request, "url", "?")
             return f"Detailed:HTTP Request: {method} {url}"
     except Exception:
+        logger.warning("Failed to extract HTTP detail from exception", exc_info=True)
         pass
     return ""
 
@@ -718,7 +719,7 @@ class FoxCodeAgent:
             logger.info(f"FoxCode Agent initialized (mode: {self.session_type.value})")
 
         except Exception as e:
-            logger.error(f"Initialization failed: {e}")
+            logger.error(f"Initialization failed: {e}", exc_info=True)
             raise
 
     async def _initialize_mcp(self) -> None:
@@ -750,7 +751,7 @@ class FoxCodeAgent:
             logger.info(f"MCP initialized with {len(mcp_manager.list_servers())} servers")
 
         except Exception as e:
-            logger.warning(f"Failed to initialize MCP: {e}")
+            logger.warning(f"Failed to initialize MCP: {e}", exc_info=True)
 
     async def _initialize_skills(self) -> None:
         """初始化 Skill 系统"""
@@ -785,7 +786,7 @@ class FoxCodeAgent:
             logger.info(f"Skills initialized: {len(skill_manager.list_skills())} skills")
 
         except Exception as e:
-            logger.warning(f"Failed to initialize skills: {e}")
+            logger.warning(f"Failed to initialize skills: {e}", exc_info=True)
 
     async def _load_progress_context(self) -> None:
         """加载进度上下文"""
@@ -793,7 +794,7 @@ class FoxCodeAgent:
             progress_info = self.session.load_progress_info()
             logger.info(f"Loaded progress context: {len(progress_info)} items")
         except Exception as e:
-            logger.warning(f"Failed to load progress context: {e}")
+            logger.warning(f"Failed to load progress context: {e}", exc_info=True)
 
     def _get_system_prompt(self) -> str:
         """
@@ -875,7 +876,7 @@ class FoxCodeAgent:
         try:
             return self._mcp_manager.get_tools_for_prompt()
         except Exception as e:
-            logger.warning(f"Failed to get MCP prompt injection: {e}")
+            logger.warning(f"Failed to get MCP prompt injection: {e}", exc_info=True)
             return ""
 
     def _get_skill_prompt_injection(self) -> str:
@@ -886,7 +887,7 @@ class FoxCodeAgent:
         try:
             return self._skill_manager.get_prompt_injections()
         except Exception as e:
-            logger.warning(f"Failed to get skill prompt injection: {e}")
+            logger.warning(f"Failed to get skill prompt injection: {e}", exc_info=True)
             return ""
 
     def _get_open_space_prompt_injection(self) -> str:
@@ -916,7 +917,7 @@ class FoxCodeAgent:
             return manager.get_prompt_injection()
 
         except Exception as e:
-            logger.warning(f"Failed to get OpenSpace prompt injection: {e}")
+            logger.warning(f"Failed to get OpenSpace prompt injection: {e}", exc_info=True)
             return ""
 
     def _get_design_mode_prompt_injection(self) -> str:
@@ -938,7 +939,7 @@ class FoxCodeAgent:
             return design_mode_manager.get_prompt_injection()
 
         except Exception as e:
-            logger.warning(f"Failed to get design mode prompt injection: {e}")
+            logger.warning(f"Failed to get design mode prompt injection: {e}", exc_info=True)
             return ""
 
     def _get_handoff_context(self) -> str:
@@ -968,7 +969,7 @@ class FoxCodeAgent:
                 return artifact.to_prompt_context()
 
         except Exception as e:
-            logger.warning(f"加载 HandoffArtifact 失败: {e}")
+            logger.warning(f"加载 HandoffArtifact 失败: {e}", exc_info=True)
 
         return ""
 
@@ -1013,7 +1014,7 @@ class FoxCodeAgent:
             return "\n".join(lines) if lines else "No context information available"
 
         except Exception as e:
-            logger.warning(f"Failed to build context info: {e}")
+            logger.warning(f"Failed to build context info: {e}", exc_info=True)
             return "Failed to load context information"
 
     def _escape_prompt_content(self, content: str) -> str:
@@ -1162,6 +1163,7 @@ class FoxCodeAgent:
                     try:
                         valid_tool_names = [t["name"] for t in registry.list_tools()]
                     except Exception:
+                        logger.warning("Failed to list tools from registry, using fallback defaults", exc_info=True)
                         # 如果无法获取注册表，使用默认列表
                         valid_tool_names = [
                             "read_file", "write_file", "edit_file", "list_directory",
@@ -1284,6 +1286,7 @@ class FoxCodeAgent:
             tool = registry.get_tool(tool_name)
             return [p.name for p in tool.parameters]
         except Exception:
+            logger.warning("Failed to get tool param order from registry", exc_info=True)
             return []
 
     @staticmethod
@@ -1325,6 +1328,7 @@ class FoxCodeAgent:
         try:
             valid_tool_names = [t["name"] for t in registry.list_tools()]
         except Exception:
+            logger.warning("Failed to list tools from registry for bracket parse, using fallback defaults", exc_info=True)
             valid_tool_names = [
                 "read_file", "write_file", "edit_file", "list_directory",
                 "glob", "grep", "search_codebase", "shell_execute",
@@ -1426,6 +1430,7 @@ class FoxCodeAgent:
                     logger.warning(f"Rejecting empty dangerous bracket call: {tool_name}")
                     return None, None, text
             except Exception:
+                logger.warning("Failed to get tool from registry for empty param check", exc_info=True)
                 pass
 
         remaining = text[:start] + text[end:]
@@ -1580,7 +1585,7 @@ class FoxCodeAgent:
                         delay = _calculate_retry_delay(retry_count - 1)
 
                         logger.warning(
-                            f"Request failed (retry {retry_count}/{MAX_RETRIES}): {e}"
+                            f"Request failed (retry {retry_count}/{MAX_RETRIES}): {e}", exc_info=True
                         )
                         logger.info(f"Waiting {delay:.1f} seconds before retry...")
 
@@ -1718,7 +1723,7 @@ class FoxCodeAgent:
                 self.session.add_user_message(tool_result_message)
 
             except Exception as e:
-                logger.error(f"Tool execution exception: {e}")
+                logger.error(f"Tool execution exception: {e}", exc_info=True)
                 error_msg = (
                     f"<tool_result>\n"
                     f"<tool_name>{tool_name}</tool_name>\n"
@@ -1796,7 +1801,7 @@ class FoxCodeAgent:
                         data={"mcp_tool": True, "server": mcp_tool.server_name},
                     )
                 except Exception as e:
-                    logger.error(f"MCP tool execution failed: {e}")
+                    logger.error(f"MCP tool execution failed: {e}", exc_info=True)
                     return ToolResult(
                         success=False,
                         output="",
@@ -1849,7 +1854,7 @@ class FoxCodeAgent:
             return False
 
         except Exception as e:
-            logger.error(f"检查上下文重置失败: {e}")
+            logger.error(f"检查上下文重置失败: {e}", exc_info=True)
             return False
 
     def detect_anxiety_in_output(self, output: str) -> tuple[bool, str]:
@@ -1884,7 +1889,7 @@ class FoxCodeAgent:
             return manager.detect_anxiety(output, pending_tasks)
 
         except Exception as e:
-            logger.error(f"检测上下文焦虑失败: {e}")
+            logger.error(f"检测上下文焦虑失败: {e}", exc_info=True)
             return False, ""
 
     async def _process_skills(self, user_input: str) -> list[tuple[str, SkillResult]]:
@@ -1916,7 +1921,7 @@ class FoxCodeAgent:
             return await self._skill_manager.execute_triggered_skills(context)
 
         except Exception as e:
-            logger.error(f"Failed to process skills: {e}")
+            logger.error(f"Failed to process skills: {e}", exc_info=True)
             return []
 
     def get_conversation(self) -> Conversation:
@@ -2042,7 +2047,7 @@ class FoxCodeAgent:
             logger.info("Session summary saved")
 
         except Exception as e:
-            logger.error(f"Failed to save session summary: {e}")
+            logger.error(f"Failed to save session summary: {e}", exc_info=True)
 
     def _extract_key_param(self, tool_name: str, params: dict | None) -> str:
         """
@@ -2127,7 +2132,7 @@ class FoxCodeAgent:
                 )
 
         except Exception as e:
-            logger.debug(f"Failed to track tool result: {e}")
+            logger.debug(f"Failed to track tool result: {e}", exc_info=True)
 
     def get_session_review_prompt(self) -> str:
         """
@@ -2150,7 +2155,7 @@ class FoxCodeAgent:
             return manager.generate_review_prompt()
 
         except Exception as e:
-            logger.debug(f"Failed to get session review prompt: {e}")
+            logger.debug(f"Failed to get session review prompt: {e}", exc_info=True)
             return ""
 
     def save_openspace_from_response(self, response: str) -> int:
@@ -2170,7 +2175,7 @@ class FoxCodeAgent:
             return manager.save_from_ai_response(response)
 
         except Exception as e:
-            logger.error(f"Failed to save OpenSpace from response: {e}")
+            logger.error(f"Failed to save OpenSpace from response: {e}", exc_info=True)
             return 0
 
     def auto_save_session_experiences(self) -> int:
@@ -2196,7 +2201,7 @@ class FoxCodeAgent:
             return saved
 
         except Exception as e:
-            logger.error(f"Failed to auto save session experiences: {e}")
+            logger.error(f"Failed to auto save session experiences: {e}", exc_info=True)
             return 0
 
     def track_pitfall(
@@ -2226,7 +2231,7 @@ class FoxCodeAgent:
                 )
 
         except Exception as e:
-            logger.debug(f"Failed to track pitfall: {e}")
+            logger.debug(f"Failed to track pitfall: {e}", exc_info=True)
 
     def track_shortcut(
         self,
@@ -2255,7 +2260,7 @@ class FoxCodeAgent:
                 )
 
         except Exception as e:
-            logger.debug(f"Failed to track shortcut: {e}")
+            logger.debug(f"Failed to track shortcut: {e}", exc_info=True)
 
     def get_progress_summary(self) -> str:
         """
@@ -2270,7 +2275,7 @@ class FoxCodeAgent:
         try:
             return self.session.get_progress_manager().get_summary()
         except Exception as e:
-            logger.error(f"Failed to get progress summary: {e}")
+            logger.error(f"Failed to get progress summary: {e}", exc_info=True)
             return f"Failed to get progress summary: {e}"
 
     def get_feature_list_summary(self) -> str:
@@ -2302,7 +2307,7 @@ class FoxCodeAgent:
             return "\n".join(lines)
 
         except Exception as e:
-            logger.error(f"Failed to get feature list summary: {e}")
+            logger.error(f"Failed to get feature list summary: {e}", exc_info=True)
             return f"Failed to get feature list summary: {e}"
 
     def mark_feature_completed(self, feature_id: str, verification: str = "") -> bool:
@@ -2325,7 +2330,7 @@ class FoxCodeAgent:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to mark feature as completed: {e}")
+            logger.error(f"Failed to mark feature as completed: {e}", exc_info=True)
             return False
 
     def add_feature(
@@ -2370,5 +2375,5 @@ class FoxCodeAgent:
             return feature_id
 
         except Exception as e:
-            logger.error(f"Failed to add feature: {e}")
+            logger.error(f"Failed to add feature: {e}", exc_info=True)
             return None

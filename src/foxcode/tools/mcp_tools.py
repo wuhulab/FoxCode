@@ -129,7 +129,7 @@ class MCPToolWrapper(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"MCP tool {self.name} execution failed: {e}")
+            logger.error(f"MCP tool {self.name} execution failed: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -177,7 +177,7 @@ class MCPToolRegistry:
                 self._logger.debug(f"Registered MCP tool: {wrapper.name}")
 
             except Exception as e:
-                self._logger.error(f"Failed to register MCP tool {tool.name}: {e}")
+                self._logger.error(f"Failed to register MCP tool {tool.name}: {e}", exc_info=True)
 
         if registered > 0:
             self._logger.info(f"Registered {registered} MCP tools")
@@ -213,7 +213,7 @@ class MCPToolRegistry:
                 self._logger.debug(f"Unregistered MCP tool: {tool_name}")
 
             except Exception as e:
-                self._logger.error(f"Failed to unregister MCP tool {tool_name}: {e}")
+                self._logger.error(f"Failed to unregister MCP tool {tool_name}: {e}", exc_info=True)
 
         return unregistered
 

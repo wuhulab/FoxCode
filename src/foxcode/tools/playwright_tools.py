@@ -185,7 +185,7 @@ class BrowserSession:
             }
 
         except Exception as e:
-            logger.error(f"启动浏览器失败: {e}")
+            logger.error(f"启动浏览器失败: {e}", exc_info=True)
             await self.close()
             raise
 
@@ -232,7 +232,7 @@ class BrowserSession:
             logger.info(f"浏览器会话已关闭: {self.session_id}")
 
         except Exception as e:
-            logger.warning(f"关闭浏览器时出错: {e}")
+            logger.warning(f"关闭浏览器时出错: {e}", exc_info=True)
         finally:
             self._page = None
             self._context = None
@@ -517,7 +517,7 @@ class PlaywrightStartTool(BaseTool):
                 error="Playwright 未安装。请运行: pip install playwright && playwright install",
             )
         except Exception as e:
-            logger.error(f"启动浏览器失败: {e}")
+            logger.error(f"启动浏览器失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -579,7 +579,7 @@ class PlaywrightCloseTool(BaseTool):
                 )
 
         except Exception as e:
-            logger.error(f"关闭浏览器失败: {e}")
+            logger.error(f"关闭浏览器失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -623,7 +623,7 @@ class PlaywrightListSessionsTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"列出会话失败: {e}")
+            logger.error(f"列出会话失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -701,7 +701,7 @@ class PlaywrightNavigateTool(BaseTool):
                 error=str(e),
             )
         except Exception as e:
-            logger.error(f"导航失败: {e}")
+            logger.error(f"导航失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -744,7 +744,7 @@ class PlaywrightGoBackTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"后退失败: {e}")
+            logger.error(f"后退失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -787,7 +787,7 @@ class PlaywrightGoForwardTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"前进失败: {e}")
+            logger.error(f"前进失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -859,7 +859,7 @@ class PlaywrightClickTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"点击失败: {e}")
+            logger.error(f"点击失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -927,7 +927,7 @@ class PlaywrightFillTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"填写失败: {e}")
+            logger.error(f"填写失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -984,7 +984,7 @@ class PlaywrightSelectTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"选择失败: {e}")
+            logger.error(f"选择失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1034,7 +1034,7 @@ class PlaywrightHoverTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"悬停失败: {e}")
+            logger.error(f"悬停失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1094,7 +1094,7 @@ class PlaywrightPressKeyTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"按键失败: {e}")
+            logger.error(f"按键失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1198,7 +1198,7 @@ class PlaywrightScreenshotTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"截图失败: {e}")
+            logger.error(f"截图失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1268,7 +1268,7 @@ class PlaywrightGetVisibleTextTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"获取文本失败: {e}")
+            logger.error(f"获取文本失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1338,7 +1338,7 @@ class PlaywrightGetVisibleHtmlTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"获取HTML失败: {e}")
+            logger.error(f"获取HTML失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1416,7 +1416,7 @@ class PlaywrightGetTool(BaseTool):
                 )
 
         except Exception as e:
-            logger.error(f"获取属性失败: {e}")
+            logger.error(f"获取属性失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1483,7 +1483,7 @@ class PlaywrightExpectResponseTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"等待响应失败: {e}")
+            logger.error(f"等待响应失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1566,7 +1566,7 @@ class PlaywrightAssertResponseTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"断言失败: {e}")
+            logger.error(f"断言失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1616,7 +1616,7 @@ class PlaywrightEvaluateTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"执行JavaScript失败: {e}")
+            logger.error(f"执行JavaScript失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1675,7 +1675,7 @@ class PlaywrightResizeTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"调整视口失败: {e}")
+            logger.error(f"调整视口失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1741,7 +1741,7 @@ class PlaywrightUploadFileTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"上传文件失败: {e}")
+            logger.error(f"上传文件失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1815,7 +1815,7 @@ class PlaywrightDragTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"拖拽失败: {e}")
+            logger.error(f"拖拽失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1873,7 +1873,7 @@ class PlaywrightClickAndSwitchTabTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"切换标签页失败: {e}")
+            logger.error(f"切换标签页失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1932,7 +1932,7 @@ class PlaywrightSaveAsPdfTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"保存PDF失败: {e}")
+            logger.error(f"保存PDF失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -2003,7 +2003,7 @@ class PlaywrightCustomUserAgentTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"设置User-Agent失败: {e}")
+            logger.error(f"设置User-Agent失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -2077,7 +2077,7 @@ class PlaywrightConsoleLogsTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"获取控制台日志失败: {e}")
+            logger.error(f"获取控制台日志失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",

@@ -277,6 +277,7 @@ class CodeAnalyzer:
         except SyntaxError as e:
             return False, f"语法错误 (行 {e.lineno}): {e.msg}"
         except Exception as e:
+            logger.warning("代码解析错误", exc_info=True)
             return False, f"解析错误: {str(e)}"
 
     @staticmethod
@@ -530,7 +531,7 @@ class EvaluatorAgent:
             )
 
         except Exception as e:
-            logger.error(f"代码质量评估失败: {e}")
+            logger.error(f"代码质量评估失败: {e}", exc_info=True)
             report.summary = f"评估过程中发生错误: {str(e)}"
             report.passed = False
 
@@ -595,7 +596,7 @@ class EvaluatorAgent:
             )
 
         except Exception as e:
-            logger.error(f"设计质量评估失败: {e}")
+            logger.error(f"设计质量评估失败: {e}", exc_info=True)
             report.summary = f"评估过程中发生错误: {str(e)}"
             report.passed = False
 

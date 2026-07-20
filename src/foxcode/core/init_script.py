@@ -205,6 +205,7 @@ class InitScriptGenerator:
             try:
                 env.python_version = python_version_file.read_text().strip()
             except Exception:
+                logger.warning("读取 .python-version 失败", exc_info=True)
                 pass
 
         return found
@@ -236,6 +237,7 @@ class InitScriptGenerator:
             try:
                 env.node_version = nvmrc.read_text().strip()
             except Exception:
+                logger.warning("读取 .nvmrc 失败", exc_info=True)
                 pass
 
         return found
@@ -290,7 +292,7 @@ class InitScriptGenerator:
                     )
                     deps.append(dep)
         except Exception as e:
-            logger.warning(f"解析 requirements.txt 失败: {e}")
+            logger.warning(f"解析 requirements.txt 失败: {e}", exc_info=True)
 
         return deps
 
@@ -332,7 +334,7 @@ class InitScriptGenerator:
                         )
                         deps.append(dep)
         except Exception as e:
-            logger.warning(f"解析 pyproject.toml 失败: {e}")
+            logger.warning(f"解析 pyproject.toml 失败: {e}", exc_info=True)
 
         return deps
 
@@ -364,7 +366,7 @@ class InitScriptGenerator:
                 )
                 deps.append(dep)
         except Exception as e:
-            logger.warning(f"解析 package.json 失败: {e}")
+            logger.warning(f"解析 package.json 失败: {e}", exc_info=True)
 
         return deps
 
@@ -714,6 +716,7 @@ class InitScriptGenerator:
             return True, "脚本验证通过"
 
         except Exception as e:
+            logger.warning("验证脚本失败", exc_info=True)
             return False, f"验证脚本失败: {e}"
 
     async def async_generate_init_script(self, output_dir: Path | None = None) -> dict[str, Path]:

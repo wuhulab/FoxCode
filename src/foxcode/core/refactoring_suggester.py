@@ -304,7 +304,7 @@ class RefactoringSuggester:
                 severity=Severity.HIGH,
             ))
         except Exception as e:
-            logger.error(f"分析文件失败: {e}")
+            logger.error(f"分析文件失败: {e}", exc_info=True)
 
         return report
 

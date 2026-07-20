@@ -9,10 +9,13 @@ test_comment_stress.py — 注释保护压力测试。
 - 文件内容突变（AI 完全重写）
 """
 
+import logging
 import random
 import string
 
 import pytest
+
+logger = logging.getLogger(__name__)
 
 from foxcode.core.comment_parser import CommentParser
 from foxcode.core.comment_protector import CommentProtector
@@ -166,4 +169,5 @@ class TestRandomizedContent:
                 try:
                     parser.parse(chars)
                 except Exception as e:
+                    logger.warning(f"Parser crashed on {ext}: {e}", exc_info=True)
                     pytest.fail(f"Parser crashed on {ext}: {e}")

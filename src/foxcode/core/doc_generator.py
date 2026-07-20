@@ -194,7 +194,7 @@ class DocGenerator:
         except Exception as e:
             result.success = False
             result.error = str(e)
-            logger.error(f"生成 API 文档失败: {e}")
+            logger.error(f"生成 API 文档失败: {e}", exc_info=True)
 
         return result
 
@@ -216,7 +216,7 @@ class DocGenerator:
                         endpoints.append(endpoint)
 
         except Exception as e:
-            logger.debug(f"解析文件失败 {file_path}: {e}")
+            logger.debug(f"解析文件失败 {file_path}: {e}", exc_info=True)
 
         return endpoints
 

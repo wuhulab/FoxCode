@@ -380,7 +380,7 @@ class TestGenerator:
             result.coverage_estimate = self._estimate_coverage(result.test_cases, functions)
 
         except Exception as e:
-            logger.error(f"生成测试失败: {e}")
+            logger.error(f"生成测试失败: {e}", exc_info=True)
 
         return result
 
@@ -779,7 +779,7 @@ def {fixture_name}():
             ]
 
         except Exception as e:
-            logger.error(f"分析覆盖率失败: {e}")
+            logger.error(f"分析覆盖率失败: {e}", exc_info=True)
 
         return report
 

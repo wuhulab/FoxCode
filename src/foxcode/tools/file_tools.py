@@ -207,7 +207,7 @@ class PathSecurityValidator:
                 if allowed_path.exists() and allowed_path.is_dir():
                     self._allowed_paths.append(allowed_path)
             except Exception as e:
-                logger.warning(f"无法添加允许目录 {allowed}: {e}")
+                logger.warning(f"无法添加允许目录 {allowed}: {e}", exc_info=True)
 
         self._denied_paths = []
         for denied in self.config.denied_directories:
@@ -216,6 +216,7 @@ class PathSecurityValidator:
                 if denied_path.exists():
                     self._denied_paths.append(denied_path.resolve())
             except Exception:
+                logger.warning("添加禁止目录失败", exc_info=True)
                 pass
 
         self._initialized = True
@@ -251,6 +252,7 @@ class PathSecurityValidator:
             try:
                 return True, "", Path(file_path).resolve()
             except Exception as e:
+                logger.warning(f"路径解析失败: {e}", exc_info=True)
                 return False, f"路径解析失败: {e}", None
 
         try:
@@ -287,9 +289,11 @@ class PathSecurityValidator:
                         else path.resolve(strict=False)
                     )
             except Exception:
+                logger.warning("路径解析异常，尝试备用解析", exc_info=True)
                 try:
                     resolved_path = path.resolve(strict=False)
                 except Exception as e2:
+                    logger.warning(f"备用路径解析也失败: {e2}", exc_info=True)
                     return False, f"路径解析失败: {e2}", None
 
             # 符号链接安全检查
@@ -304,6 +308,7 @@ class PathSecurityValidator:
                     if self._is_subpath(resolved_path, denied):
                         return False, "路径在禁止目录中", None
                 except Exception:
+                    logger.warning("检查禁止目录时异常", exc_info=True)
                     pass
 
             # 检查解析后的路径是否在允许目录中
@@ -314,6 +319,7 @@ class PathSecurityValidator:
                         is_allowed = True
                         break
                 except Exception:
+                    logger.warning("检查允许目录时异常", exc_info=True)
                     pass
 
             if not is_allowed:
@@ -337,7 +343,7 @@ class PathSecurityValidator:
             return True, "", resolved_path
 
         except Exception as e:
-            logger.error(f"路径验证异常: {e}")
+            logger.error(f"路径验证异常: {e}", exc_info=True)
             return False, "路径验证失败", None
 
     def _contains_unicode_confusable(self, text: str) -> bool:
@@ -401,6 +407,7 @@ class PathSecurityValidator:
 
             return False
         except Exception:
+            logger.warning("最终路径验证异常", exc_info=True)
             return False
 
     def _check_symlink_enhanced(self, original_path: Path, resolved_path: Path) -> str | None:
@@ -441,8 +448,10 @@ class PathSecurityValidator:
                                 if not self._is_subpath(resolved_target, allowed):
                                     return f"符号链接目标不在允许目录中: {resolved_target}"
                             except Exception:
+                                logger.warning("检查符号链接子路径时异常", exc_info=True)
                                 pass
                     except Exception as e:
+                        logger.warning(f"符号链接检查异常: {e}", exc_info=True)
                         return f"符号链接检查失败: {e}"
 
             try:
@@ -454,6 +463,7 @@ class PathSecurityValidator:
                 if original_real != resolved_path:
                     return "路径解析不一致，可能存在符号链接攻击"
             except Exception:
+                logger.warning("检查路径解析一致性时异常", exc_info=True)
                 pass
 
             symlink_depth = self._count_symlink_depth(original_path)
@@ -463,6 +473,7 @@ class PathSecurityValidator:
             return None
 
         except Exception as e:
+            logger.warning(f"符号链接检查顶层异常: {e}", exc_info=True)
             return f"符号链接检查失败: {e}"
 
     def _validate_path_components(self, path: Path) -> None:
@@ -505,6 +516,7 @@ class PathSecurityValidator:
                 else:
                     break
             except Exception:
+                logger.warning("检查符号链接深度时异常，终止", exc_info=True)
                 break
 
         return depth
@@ -683,6 +695,7 @@ class ReadFileTool(BaseTool):
                 error="文件编码不支持，请确认是文本文件",
             )
         except Exception as e:
+            logger.warning(f"读取文件异常: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -766,6 +779,7 @@ class WriteFileTool(BaseTool):
                         raw_data = await f.read()
                     original_content, _ = decode_bytes(raw_data)
                 except Exception:
+                    logger.warning("读取原始文件内容用于注释保护失败", exc_info=True)
                     original_content = None
 
             # 应用注释保护
@@ -794,7 +808,7 @@ class WriteFileTool(BaseTool):
                                 f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
                             )
             except Exception as e:
-                logger.debug(f"注释保护跳过: {e}")
+                logger.warning(f"注释保护异常: {e}", exc_info=True)
 
             expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -823,11 +837,12 @@ class WriteFileTool(BaseTool):
 
             except Exception as verify_error:
                 verification_error = f"验证失败: {verify_error}"
-                logger.error(f"文件验证异常: {file_path} - {verify_error}")
+                logger.error(f"文件验证异常: {file_path} - {verify_error}", exc_info=True)
 
             try:
                 os.chmod(path, 0o644)
             except Exception:
+                logger.warning("设置文件权限失败", exc_info=True)
                 pass
 
             if verification_passed:
@@ -859,6 +874,7 @@ class WriteFileTool(BaseTool):
                 )
 
         except Exception as e:
+            logger.warning(f"写入文件异常: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1119,6 +1135,7 @@ class EditFileTool(BaseTool):
             )
 
         except Exception as e:
+            logger.warning(f"编辑文件异常: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1141,7 +1158,7 @@ class EditFileTool(BaseTool):
                     new_content = protected_content
                     return f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
         except Exception as e:
-            logger.debug(f"注释保护跳过: {e}")
+            logger.warning(f"注释保护异常: {e}", exc_info=True)
         return ""
 
     async def _write_text(self, path: Any, text: str, encoding: str) -> None:
@@ -1155,6 +1172,7 @@ class EditFileTool(BaseTool):
         try:
             os.chmod(path, 0o644)
         except Exception:
+            logger.warning("设置文件权限失败", exc_info=True)
             pass
 
 
@@ -1252,6 +1270,7 @@ class ListDirectoryTool(BaseTool):
             )
 
         except Exception as e:
+            logger.warning(f"列出目录异常: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1390,7 +1409,7 @@ class SearchInFileTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"搜索文件失败: {e}")
+            logger.error(f"搜索文件失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1481,7 +1500,7 @@ class DeleteFileTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"删除失败: {e}")
+            logger.error(f"删除失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",
@@ -1560,7 +1579,7 @@ class GlobTool(BaseTool):
             )
 
         except Exception as e:
-            logger.error(f"Glob 搜索失败: {e}")
+            logger.error(f"Glob 搜索失败: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 output="",

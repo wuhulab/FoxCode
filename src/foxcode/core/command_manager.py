@@ -285,7 +285,7 @@ class CommandManager:
                 except ProcessLookupError:
                     pass  # 进程已经结束
                 except Exception as e:
-                    logger.error(f"停止命令时出错: {e}")
+                    logger.error(f"停止命令时出错: {e}", exc_info=True)
 
             cmd_info.end_time = time.time()
             cmd_info.status = CommandStatus.STOPPED

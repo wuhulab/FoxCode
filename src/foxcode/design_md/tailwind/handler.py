@@ -11,8 +11,12 @@ tailwind/handler.py — Tailwind v3 emitter 实现。
 
 from __future__ import annotations
 
+import logging
+
 from foxcode.design_md.model.spec import DesignSystemState, ResolvedDimension
 from foxcode.design_md.tailwind.spec import TailwindEmitterResult
+
+logger = logging.getLogger(__name__)
 
 
 class TailwindEmitterHandler:
@@ -34,6 +38,7 @@ class TailwindEmitterHandler:
                 data={"theme": {"extend": theme_extend}},
             )
         except Exception as e:
+            logger.warning(f"Tailwind v3 发射失败: {e}", exc_info=True)
             return TailwindEmitterResult(
                 success=False,
                 error={"message": str(e)},

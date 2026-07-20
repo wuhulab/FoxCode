@@ -378,7 +378,7 @@ class DependencyResolver:
                         dependencies.append(dep)
 
         except Exception as e:
-            logger.error(f"解析 requirements.txt 失败: {e}")
+            logger.error(f"解析 requirements.txt 失败: {e}", exc_info=True)
 
         return dependencies
 
@@ -477,7 +477,7 @@ class DependencyResolver:
         except ImportError:
             logger.warning("tomli 未安装，无法解析 pyproject.toml")
         except Exception as e:
-            logger.error(f"解析 pyproject.toml 失败: {e}")
+            logger.error(f"解析 pyproject.toml 失败: {e}", exc_info=True)
 
         return dependencies
 
@@ -500,7 +500,7 @@ class DependencyResolver:
                         dependencies.append(dep)
 
         except Exception as e:
-            logger.error(f"解析 setup.py 失败: {e}")
+            logger.error(f"解析 setup.py 失败: {e}", exc_info=True)
 
         return dependencies
 
@@ -557,7 +557,7 @@ class DependencyResolver:
                 ))
 
         except Exception as e:
-            logger.error(f"解析 package.json 失败: {e}")
+            logger.error(f"解析 package.json 失败: {e}", exc_info=True)
 
         return dependencies
 
@@ -594,7 +594,7 @@ class DependencyResolver:
                 ))
 
         except Exception as e:
-            logger.error(f"解析 go.mod 失败: {e}")
+            logger.error(f"解析 go.mod 失败: {e}", exc_info=True)
 
         return dependencies
 
@@ -635,7 +635,7 @@ class DependencyResolver:
         except ImportError:
             logger.warning("tomli 未安装，无法解析 Cargo.toml")
         except Exception as e:
-            logger.error(f"解析 Cargo.toml 失败: {e}")
+            logger.error(f"解析 Cargo.toml 失败: {e}", exc_info=True)
 
         return dependencies
 

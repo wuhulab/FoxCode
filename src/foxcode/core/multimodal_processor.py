@@ -301,11 +301,11 @@ class MultimodalProcessor:
                 analysis.description = "多模态模型不可用，无法分析图像"
                 analysis.image_type = ImageType.UNKNOWN
             except Exception as e:
-                logger.error(f"图像分析失败: {e}")
+                logger.error(f"图像分析失败: {e}", exc_info=True)
                 analysis.description = f"分析失败: {str(e)}"
 
         except Exception as e:
-            logger.error(f"图像分析失败: {e}")
+            logger.error(f"图像分析失败: {e}", exc_info=True)
             analysis.description = str(e)
 
         return analysis

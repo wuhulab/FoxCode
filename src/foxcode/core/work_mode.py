@@ -178,7 +178,7 @@ class WorkModeManager:
                 self.state.failed_tasks = data.get("failed_tasks", 0)
                 logger.debug(f"加载状态: {self.state.status.value}")
             except Exception as e:
-                logger.warning(f"加载状态失败: {e}")
+                logger.warning(f"加载状态失败: {e}", exc_info=True)
 
     def _save_state(self) -> None:
         """保存状态"""
@@ -188,7 +188,7 @@ class WorkModeManager:
             with open(state_file, "w", encoding="utf-8") as f:
                 json.dump(self.state.to_dict(), f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"保存状态失败: {e}")
+            logger.error(f"保存状态失败: {e}", exc_info=True)
 
     def _load_records(self) -> None:
         """加载任务记录"""
@@ -219,7 +219,7 @@ class WorkModeManager:
                     self._tasks[task.id] = task
                 logger.info(f"加载了 {len(self._tasks)} 条任务记录")
             except Exception as e:
-                logger.warning(f"加载任务记录失败: {e}")
+                logger.warning(f"加载任务记录失败: {e}", exc_info=True)
 
     def _save_records(self) -> None:
         """保存任务记录"""
@@ -251,7 +251,7 @@ class WorkModeManager:
 
             logger.debug(f"保存了 {len(tasks_to_save)} 条任务记录")
         except Exception as e:
-            logger.error(f"保存任务记录失败: {e}")
+            logger.error(f"保存任务记录失败: {e}", exc_info=True)
 
     # ==================== 模式控制 ====================
 
@@ -286,7 +286,7 @@ class WorkModeManager:
             return True, "Work模式已启用"
 
         except Exception as e:
-            logger.error(f"启用Work模式失败: {e}")
+            logger.error(f"启用Work模式失败: {e}", exc_info=True)
             self.state.status = WorkModeStatus.ERROR
             return False, f"启用失败: {str(e)}"
 
@@ -326,7 +326,7 @@ class WorkModeManager:
             return True, "Work模式已禁用"
 
         except Exception as e:
-            logger.error(f"禁用Work模式失败: {e}")
+            logger.error(f"禁用Work模式失败: {e}", exc_info=True)
             self.state.status = WorkModeStatus.ERROR
             return False, f"禁用失败: {str(e)}"
 
@@ -425,7 +425,7 @@ class WorkModeManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"工作任务处理异常: {e}")
+                logger.error(f"工作任务处理异常: {e}", exc_info=True)
 
     async def _execute_work_task(self, task: WorkTask) -> None:
         """
@@ -472,7 +472,7 @@ class WorkModeManager:
                         else:
                             self._report_callback(task, phase, phase_result)
                     except Exception as e:
-                        logger.error(f"报告回调执行失败: {e}")
+                        logger.error(f"报告回调执行失败: {e}", exc_info=True)
 
                 # 如果阶段失败，终止任务
                 if not phase_result["success"]:
@@ -494,7 +494,7 @@ class WorkModeManager:
 
             self.state.failed_tasks += 1
 
-            logger.error(f"[WORK] 任务失败: {task.id} - {e}")
+            logger.error(f"[WORK] 任务失败: {task.id} - {e}", exc_info=True)
 
         finally:
             # 从活动任务列表移除
@@ -674,7 +674,7 @@ class WorkModeManager:
                     "path": str(target_path),
                 }
             except Exception as e:
-                logger.warning(f"无法获取目标目录统计: {e}")
+                logger.warning(f"无法获取目标目录统计: {e}", exc_info=True)
                 analysis_result["target_stats"] = {"exists": True, "path": str(target_path)}
         else:
             analysis_result["target_stats"] = {"exists": False, "path": str(target_path)}
@@ -828,6 +828,7 @@ class WorkModeManager:
                     if len(scanned_files) > 10:
                         execution_log.append(f"    ... 还有 {len(scanned_files) - 10} 个文件")
             except Exception as e:
+                logger.warning(f"扫描目录失败: {e}", exc_info=True)
                 execution_log.append(f"  [WARN] 扫描失败: {e}")
         else:
             execution_log.append("  [WARN] 目标目录不存在，将创建")
@@ -1194,7 +1195,7 @@ class WorkModeManager:
             }
 
         except Exception as e:
-            logger.error(f"[WORK] 多代理执行失败: {e}")
+            logger.error(f"[WORK] 多代理执行失败: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": f"多代理执行失败: {str(e)}",
@@ -1297,6 +1298,7 @@ class WorkModeManager:
                     "dir_count": dir_count,
                 })
             except Exception as e:
+                logger.warning(f"统计目录失败: {e}", exc_info=True)
                 verify_log.append(f"  [WARN] 无法统计目录: {e}")
                 verify_result["warnings"].append(f"目录统计失败: {e}")
         else:
@@ -1422,6 +1424,7 @@ class WorkModeManager:
                             found_types.add(ftype)
                             break
         except Exception as e:
+            logger.warning(f"文件类型扫描失败: {e}", exc_info=True)
             checks.append({
                 "name": "文件类型扫描",
                 "status": "warning",
@@ -1490,6 +1493,7 @@ class WorkModeManager:
                         "message": f"语法错误: 行 {e.lineno}",
                     })
                 except Exception:
+                    logger.warning("Python语法检查失败", exc_info=True)
                     pass
 
             if python_valid:
@@ -1515,6 +1519,7 @@ class WorkModeManager:
                         "message": f"JSON 错误: 行 {e.lineno}",
                     })
                 except Exception:
+                    logger.warning("JSON语法检查失败", exc_info=True)
                     pass
 
             if json_valid:
@@ -1542,6 +1547,7 @@ class WorkModeManager:
                             "message": "YAML 错误",
                         })
                     except Exception:
+                        logger.warning("YAML语法检查失败", exc_info=True)
                         pass
 
                 if yaml_valid:
@@ -1726,6 +1732,7 @@ class WorkModeManager:
                 end = datetime.fromisoformat(task.completed_at)
                 total_duration = (end - start).total_seconds()
             except Exception:
+                logger.warning("计算任务时长失败", exc_info=True)
                 pass
 
         stats_lines = [
@@ -1939,6 +1946,7 @@ class WorkModeManager:
                         logger.debug(f"通过项目结构分析检测到主目录: {dir_name}")
                         return dir_name
                 except Exception:
+                    logger.warning("统计文件计数失败", exc_info=True)
                     pass
 
         logger.debug(f"未能从描述中检测到目标目录: {description[:50]}...")
@@ -2013,7 +2021,7 @@ class WorkModeManager:
             return self._orchestrator
 
         except Exception as e:
-            logger.error(f"创建 MultiAgentOrchestrator 失败: {e}")
+            logger.error(f"创建 MultiAgentOrchestrator 失败: {e}", exc_info=True)
             return None
 
     def set_foxcode_config(self, config: Config) -> None:

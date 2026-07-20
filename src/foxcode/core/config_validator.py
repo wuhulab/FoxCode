@@ -212,6 +212,7 @@ class ConfigValidator:
                             "message": f"配置文件 '{config_path}' 不在用户目录中，可能被其他用户访问",
                         })
                 except Exception:
+                    logger.warning("检查配置文件路径失败", exc_info=True)
                     pass
 
             # 检查文件是否包含敏感信息
@@ -234,10 +235,11 @@ class ConfigValidator:
                             })
                         break
             except Exception:
+                logger.warning("检查敏感信息失败", exc_info=True)
                 pass
 
         except Exception as e:
-            logger.debug(f"检查配置文件权限失败: {e}")
+            logger.debug(f"检查配置文件权限失败: {e}", exc_info=True)
 
     def _validate_required_fields(self, config: dict[str, Any]) -> None:
         """验证必需字段"""
@@ -561,6 +563,7 @@ def validate_config_file(config_path: Path) -> tuple[bool, str]:
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
     except Exception as e:
+        logger.warning("无法读取配置文件", exc_info=True)
         return False, f"无法读取配置文件: {e}"
 
     validator = ConfigValidator()

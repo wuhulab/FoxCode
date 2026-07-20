@@ -366,7 +366,7 @@ class PerformanceAnalyzer:
             result.status = ProfilingStatus.FAILED
             result.error = f"{type(e).__name__}: {str(e)}"
             result.metadata["traceback"] = traceback.format_exc()
-            logger.error(f"性能分析失败: {e}")
+            logger.error(f"性能分析失败: {e}", exc_info=True)
 
         return result
 
@@ -425,6 +425,7 @@ class PerformanceAnalyzer:
             result.status = ProfilingStatus.FAILED
             result.error = f"{type(e).__name__}: {str(e)}"
             result.metadata["traceback"] = traceback.format_exc()
+            logger.warning(f"性能分析失败: {e}", exc_info=True)
 
         return result
 

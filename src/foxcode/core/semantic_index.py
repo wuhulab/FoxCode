@@ -507,7 +507,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
             logger.debug(f"生成嵌入向量，维度: {len(embedding)}")
             return embedding
         except Exception as e:
-            logger.error(f"生成嵌入向量失败: {e}")
+            logger.error(f"生成嵌入向量失败: {e}", exc_info=True)
             raise
 
     async def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
@@ -534,7 +534,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
             logger.debug(f"批量生成 {len(embeddings)} 个嵌入向量")
             return embeddings
         except Exception as e:
-            logger.error(f"批量生成嵌入向量失败: {e}")
+            logger.error(f"批量生成嵌入向量失败: {e}", exc_info=True)
             raise
 
     def get_dimension(self) -> int:
@@ -602,7 +602,7 @@ class LocalEmbeddingModel(BaseEmbeddingModel):
             logger.debug(f"生成嵌入向量，维度: {len(embedding)}")
             return embedding.astype(np.float32)
         except Exception as e:
-            logger.error(f"生成嵌入向量失败: {e}")
+            logger.error(f"生成嵌入向量失败: {e}", exc_info=True)
             raise
 
     async def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
@@ -629,7 +629,7 @@ class LocalEmbeddingModel(BaseEmbeddingModel):
             logger.debug(f"批量生成 {len(result)} 个嵌入向量")
             return result
         except Exception as e:
-            logger.error(f"批量生成嵌入向量失败: {e}")
+            logger.error(f"批量生成嵌入向量失败: {e}", exc_info=True)
             raise
 
     def get_dimension(self) -> int:
@@ -695,7 +695,7 @@ class PythonCodeParser:
             logger.warning(f"解析文件 {file_path} 时发生语法错误: {e}")
             return []
         except Exception as e:
-            logger.error(f"读取文件 {file_path} 失败: {e}")
+            logger.error(f"读取文件 {file_path} 失败: {e}", exc_info=True)
             return []
 
         chunks = []
@@ -751,7 +751,7 @@ class PythonCodeParser:
                 },
             )
         except Exception as e:
-            logger.warning(f"提取函数 {node.name} 失败: {e}")
+            logger.warning(f"提取函数 {node.name} 失败: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -792,7 +792,7 @@ class PythonCodeParser:
                 },
             )
         except Exception as e:
-            logger.warning(f"提取类 {node.name} 失败: {e}")
+            logger.warning(f"提取类 {node.name} 失败: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -818,7 +818,7 @@ class PythonCodeParser:
                 docstring=docstring,
             )
         except Exception as e:
-            logger.warning(f"提取模块 {file_path} 失败: {e}")
+            logger.warning(f"提取模块 {file_path} 失败: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -836,7 +836,7 @@ class PythonCodeParser:
             content = file_path.read_text(encoding="utf-8")
             tree = ast.parse(content)
         except Exception as e:
-            logger.error(f"解析文件 {file_path} 失败: {e}")
+            logger.error(f"解析文件 {file_path} 失败: {e}", exc_info=True)
             return []
 
         dependencies = []
@@ -898,7 +898,7 @@ class JavaScriptCodeParser:
         try:
             content = file_path.read_text(encoding="utf-8")
         except Exception as e:
-            logger.error(f"读取文件 {file_path} 失败: {e}")
+            logger.error(f"读取文件 {file_path} 失败: {e}", exc_info=True)
             return []
 
         chunks = []
@@ -1149,7 +1149,7 @@ class VectorStore:
             logger.info(f"向量存储已保存到 {path}")
             return True
         except Exception as e:
-            logger.error(f"保存向量存储失败: {e}")
+            logger.error(f"保存向量存储失败: {e}", exc_info=True)
             return False
 
     def load(self, path: Path) -> bool:
@@ -1176,7 +1176,7 @@ class VectorStore:
             logger.warning(f"向量存储文件不存在: {path}")
             return False
         except Exception as e:
-            logger.error(f"加载向量存储失败: {e}")
+            logger.error(f"加载向量存储失败: {e}", exc_info=True)
             return False
 
     def __len__(self) -> int:
@@ -1264,7 +1264,7 @@ class SemanticCodeIndex:
             content = file_path.read_bytes()
             return hashlib.sha256(content).hexdigest()
         except Exception as e:
-            logger.error(f"计算文件哈希失败: {e}")
+            logger.error(f"计算文件哈希失败: {e}", exc_info=True)
             return ""
 
     async def index_directory(self, path: Path) -> int:
@@ -1307,7 +1307,7 @@ class SemanticCodeIndex:
                 if (i + 1) % 10 == 0:
                     logger.info(f"进度: {i + 1}/{len(files_to_index)}")
             except Exception as e:
-                logger.error(f"索引文件 {file_path} 失败: {e}")
+                logger.error(f"索引文件 {file_path} 失败: {e}", exc_info=True)
                 continue
 
         logger.info(f"目录索引完成，共索引 {indexed_count} 个文件")
@@ -1361,7 +1361,7 @@ class SemanticCodeIndex:
         try:
             embeddings = await self.embedding_model.embed_batch(texts)
         except Exception as e:
-            logger.error(f"生成嵌入向量失败: {e}")
+            logger.error(f"生成嵌入向量失败: {e}", exc_info=True)
             return False
 
         for chunk, embedding in zip(chunks, embeddings):
@@ -1463,7 +1463,7 @@ class SemanticCodeIndex:
         try:
             query_embedding = await self.embedding_model.embed_text(query)
         except Exception as e:
-            logger.error(f"生成查询嵌入向量失败: {e}")
+            logger.error(f"生成查询嵌入向量失败: {e}", exc_info=True)
             return []
 
         results = self.vector_store.search(query_embedding, top_k)
@@ -1629,7 +1629,7 @@ class SemanticCodeIndex:
             logger.info("索引保存成功")
             return True
         except Exception as e:
-            logger.error(f"保存索引失败: {e}")
+            logger.error(f"保存索引失败: {e}", exc_info=True)
             return False
 
     async def load_index(self, path: Path | None = None) -> bool:
@@ -1698,7 +1698,7 @@ class SemanticCodeIndex:
             )
             return True
         except Exception as e:
-            logger.error(f"加载索引失败: {e}")
+            logger.error(f"加载索引失败: {e}", exc_info=True)
             return False
 
     def remove_file(self, file_path: Path) -> bool:

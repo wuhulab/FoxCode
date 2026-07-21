@@ -480,26 +480,10 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
                 if self.base_url:
                     client_kwargs["base_url"] = self.base_url
 
-                # 使用自定义 httpx 客户端，模拟浏览器 UA 绕过 WAF 拦截
-                import httpx
-                _BROWSER_USER_AGENTS = [
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                ]
-
-                async def _force_browser_headers(request: httpx.Request) -> None:
-                    request.headers.update({
-                        "User-Agent": random.choice(_BROWSER_USER_AGENTS),
-                        "Accept": "application/json, text/plain, */*",
-                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    })
-
-                http_client = httpx.AsyncClient(
-                    timeout=httpx.Timeout(120),
-                    event_hooks={"request": [_force_browser_headers]},
-                )
-                client_kwargs["http_client"] = http_client
+                # 使用自定义 HTTP 客户端（优先 curl_cffi 模拟 TLS 指纹，回退到 httpx）
+                http_client = self._create_browser_http_client()
+                if http_client is not None:
+                    client_kwargs["http_client"] = http_client
 
                 self._client = AsyncOpenAI(**client_kwargs)
                 logger.debug("OpenAI 客户端初始化成功")
@@ -507,6 +491,61 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
                 logger.error("未安装 openai 库，请运行: pip install openai")
                 raise ImportError("未安装 openai 库") from e
         return self._client
+
+    @staticmethod
+    def _create_browser_http_client() -> Any | None:
+        """创建模拟浏览器的 HTTP 客户端（TLS 指纹 + 请求头），绕过 WAF 拦截"""
+        import httpx
+
+        _BROWSER_USER_AGENTS = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        ]
+
+        _STAINLESS_PREFIXES = ("x-stainless-", "x-openai-", "openai-")
+
+        def _force_headers(request: httpx.Request) -> None:
+            for key in list(request.headers.keys()):
+                key_lower = key.lower()
+                for prefix in _STAINLESS_PREFIXES:
+                    if key_lower.startswith(prefix):
+                        del request.headers[key]
+                        break
+            request.headers.update({
+                "User-Agent": random.choice(_BROWSER_USER_AGENTS),
+                "Accept": "*/*",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            })
+
+        # 优先使用 curl_cffi 进行 TLS 指纹模拟
+        try:
+            from curl_cffi.httpx import AsyncCurlSession
+
+            class _BrowserSession(AsyncCurlSession):
+                async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+                    _force_headers(request)
+                    return await super().send(request, **kwargs)
+
+            session = _BrowserSession(
+                impersonate="chrome",
+                timeout=httpx.Timeout(120),
+            )
+            logger.debug("语义索引使用 curl_cffi 客户端")
+            return session
+        except ImportError:
+            logger.debug("语义索引回退到 httpx 客户端")
+        except Exception as e:
+            logger.warning("语义索引 curl_cffi 初始化失败，回退到 httpx: %s", e)
+
+        # 回退到 httpx
+        async def _force_browser_headers(request: httpx.Request) -> None:
+            _force_headers(request)
+
+        return httpx.AsyncClient(
+            timeout=httpx.Timeout(120),
+            event_hooks={"request": [_force_browser_headers]},
+        )
 
     async def embed_text(self, text: str) -> np.ndarray:
         """

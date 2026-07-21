@@ -65,36 +65,88 @@ _BROWSER_USER_AGENTS = [
 ]
 
 
-def _create_http_client(config: ModelConfig) -> httpx.AsyncClient | None:
-    """创建模拟真实浏览器的 httpx 客户端（轮换 UA + 完整请求头 + 可选代理），绕过 WAF 拦截"""
-    headers = {
-        "Accept": "application/json, text/plain, */*",
+_STAINLESS_HEADER_PREFIXES = ("x-stainless-", "x-openai-", "openai-")
+
+
+def _build_browser_headers() -> dict[str, str]:
+    """生成一组模拟真实浏览器的请求头"""
+    ua = random.choice(_BROWSER_USER_AGENTS)
+    return {
+        "User-Agent": ua,
+        "Accept": "*/*",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+
+
+def _force_browser_headers_sync(request: httpx.Request) -> None:
+    """在请求发送前强制覆盖请求头，伪造成 Chrome 浏览器 fetch/XHR 请求"""
+    # 清除 openai SDK 自动添加的标识头（X-Stainless-* 等）
+    for key in list(request.headers.keys()):
+        key_lower = key.lower()
+        for prefix in _STAINLESS_HEADER_PREFIXES:
+            if key_lower.startswith(prefix):
+                del request.headers[key]
+                break
+
+    ua = random.choice(_BROWSER_USER_AGENTS)
+    request.headers.update({
+        "User-Agent": ua,
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "cross-site",
-    }
+    })
 
-    async def _force_browser_headers(request: httpx.Request) -> None:
-        """在请求发送前强制覆盖请求头，覆盖 openai 库自动添加的 AsyncOpenAI/Python x.x.x"""
-        request.headers.update({
-            "User-Agent": random.choice(_BROWSER_USER_AGENTS),
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-        })
 
+async def _force_browser_headers(request: httpx.Request) -> None:
+    """在请求发送前强制覆盖请求头，覆盖 openai 库自动添加的 AsyncOpenAI/Python x.x.x（异步版本）"""
+    _force_browser_headers_sync(request)
+
+
+def _create_http_client_curl_cffi(config: ModelConfig) -> httpx.AsyncClient | None:
+    """使用 curl_cffi 创建模拟浏览器的 HTTP 客户端（TLS 指纹 + 请求头），绕过 WAF 拦截"""
+    try:
+        from curl_cffi.httpx import AsyncCurlSession
+
+        class _BrowserSession(AsyncCurlSession):
+            """子类化 AsyncCurlSession，在 send() 中强制覆盖请求头"""
+
+            async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+                _force_browser_headers_sync(request)
+                return await super().send(request, **kwargs)
+
+        client_kwargs: dict[str, Any] = {
+            "impersonate": "chrome",
+            "headers": _build_browser_headers(),
+            "timeout": httpx.Timeout(config.timeout),
+        }
+        if config.proxy_url:
+            client_kwargs["proxy"] = config.proxy_url
+
+        logger.info("使用 curl_cffi 客户端（Chrome TLS 指纹模拟）")
+        return _BrowserSession(**client_kwargs)
+    except ImportError:
+        logger.debug("curl_cffi 未安装，回退到 httpx 客户端")
+    except Exception as e:
+        logger.warning("curl_cffi 初始化失败，回退到 httpx: %s", e)
+    return None
+
+
+def _create_http_client_httpx(config: ModelConfig) -> httpx.AsyncClient:
+    """使用标准 httpx 创建 HTTP 客户端（无 TLS 指纹模拟）"""
+    headers = _build_browser_headers()
     client_kwargs: dict[str, Any] = {
         "headers": headers,
         "timeout": httpx.Timeout(config.timeout),
         "event_hooks": {"request": [_force_browser_headers]},
     }
     if config.proxy_url:
-        # httpx >= 0.28 使用 proxy 参数（httpx.Proxy 实例），< 0.28 使用 proxies 参数
         try:
             if hasattr(httpx, "Proxy"):
                 client_kwargs["proxy"] = httpx.Proxy(url=config.proxy_url)
@@ -105,6 +157,14 @@ def _create_http_client(config: ModelConfig) -> httpx.AsyncClient | None:
             client_kwargs["proxies"] = config.proxy_url
         logger.info("使用代理: %s", config.proxy_url)
     return httpx.AsyncClient(**client_kwargs)
+
+
+def _create_http_client(config: ModelConfig) -> httpx.AsyncClient | None:
+    """创建模拟真实浏览器的 HTTP 客户端（TLS 指纹模拟 + 轮换 UA + 可选代理），绕过 WAF 拦截"""
+    client = _create_http_client_curl_cffi(config)
+    if client is not None:
+        return client
+    return _create_http_client_httpx(config)
 
 
 class ModelResponse:

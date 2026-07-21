@@ -68,7 +68,6 @@ _BROWSER_USER_AGENTS = [
 def _create_http_client(config: ModelConfig) -> httpx.AsyncClient | None:
     """创建模拟真实浏览器的 httpx 客户端（轮换 UA + 完整请求头 + 可选代理），绕过 WAF 拦截"""
     headers = {
-        "User-Agent": random.choice(_BROWSER_USER_AGENTS),
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Accept-Encoding": "gzip, deflate, br",
@@ -78,9 +77,21 @@ def _create_http_client(config: ModelConfig) -> httpx.AsyncClient | None:
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "cross-site",
     }
+
+    async def _force_browser_headers(request: httpx.Request) -> None:
+        """在请求发送前强制覆盖请求头，覆盖 openai 库自动添加的 AsyncOpenAI/Python x.x.x"""
+        request.headers.update({
+            "User-Agent": random.choice(_BROWSER_USER_AGENTS),
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        })
+
     client_kwargs: dict[str, Any] = {
         "headers": headers,
         "timeout": httpx.Timeout(config.timeout),
+        "event_hooks": {"request": [_force_browser_headers]},
     }
     if config.proxy_url:
         # httpx >= 0.28 使用 proxy 参数（httpx.Proxy 实例），< 0.28 使用 proxies 参数

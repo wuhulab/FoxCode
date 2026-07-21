@@ -37,6 +37,7 @@ from textual.widgets import Button, Footer, Header, Input, Static, TextArea
 
 from foxcode import __version__
 from foxcode.tui.icons import ICONS
+from foxcode.utils.error_logger import log_exception
 from foxcode.tui.theme import get_theme, status_color
 from foxcode.tui.widgets.dialog import HelpDialog, ConfirmDialog, TextInputDialog, MessageViewScreen
 from foxcode.tui.widgets.logo import WelcomeBanner
@@ -55,7 +56,7 @@ _STRIP_TAGS = re.compile(r"\[/?[a-zA-Z0-9_=#.,\s-]+\]")
 
 
 class _TUILogHandler(logging.Handler):
-    """将 CLI 日志记录转发到 TUI chat 的 logging handler."""
+    """将 CLI 日志记录转发到 PromptInput 内部的 logging handler."""
 
     def __init__(self, repl_screen):
         super().__init__()
@@ -64,16 +65,17 @@ class _TUILogHandler(logging.Handler):
 
     def emit(self, record):
         try:
-            if not getattr(self.repl, "_cli_log_enabled", True):
-                return
             msg = self.format(record)
-            app = getattr(self.repl, "app", None)
-            if app is not None and not self._is_main_thread():
-                app.call_from_thread(lambda: self.repl._system(f"[cli-log] {msg}", force=True))
-            else:
-                self.repl._system(f"[cli-log] {msg}", force=True)
+            self._push_to_input(f"[cli-log] {msg}")
         except Exception:
             self._safe_log("TUILogHandler emit failed")
+
+    def _push_to_input(self, msg: str):
+        app = getattr(self.repl, "app", None)
+        if app is not None and not self._is_main_thread():
+            app.call_from_thread(self.repl._add_cli_log, msg)
+        else:
+            self.repl._add_cli_log(msg)
 
     def _safe_log(self, text: str):
         try:
@@ -114,6 +116,7 @@ def safe(fn):
         try:
             return fn(self, *args, **kwargs)
         except Exception as exc:
+            log_exception(context=f"safe:{fn.__name__}")
             logger.warning(f"Error in {fn.__name__}: {exc}", exc_info=True)
             self._system(f"Error in {fn.__name__}: {exc}")
             if "--debug" in __import__("sys").argv:
@@ -294,6 +297,13 @@ class REPLScreen(Screen):
             chat.add_message(MessageWidget("system", f"{_now()} {text}"))
         except Exception:
             logger.warning("_system: 添加消息到聊天失败", exc_info=True)
+
+    def _add_cli_log(self, msg: str):
+        """向 PromptInput 内部的日志区域添加一条日志。"""
+        try:
+            self.prompt_input.add_cli_log(msg)
+        except Exception:
+            pass
 
     def _user(self, text: str):
         msg = MessageWidget("user", text)
@@ -1226,10 +1236,12 @@ class REPLScreen(Screen):
         if arg == "on":
             cfg.tui.cli_log_enabled = True
             self._cli_log_enabled = True
+            self.prompt_input.show_cli_logs()
             self._system("CLI log display enabled", force=True)
         elif arg == "off":
             cfg.tui.cli_log_enabled = False
             self._cli_log_enabled = False
+            self.prompt_input.hide_cli_logs()
             self._system("CLI log display disabled", force=True)
         else:
             self._system("Usage: /cli-log on | off", force=True)
@@ -1416,6 +1428,7 @@ class REPLScreen(Screen):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            log_exception(context="_stream_worker")
             logger.warning(f"_stream_worker failed: {exc}", exc_info=True)
             err = f"\n\n[error] {exc}"
             if assistant_widget:

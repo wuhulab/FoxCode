@@ -173,7 +173,7 @@ class CommentProtector:
 
     def restore_comments(
         self,
-        original_content: str,
+        original_content: str | None,
         new_content: str,
         file_path: str | Path,
         protected: list[ProtectedComment] | None = None,

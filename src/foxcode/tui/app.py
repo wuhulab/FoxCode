@@ -20,6 +20,7 @@ from textual.binding import Binding
 from foxcode.tui.screens.repl import REPLScreen
 from foxcode.tui.screens.welcome import WelcomeScreen
 from foxcode.tui.theme import get_theme
+from foxcode.utils.error_logger import log_exception
 import logging
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,11 @@ class FoxCodeApp(App):
     def _show_repl(self):
         self._repl = REPLScreen(agent=self.agent, config=self.config)
         self.push_screen(self._repl)
+
+    def on_exception(self, exc: Exception) -> bool:
+        log_exception(type(exc), exc, exc.__traceback__, context="tui_app")
+        logger.error("TUI App 未处理异常", exc_info=exc)
+        return False
 
     def action_quit(self):
         self.exit()

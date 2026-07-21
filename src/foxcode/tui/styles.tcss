@@ -199,6 +199,21 @@ PromptInput {
     border-top: solid #30363d;
 }
 
+/* -------- CLI 日志覆盖层 (输入框内, 不撑大布局) -------- */
+#cli-log-area {
+    position: absolute;
+    overlay: screen;
+    offset: 0 0;
+    width: 100%;
+    height: auto;
+    max-height: 8;
+    background: #0d1117;
+    border: solid #30363d;
+    border-bottom: none;
+    padding: 0 1;
+    color: #7d8590;
+}
+
 /* -------- Command autocomplete -------- */
 /* overlay:screen keeps the popup out of PromptInput's total_region so it
    never affects auto-height. position:absolute resets the origin to the

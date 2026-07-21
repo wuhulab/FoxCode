@@ -84,7 +84,7 @@ class TestRestoreBasic:
         result = protector.restore_comments(
             None,
             "import os\n",
-            "test.py",  # type: ignore
+            "test.py",
         )
         assert result.restored_count == 0
 

@@ -32,4 +32,4 @@ class RuleDescriptor:
     name: str
     severity: Severity
     description: str
-    run: Callable[[DesignSystemState], list[RuleFinding]] = field(default_factory=list)
+    run: Callable[[DesignSystemState], list[RuleFinding]]

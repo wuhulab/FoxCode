@@ -15,6 +15,7 @@ FoxCode 注释保护管理器 - 全局状态管理和工具入口
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -64,6 +65,7 @@ class CommentProtectManager:
     """
 
     _instance: ClassVar[CommentProtectManager | None] = None
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(self):
         self._enabled = True
@@ -72,15 +74,18 @@ class CommentProtectManager:
 
     @classmethod
     def get_instance(cls) -> CommentProtectManager:
-        """获取全局单例"""
+        """获取全局单例（线程安全）"""
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
     @classmethod
     def reset_instance(cls) -> None:
         """重置单例（主要用于测试）"""
-        cls._instance = None
+        with cls._lock:
+            cls._instance = None
 
     def is_enabled(self) -> bool:
         return self._enabled

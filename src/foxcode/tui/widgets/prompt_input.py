@@ -16,6 +16,8 @@ from textual.widgets import Button, OptionList, Static, TextArea
 from foxcode.tui.icons import ICONS
 from foxcode.tui.theme import get_theme
 
+CLI_LOG_MAX = 8
+
 
 HISTORY_MAX = 200
 
@@ -142,6 +144,7 @@ class PromptInput(Vertical):
         self._history: list[str] = []
         self._history_index: int = -1
         self._history_temp: str = ""
+        self._cli_log_lines: list[str] = []
 
     def compose(self):
         with Horizontal(classes="input-row"):
@@ -164,6 +167,9 @@ class PromptInput(Vertical):
         self.suggest.display = False
         self.send_btn = Button(f"{ICONS.send} Send", id="send")
         yield self.send_btn
+        self._cli_log_area = Static("", id="cli-log-area")
+        self._cli_log_area.display = False
+        yield self._cli_log_area
         yield Static(
             f"Enter send {ICONS.middle_dot} Shift+Enter newline {ICONS.middle_dot} "
             f"/command local {ICONS.middle_dot} Ctrl+A/E/K/W edit {ICONS.middle_dot} "
@@ -268,6 +274,22 @@ class PromptInput(Vertical):
     def hide_suggestions(self):
         self.suggest.display = False
 
+
+    # ------------------------------------------------------------------
+    # CLI log display (inside the input panel)
+    # ------------------------------------------------------------------
+
+    def add_cli_log(self, msg: str):
+        self._cli_log_lines.append(msg)
+        if len(self._cli_log_lines) > CLI_LOG_MAX:
+            self._cli_log_lines.pop(0)
+        self._cli_log_area.update("\n".join(self._cli_log_lines))
+
+    def show_cli_logs(self):
+        self._cli_log_area.display = True
+
+    def hide_cli_logs(self):
+        self._cli_log_area.display = False
 
     def clear(self):
         self.text_area.text = ""

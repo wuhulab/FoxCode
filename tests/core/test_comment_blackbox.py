@@ -95,7 +95,7 @@ class TestBlackBoxErrorHandling:
 
     def test_none_original_returns_unchanged(self):
         protector = CommentProtector()
-        result = protector.restore_comments(None, "x = 1\n", "t.py")  # type: ignore[arg-type]
+        result = protector.restore_comments(None, "x = 1\n", "t.py")
         assert result.protected_content == "x = 1\n"
 
     def test_empty_original_no_crash(self):

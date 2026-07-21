@@ -10,6 +10,7 @@ from typing import Callable
 from textual.containers import VerticalScroll
 from textual.widgets import Static
 
+from foxcode.tui.theme import get_theme
 from foxcode.tui.widgets.message import MessageWidget
 
 
@@ -19,7 +20,6 @@ class VirtualMessageList(VerticalScroll):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._messages: list[MessageWidget] = []
-        self._on_message_click: Callable | None = None
 
     @property
     def messages(self) -> list[MessageWidget]:
@@ -75,10 +75,7 @@ class SearchBar(Static):
         self.refresh()
 
     def render(self):
-        theme = get_theme()
         if not self._query:
             return ""
-        fox = getattr(theme, "fox", "#ffd56b")
-        dim = getattr(theme, "inactive", "#7d8590")
-        text = f"Search: {self._query}  ({self._current_match + 1}/{self._match_count})"
-        return text
+        match_display = f"({self._current_match + 1}/{self._match_count})" if self._match_count > 0 else "(no matches)"
+        return f"Search: {self._query}  {match_display}"

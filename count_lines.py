@@ -32,7 +32,7 @@ def count_lines(directory: Path, extensions: list[str] | None = None) -> dict:
     if extensions is None:
         extensions = [
             '.py', '.js', '.vue', '.ts', '.tsx', '.jsx',
-            '.css', '.scss', '.html', '.json', '.md',
+            '.css', '.scss', '.html', '.json', '.md', '.tcss',
             '.toml', '.yaml', '.yml', '.sh', '.bat',
         ]
     

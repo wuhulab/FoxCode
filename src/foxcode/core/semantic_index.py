@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import pickle
+import random
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -478,6 +479,27 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
                     client_kwargs["api_key"] = self.api_key
                 if self.base_url:
                     client_kwargs["base_url"] = self.base_url
+
+                # 使用自定义 httpx 客户端，模拟浏览器 UA 绕过 WAF 拦截
+                import httpx
+                _BROWSER_USER_AGENTS = [
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                ]
+
+                async def _force_browser_headers(request: httpx.Request) -> None:
+                    request.headers.update({
+                        "User-Agent": random.choice(_BROWSER_USER_AGENTS),
+                        "Accept": "application/json, text/plain, */*",
+                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    })
+
+                http_client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(120),
+                    event_hooks={"request": [_force_browser_headers]},
+                )
+                client_kwargs["http_client"] = http_client
 
                 self._client = AsyncOpenAI(**client_kwargs)
                 logger.debug("OpenAI 客户端初始化成功")

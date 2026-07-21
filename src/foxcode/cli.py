@@ -65,6 +65,7 @@ from foxcode.core.updater import (
     UpdateStatus,
     start_background_update_check,
 )
+from foxcode.utils.error_logger import install_hooks, log_exception
 
 # ==================== 全局状态管理 ====================
 # 这些全局变量用于管理程序的状态和生命周期
@@ -289,6 +290,9 @@ logging.basicConfig(
 from foxcode.core.sensitive_masker import setup_global_log_filter
 
 setup_global_log_filter()
+
+# 安装全局错误日志钩子（捕获所有未处理异常到 fc_error.log / fc_ot_error.log）
+install_hooks()
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -610,6 +614,7 @@ def _handle_unexpected_error(error: Exception) -> None:
     Args:
         error: 未捕获的异常
     """
+    log_exception(type(error), error, error.__traceback__, context="handle_unexpected")
     logger.critical("=" * 80)
     logger.critical("FoxCode 遇到未预期的错误，进程即将退出")
     logger.critical("=" * 80)
@@ -654,24 +659,6 @@ def _handle_unexpected_error(error: Exception) -> None:
 
 # 注册 atexit 清理函数
 atexit.register(_cleanup_on_exit)
-
-
-# 设置全局异常钩子（捕获所有未处理的异常）
-def _global_exception_hook(exc_type, exc_value, exc_traceback) -> None:
-    """
-    Python 全局异常钩子
-
-    捕获所有未被 except 捕获的异常
-    """
-    if issubclass(exc_type, KeyboardInterrupt):
-        # Ctrl+C 不需要特殊处理
-        return
-
-    logger.critical("未捕获的全局异常:")
-    logger.critical("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
-
-
-sys.excepthook = _global_exception_hook
 
 
 # 打印欢迎横幅
@@ -903,13 +890,6 @@ enable_shell = true
 )
 @click.option("--yolo", is_flag=True, help="启用 YOLO 模式（自动执行）")
 @click.option("--plan", is_flag=True, help="启用规划模式（只读）")
-@click.option("--gui", "-g", is_flag=True, help="启动 GUI 桌面版（基于 NiceGUI + Monaco Editor）")
-@click.option(
-    "--pyside",
-    "use_pyside",
-    is_flag=True,
-    help="启动 PySide 桌面版（基于 PySide6，原生 Qt 界面）",
-)
 @click.option(
     "--tui",
     "use_tui",
@@ -931,8 +911,6 @@ def main(
     mode: str,
     yolo: bool,
     plan: bool,
-    gui: bool,
-    use_pyside: bool,
     use_tui: bool,
     resume: bool,
     session: str | None,
@@ -946,24 +924,10 @@ def main(
 
     一个强大的 AI 编码助手，帮助你编写、分析和修改代码。
 
-    支持四种运行模式：
+    支持两种运行模式：
     - CLI 模式（默认）：命令行交互界面
     - TUI 模式：使用 --tui 启动轻量级终端界面，基于 Textual，类 opencode/uv 风格
-    - GUI 桌面版：使用 --gui 或 -g 参数启动图形界面
-      基于 NiceGUI 和 Monaco Editor，提供 VS Code 级别的编辑体验
-    - PySide 桌面版：使用 --pyside 参数启动原生 Qt 桌面界面
-      基于 PySide6，Codex 风格纯白配色
     """
-    # 首先检查是否要启动 GUI 版本
-    if gui:
-        _start_gui_mode()
-        return
-
-    # PySide 原生桌面界面
-    if use_pyside:
-        _start_pyside_mode()
-        return
-
     # 轻量级 TUI 终端界面
     if use_tui:
         _start_tui_mode(
@@ -1555,8 +1519,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
                         consecutive_errors = 0  # 重置计数器
                         logger.info("用户选择继续")
                         console.print("[green]继续运行...[/green]\n")
-                except:
-                    # 如果无法获取输入，直接退出
+                except Exception:
                     logger.warning("无法获取用户输入，退出")
                     break
 
@@ -1778,7 +1741,7 @@ def _handle_design_command(cmd_arg: str | None) -> None:
       export <file> <format> — 导出为其他格式
     """
     from foxcode.design_md.lint import lint as design_lint
-    from foxcode.design_md.spec_gen.helpers import get_spec_content, get_rules_table
+    from foxcode.design_md.spec_gen.helpers import get_spec_content
     from foxcode.design_md.design_mode import design_mode_manager
 
     if not cmd_arg:
@@ -1810,7 +1773,7 @@ def _handle_design_command(cmd_arg: str | None) -> None:
     if sub_cmd == "status":
         if design_mode_manager.is_enabled():
             file_path = design_mode_manager.get_design_file_path()
-            console.print(f"[green]设计规范遵守模式: 已启用[/green]")
+            console.print("[green]设计规范遵守模式: 已启用[/green]")
             console.print(f"[dim]规范文件: {file_path}[/dim]")
         else:
             console.print("[dim]设计规范遵守模式: 未启用[/dim]")
@@ -3036,6 +2999,7 @@ def _start_tui_mode(
     try:
         agent = FoxCodeAgent(app_config)
     except Exception as exc:  # noqa: BLE001
+        log_exception(type(exc), exc, exc.__traceback__, context="tui_init_agent")
         console.print(f"[red]初始化代理失败: {markup.escape(str(exc))}[/red]")
         logger.error("TUI 模式初始化代理失败", exc_info=True)
         sys.exit(1)
@@ -3065,6 +3029,7 @@ def _start_tui_mode(
     except KeyboardInterrupt:
         console.print("\n[yellow]已退出 TUI[/yellow]")
     except Exception as exc:  # noqa: BLE001
+        log_exception(type(exc), exc, exc.__traceback__, context="tui_startup")
         console.print(
             Panel(
                 f"[red]TUI 启动失败[/red]\n\n"
@@ -3078,171 +3043,7 @@ def _start_tui_mode(
         sys.exit(1)
 
 
-def _start_pyside_mode() -> None:
-    """
-    启动 FoxCode PySide 桌面版
 
-    这是 PySide 模式的入口函数，当用户使用 --pyside 参数时调用。
-    会启动基于 PySide6 (Qt) 的原生桌面图形界面。
-
-    功能特性：
-    - 原生 Qt 桌面应用
-    - Codex 风格纯白配色
-    - AI 对话界面
-    - 多项目/会话管理
-
-    使用方式：
-        foxcode --pyside
-    """
-    import sys
-
-    try:
-        from foxcode.pyside_gui.app import start_pyside_gui
-
-        console.print(
-            Panel(
-                "[bold cyan]正在启动 FoxCode PySide Desktop...[/bold cyan]\n\n"
-                "基于 PySide6 (Qt) 的原生桌面客户端\n\n"
-                "功能：\n"
-                "  • Codex 风格纯白配色界面\n"
-                "  • AI 辅助编程对话\n"
-                "  • 多项目/会话管理\n"
-                "  • 自定义窗口控件",
-                title="FoxCode PySide Desktop",
-                border_style="cyan",
-            )
-        )
-
-        sys.exit(start_pyside_gui())
-
-    except ImportError as e:
-        error_msg = str(e)
-
-        if "pyside6" in error_msg.lower() or "PySide6" in error_msg:
-            console.print(
-                Panel(
-                    f"[red]缺少 PySide6 依赖[/red]\n\n"
-                    f"请运行以下命令安装：\n\n"
-                    f"  [bold]pip install PySide6>=6.5.0[/bold]",
-                    title="依赖缺失",
-                    border_style="red",
-                )
-            )
-        else:
-            console.print(f"[red]导入 PySide GUI 模块失败: {error_msg}[/red]")
-
-        sys.exit(1)
-
-    except Exception as e:
-        console.print(
-            Panel(
-                f"[red]启动 PySide GUI 失败[/red]\n\n"
-                f"错误信息: {markup.escape(str(e))}\n\n"
-                f"请检查日志获取详细信息:\n"
-                f"  [bold]{Path.home() / '.foxcode' / 'foxcode.log'}[/bold]",
-                title="启动错误",
-                border_style="red",
-            )
-        )
-
-        logger.error(f"PySide GUI 启动失败: {e}", exc_info=True)
-        sys.exit(1)
-
-
-def _start_gui_mode() -> None:
-    """
-    启动 FoxCode GUI 桌面版
-
-    这是 GUI 模式的入口函数，当用户使用 --gui 或 -g 参数时调用。
-    会启动基于 NiceGUI 和 Monaco Editor 的图形界面。
-
-    功能特性：
-    - VS Code 风格的现代化界面
-    - Monaco 代码编辑器（完整功能）
-    - 文件浏览器和项目管理
-    - AI 对话界面（复用核心 Agent）
-    - 终端面板
-    - 暗色主题
-
-    使用方式：
-        foxcode --gui
-        foxcode -g
-
-    技术栈：
-    - NiceGUI (Vue.js + FastAPI)
-    - Monaco Editor (iframe 隔离)
-    - SVG 图标系统（禁止 emoji）
-
-    注意事项：
-    - 需要安装 nicegui>=2.0.0
-    - 默认监听端口 8080
-    - 支持窗口大小调整
-    - 按 Ctrl+C 或关闭窗口退出
-
-    异常处理：
-    - 缺少依赖时给出明确提示
-    - 端口占用时自动尝试其他端口
-    - 启动失败时回退到错误信息显示
-    """
-    import sys
-
-    try:
-        # 导入 GUI 模块
-        from foxcode.gui.app import start_gui
-
-        console.print(
-            Panel(
-                "[bold cyan]正在启动 FoxCode Desktop...[/bold cyan]\n\n"
-                "基于 NiceGUI + Monaco Editor 的图形化编程环境\n\n"
-                "功能：\n"
-                "  • VS Code 级别的代码编辑器\n"
-                "  • 文件浏览器和项目管理\n"
-                "  • AI 辅助编程对话\n"
-                "  • 集成终端面板\n"
-                "  • 暗色主题界面\n\n"
-                "访问地址: http://localhost:8080",
-                title="FoxCode Desktop",
-                border_style="cyan",
-            )
-        )
-
-        # 启动 GUI 应用
-        start_gui()
-
-    except ImportError as e:
-        error_msg = str(e)
-
-        if "nicegui" in error_msg.lower():
-            console.print(
-                Panel(
-                    f"[red]缺少 GUI 依赖[/red]\n\n"
-                    f"请运行以下命令安装：\n\n"
-                    f"  [bold]pip install nicegui>=2.0.0[/bold]\n\n"
-                    f"或安装完整的 GUI 可选依赖：\n\n"
-                    f"  [bold]pip install 'foxcode[gui]'[/bold]",
-                    title="依赖缺失",
-                    border_style="red",
-                )
-            )
-        else:
-            console.print(f"[red]导入 GUI 模块失败: {error_msg}[/red]")
-
-        sys.exit(1)
-
-    except Exception as e:
-        console.print(
-            Panel(
-                f"[red]启动 GUI 失败[/red]\n\n"
-                f"错误信息: {markup.escape(str(e))}\n\n"
-                f"请检查日志获取详细信息:\n"
-                f"  [bold]{Path.home() / '.foxcode' / 'gui.log'}[/bold]",
-                title="启动错误",
-                border_style="red",
-            )
-        )
-
-        logger.error(f"GUI 启动失败: {e}", exc_info=True)
-        sys.exit(1)
 
 
 if __name__ == "__main__":
@@ -3250,6 +3051,19 @@ if __name__ == "__main__":
 
 
 # 处理 /index 命令
+def _get_semantic_index(config: Config) -> "SemanticCodeIndex":
+    """创建并返回一个语义代码索引实例。"""
+    from foxcode.core.semantic_index import SemanticCodeIndex, SemanticIndexConfig
+
+    index_dir = Path(config.working_dir) / ".foxcode" / "semantic_index"
+    index_config = SemanticIndexConfig(
+        index_dir=str(index_dir),
+        openai_api_key=config.model.api_key,
+        openai_base_url=config.model.base_url,
+    )
+    return SemanticCodeIndex(index_config)
+
+
 def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | None) -> None:
     """
     处理 /index 命令
@@ -3262,16 +3076,7 @@ def _handle_index_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | No
         /index update  - 增量更新索引
     """
     try:
-        from foxcode.core.semantic_index import SemanticCodeIndex, SemanticIndexConfig
-
-        index_dir = Path(config.working_dir) / ".foxcode" / "semantic_index"
-        # 从配置中获取嵌入模型相关设置
-        index_config = SemanticIndexConfig(
-            index_dir=str(index_dir),
-            openai_api_key=config.model.api_key,
-            openai_base_url=config.model.base_url,
-        )
-        index = SemanticCodeIndex(index_config)
+        index = _get_semantic_index(config)
 
         if cmd_arg == "status":
             stats = index.get_stats()
@@ -3322,17 +3127,7 @@ def _handle_search_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | N
         return
 
     try:
-        from foxcode.core.semantic_index import SemanticCodeIndex, SemanticIndexConfig
-
-        index_dir = Path(config.working_dir) / ".foxcode" / "semantic_index"
-        # 从配置中获取嵌入模型相关设置
-        index_config = SemanticIndexConfig(
-            index_dir=str(index_dir),
-            openai_api_key=config.model.api_key,
-            openai_base_url=config.model.base_url,
-        )
-        index = SemanticCodeIndex(index_config)
-
+        index = _get_semantic_index(config)
         results = run_async(index.search(cmd_arg, top_k=10))
 
         if not results:

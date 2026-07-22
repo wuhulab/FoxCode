@@ -18,14 +18,14 @@ FoxCode CLI入口 - 命令行界面的主入口
     # 指定模型
     foxcode --model claude
 
-    # YOLO模式（自动执行）
-    foxcode --yolo
+    # Build模式（自动执行）
+    foxcode --build
 
     # 规划模式（只读）
     foxcode --plan
 
 关键特性：
-- 支持多种运行模式（默认、YOLO、规划模式）
+- 支持多种运行模式（默认、Build、规划模式）
 - 支持后台更新检查
 - 支持优雅退出（Ctrl+C）
 - 支持全局异常处理
@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+import httpx
 from rich import markup
 from rich.console import Console
 from rich.markdown import Markdown
@@ -687,7 +688,7 @@ def print_help() -> None:
 ```bash
 foxcode                    # 启动交互式会话
 foxcode "你的问题"          # 直接提问
-foxcode --yolo             # 自动执行模式
+foxcode --build             # 自动执行模式
 foxcode --plan             # 规划模式
 ```
 
@@ -696,8 +697,8 @@ foxcode --plan             # 规划模式
 | 选项 | 说明 |
 |------|------|
 | `--model, -m` | 指定 AI 模型 |
-| `--mode` | 运行模式 (default/yolo/plan) |
-| `--yolo` | 快捷启用 YOLO 模式 |
+| `--mode` | 运行模式 (default/build/plan) |
+| `--build` | 快捷启用 Build 模式 |
 | `--plan` | 快捷启用规划模式 |
 | `--resume, -r` | 恢复上次会话 |
 | `--session` | 指定会话 ID |
@@ -884,11 +885,11 @@ enable_shell = true
 @click.option("--model", "-m", default=None, help="指定 AI 模型")
 @click.option(
     "--mode",
-    type=click.Choice(["yolo", "plan", "accept_edits"]),
-    default="yolo",
-    help="运行模式（默认 yolo）",
+    type=click.Choice(["build", "plan", "accept_edits"]),
+    default="build",
+    help="运行模式（默认 build）",
 )
-@click.option("--yolo", is_flag=True, help="启用 YOLO 模式（自动执行）")
+@click.option("--build", is_flag=True, help="启用 Build 模式（自动执行）")
 @click.option("--plan", is_flag=True, help="启用规划模式（只读）")
 @click.option(
     "--tui",
@@ -909,7 +910,7 @@ def main(
     help: bool,
     model: str | None,
     mode: str,
-    yolo: bool,
+    build: bool,
     plan: bool,
     use_tui: bool,
     resume: bool,
@@ -932,7 +933,7 @@ def main(
     if use_tui:
         _start_tui_mode(
             model=model,
-            yolo=yolo,
+            build=build,
             plan=plan,
             mode=mode,
             resume=resume,
@@ -970,8 +971,8 @@ def main(
         if model:
             config_overrides["model"] = {"model_name": model}
 
-        if yolo:
-            config_overrides["run_mode"] = RunMode.YOLO
+        if build:
+            config_overrides["run_mode"] = RunMode.BUILD
         elif plan:
             config_overrides["run_mode"] = RunMode.PLAN
         elif mode:
@@ -1051,20 +1052,20 @@ def main(
 
 @main.command()
 @click.option("--model", "-m", default=None, help="指定 AI 模型")
-@click.option("--yolo", is_flag=True, help="启用 YOLO 模式（自动执行）")
+@click.option("--build", is_flag=True, help="启用 Build 模式（自动执行）")
 @click.option("--plan", is_flag=True, help="启用规划模式（只读）")
 @click.option(
     "--mode",
-    type=click.Choice(["yolo", "plan", "accept_edits"]),
-    default="yolo",
-    help="运行模式（默认 yolo）",
+    type=click.Choice(["build", "plan", "accept_edits"]),
+    default="build",
+    help="运行模式（默认 build）",
 )
 @click.option("--resume", "-r", is_flag=True, help="恢复上次会话")
 @click.option("--session", default=None, help="指定会话 ID")
 @click.option("--debug", is_flag=True, help="启用调试模式")
 def tui(
     model: str | None,
-    yolo: bool,
+    build: bool,
     plan: bool,
     mode: str,
     resume: bool,
@@ -1088,7 +1089,7 @@ def tui(
     """
     _start_tui_mode(
         model=model,
-        yolo=yolo,
+        build=build,
         plan=plan,
         mode=mode,
         resume=resume,
@@ -1597,6 +1598,9 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
 
     elif cmd_name == "/shunxapi":
         _handle_shunxapi_command(agent, config)
+
+    elif cmd_name == "/foxcode-free":
+        _handle_foxcode_free_command(agent, config)
 
     elif cmd_name == "/sessions":
         sessions = Session.list_sessions(config)
@@ -2942,7 +2946,7 @@ def _handle_health_command() -> None:
 
 def _start_tui_mode(
     model: str | None = None,
-    yolo: bool = False,
+    build: bool = False,
     plan: bool = False,
     mode: str = "default",
     resume: bool = False,
@@ -2960,7 +2964,7 @@ def _start_tui_mode(
 
     使用方式：
         foxcode --tui
-        foxcode --tui -m claude --yolo
+        foxcode --tui -m claude --build
         foxcode tui
     """
     try:
@@ -2984,8 +2988,8 @@ def _start_tui_mode(
     overrides: dict[str, Any] = {}
     if model:
         overrides["model"] = {"model_name": model}
-    if yolo:
-        overrides["run_mode"] = RunMode.YOLO
+    if build:
+        overrides["run_mode"] = RunMode.BUILD
     elif plan:
         overrides["run_mode"] = RunMode.PLAN
     elif mode:
@@ -4803,4 +4807,130 @@ def _handle_shunxapi_command(agent: FoxCodeAgent, config: Config) -> None:
 
     except Exception as e:
         logger.error(f"ShunxAPI 配置失败: {e}", exc_info=True)
+        console.print(f"[red]配置失败: {markup.escape(str(e))}[/red]")
+
+
+# 处理 /FoxCode-Free 命令
+def _handle_foxcode_free_command(agent: FoxCodeAgent, config: Config) -> None:
+    """
+    处理 /foxcode-free 命令
+
+    配置 FoxCode Free API（OpenAI 兼容接口）
+    默认 URL: https://fai.shunx.top（免费）
+    默认 Key: sk-C4Dy0S5OFKJ7QoPu8erQc2tTDklW2fBIry34CA8tmFcC1tGr
+
+    用法:
+        /foxcode-free - 获取可用模型列表并选择配置
+    """
+    try:
+        is_minimalism = config.output_topic == OutputTopic.MINIMALISM
+        default_url = "https://fai.shunx.top"
+        default_key = "sk-C4Dy0S5OFKJ7QoPu8erQc2tTDklW2fBIry34CA8tmFcC1tGr"
+        current_model = config.model.model_name
+        api_path = f"{default_url}/v1"  # API 路径
+
+        if is_minimalism:
+            print("[foxcode-free] 正在连接 FoxCode Free API...")
+        else:
+            console.print(
+                Panel(
+                    f"[bold]URL:[/bold] {default_url}\n"
+                    f"[bold]Key:[/bold] {'已设置' if config.model.api_key else '未设置'}\n"
+                    f"[bold]Model:[/bold] {current_model}",
+                    title="🔧 FoxCode Free 免费配置",
+                    style="cyan",
+                )
+            )
+
+        # 调用 /v1/models 获取可用模型
+        if is_minimalism:
+            print("[foxcode-free] 正在获取可用模型列表...")
+        else:
+            console.print("\n[cyan]正在获取可用模型列表...[/cyan]")
+
+        models = None
+
+        try:
+            with httpx.Client(timeout=30) as client:
+                resp = client.get(
+                    f"{api_path}/models",
+                    headers={"Authorization": f"Bearer {default_key}"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                models = [m["id"] for m in data.get("data", []) if m.get("id")]
+        except Exception as e:
+            logger.error(f"获取模型列表失败: {e}", exc_info=True)
+            console.print(f"[red]获取模型列表失败: {markup.escape(str(e))}[/red]")
+            console.print("[yellow]是否仍然继续手动配置? (y/n)[/yellow]", end=" ")
+            choice = console.input().strip().lower()
+            if choice != "y":
+                return
+
+        if models:
+            models.sort()
+            if is_minimalism:
+                print("[foxcode-free] 可用模型:")
+                for i, m in enumerate(models, 1):
+                    print(f"  {i}. {m}")
+            else:
+                console.print("\n[green]可用模型:[/green]")
+                for i, m in enumerate(models, 1):
+                    console.print(f"  [bold]{i}.[/bold] {m}")
+
+            console.print("\n[yellow]请输入模型编号或直接输入模型名称:[/yellow]", end=" ")
+            choice = console.input().strip()
+            selected_model = None
+
+            if choice.isdigit():
+                idx = int(choice) - 1
+                if 0 <= idx < len(models):
+                    selected_model = models[idx]
+            else:
+                selected_model = choice
+
+            if not selected_model:
+                console.print("[red]无效选择[/red]")
+                return
+        else:
+            console.print("[yellow]请输入模型名称:[/yellow]", end=" ")
+            selected_model = console.input().strip()
+            if not selected_model:
+                console.print("[red]未输入模型名称[/red]")
+                return
+
+        # 保存 openai 配置（使用正确的 v1 路径）
+        config.model.base_url = api_path
+        config.model.api_key = default_key
+        config.model.model_name = selected_model
+        config.model.provider = ModelProvider.OPENAI
+
+        save_msg = apply_model_settings(
+            config,
+            agent,
+            url=api_path,
+            key=default_key,
+            model=selected_model,
+            infer_provider=False,
+        )
+
+        if is_minimalism:
+            print(f"[foxcode-free] 配置已更新:")
+            print(f"  URL: {config.model.base_url or '未设置'}")
+            print(f"  Key: {'已设置' if config.model.api_key else '未设置'}")
+            print(f"  Model: {config.model.model_name}")
+        else:
+            console.print(
+                Panel(
+                    f"[bold]URL:[/bold] {config.model.base_url or '未设置'}\n"
+                    f"[bold]Key:[/bold] {'已设置' if config.model.api_key else '未设置'}\n"
+                    f"[bold]Model:[/bold] {config.model.model_name}\n"
+                    f"[dim]{save_msg}[/dim]",
+                    title="✅ FoxCode Free 免费配置已更新",
+                    style="green",
+                )
+            )
+
+    except Exception as e:
+        logger.error(f"FoxCode Free 配置失败: {e}", exc_info=True)
         console.print(f"[red]配置失败: {markup.escape(str(e))}[/red]")

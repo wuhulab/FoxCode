@@ -177,16 +177,16 @@ class ConfirmationManager:
         },
     }
 
-    def __init__(self, auto_confirm: bool = False, yolo_mode: bool = False):
+    def __init__(self, auto_confirm: bool = False, build_mode: bool = False):
         """
         初始化确认管理器
         
         Args:
             auto_confirm: 是否自动确认所有操作
-            yolo_mode: YOLO 模式（自动执行所有操作）
+            build_mode: Build 模式（自动执行所有操作）
         """
         self.auto_confirm = auto_confirm
-        self.yolo_mode = yolo_mode
+        self.build_mode = build_mode
         self._pending_confirmations: dict[str, ConfirmationRequest] = {}
         self._confirmation_callbacks: list[Callable[[ConfirmationRequest], bool]] = []
 
@@ -216,7 +216,7 @@ class ConfirmationManager:
         Returns:
             确认请求，如果不需要确认则返回 None
         """
-        if self.yolo_mode:
+        if self.build_mode:
             return None
 
         risk_level = self.HIGH_RISK_OPERATIONS.get(tool_name, "low")
@@ -256,7 +256,7 @@ class ConfirmationManager:
         Returns:
             是否确认执行
         """
-        if self.auto_confirm or self.yolo_mode:
+        if self.auto_confirm or self.build_mode:
             logger.info(f"自动确认操作: {request.tool_name} - {request.operation}")
             return True
 

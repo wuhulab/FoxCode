@@ -509,9 +509,10 @@ LOGO_ASCII = r"""
 """
 
 STATUS_COLORS: dict[str, str] = {
-    "yolo": "#d29922",
+    "build": "#d29922",
     "plan": "#58a6ff",
     "accept_edits": "#d29922",
+    "work": "#3fb950",
 }
 
 

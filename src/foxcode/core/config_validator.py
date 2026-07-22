@@ -416,22 +416,22 @@ class ConfigValidator:
         sandbox_mode = sandbox_config.get("mode", "blacklist")
         allow_path_traversal = sandbox_config.get("allow_path_traversal", False)
 
-        if run_mode == "yolo":
+        if run_mode == "build":
             if enable_shell and not sandbox_enabled:
                 raise ValueError(
-                    "危险配置组合: YOLO 模式下启用了 Shell 执行但禁用了沙箱，存在严重安全风险。 "
+                    "危险配置组合: Build 模式下启用了 Shell 执行但禁用了沙箱，存在严重安全风险。 "
                     "请使用 --force 参数强制使用此配置，或使用 --no-shell 参数完全禁用此功能"
                 )
 
             if enable_shell and sandbox_enabled and allow_path_traversal:
                 raise ValueError(
-                    "危险配置组合: YOLO 模式下允许路径穿越，存在严重安全风险。 "
+                    "危险配置组合: Build 模式下允许路径穿越，存在严重安全风险。 "
                     "请使用 --force 参数强制使用此配置，或使用 --no-shell 参数完全禁用此功能"
                 )
 
             if enable_shell and sandbox_mode == "disabled":
                 raise ValueError(
-                    "危险配置组合: YOLO 模式下沙箱模式为禁用状态，存在严重安全风险。 "
+                    "危险配置组合: Build 模式下沙箱模式为禁用状态，存在严重安全风险。 "
                     "请使用 --force 参数强制使用此配置，或使用 --no-shell 参数完全禁用此功能"
                 )
 

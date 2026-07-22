@@ -27,7 +27,7 @@ FoxCode 配置模块 - 管理所有配置选项
     # 创建配置（指定参数）
     config = Config.create(
         model=ModelConfig(model_name="gpt-4o"),
-        run_mode=RunMode.YOLO
+        run_mode=RunMode.BUILD
     )
 
     # 验证配置
@@ -35,7 +35,7 @@ FoxCode 配置模块 - 管理所有配置选项
 
 关键特性：
 - 支持多种AI模型（OpenAI、Anthropic、DeepSeek等）
-- 支持多种运行模式（默认、YOLO、规划模式）
+- 支持多种运行模式（默认、Build、规划模式）
 - 支持沙箱安全机制
 - 支持MCP工具和Skill技能系统
 """
@@ -76,16 +76,16 @@ class RunMode(str, Enum):
     运行模式 - 控制代理的行为方式
 
     不同的运行模式适用于不同的场景：
-    - YOLO: 默认模式，自动执行所有操作（适合熟练用户）
+    - BUILD: 默认模式，自动执行所有操作（适合熟练用户）
     - ACCEPT_EDITS: 适合代码编辑场景，自动接受文件修改
     - PLAN: 规划模式，只分析不执行（适合前期需求分析）
 
     安全性：
-    - YOLO最快，所有操作自动执行，适合日常开发
+    - BUILD最快，所有操作自动执行，适合日常开发
     - PLAN最安全，只读不写，适合前期规划
     """
 
-    YOLO = "yolo"  # YOLO模式：自动执行所有操作（默认）
+    BUILD = "build"  # Build模式：自动执行所有操作（默认）
     ACCEPT_EDITS = "accept_edits"  # 自动接受文件编辑
     PLAN = "plan"  # 规划模式：只读，不执行操作
 
@@ -693,7 +693,7 @@ class Config(BaseSettings):
 
         # 创建配置（指定参数）
         config = Config.create(
-            run_mode=RunMode.YOLO,
+            run_mode=RunMode.BUILD,
             model=ModelConfig(model_name="claude")
         )
 
@@ -713,7 +713,7 @@ class Config(BaseSettings):
     )
 
     # 基本配置
-    run_mode: RunMode = RunMode.YOLO
+    run_mode: RunMode = RunMode.BUILD
     debug: bool = False
     log_level: str = "INFO"
     output_topic: OutputTopic = Field(
@@ -741,7 +741,6 @@ class Config(BaseSettings):
     protect_comments: ProtectCommentsConfig = Field(
         default_factory=ProtectCommentsConfig, description="注释保护配置（默认启用）"
     )
-    update: UpdateConfig = Field(default_factory=UpdateConfig, description="版本更新配置")
 
     # 工作目录
     working_dir: Path = Field(default_factory=lambda: Path.cwd())

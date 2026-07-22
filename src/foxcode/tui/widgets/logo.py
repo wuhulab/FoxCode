@@ -176,7 +176,7 @@ class CondensedLogo(Static):
         self,
         version: str = "0.1.5",
         model: str = "default",
-        mode: str = "yolo",
+        mode: str = "build",
         cwd: str = "~",
         agent_name: str = "",
     ):

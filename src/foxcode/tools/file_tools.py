@@ -566,6 +566,16 @@ def set_path_validator(validator: PathSecurityValidator) -> None:
     _path_validator = validator
 
 
+def reset_path_validator() -> None:
+    """
+    重置全局路径验证器实例（主要用于测试场景，避免状态污染）
+
+    重置后，下次调用 get_path_validator() 会创建一个新的实例。
+    """
+    global _path_validator
+    _path_validator = None
+
+
 @tool
 class ReadFileTool(BaseTool):
     """Read file content"""

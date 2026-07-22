@@ -188,7 +188,9 @@ You have tools to read files, execute commands, and search code.
 
 **RULE 4: When you have finished all work, you MUST call the `end` tool to end the workflow. Do not stop without a tool call!**
 
-================================================================================
+**RULE 5 (Foxcde): Your final response MUST always end with a concise summary of what was done. The summary must start with "📋 总结:" or "📋 Summary:" and cover completed work, key changes, and any next steps.**
+
+===============================================================================
 ## EXAMPLES
 ================================================================================
 
@@ -294,9 +296,9 @@ Run mode: {run_mode}
 # Initializer Agent System Prompt
 INITIALIZER_PROMPT = """You are FoxCode Initializer Agent.
 
-================================================================================
+===============================================================================
 ## STOP! READ THIS FIRST!
-================================================================================
+===============================================================================
 
 You have tools to read files, execute commands, and search code.
 
@@ -308,7 +310,9 @@ You have tools to read files, execute commands, and search code.
 
 **RULE 4: When you have finished all work, you MUST call the `end` tool to end the workflow. Do not stop without a tool call!**
 
-================================================================================
+**RULE 5 (Foxcde): Your final response MUST always end with a concise summary of what was done. The summary must start with "📋 总结:" or "📋 Summary:" and cover completed work, key changes, and any next steps.**
+
+===============================================================================
 ## YOUR TASK
 ================================================================================
 
@@ -371,9 +375,9 @@ CODER_PROMPT = """You are FoxCode Coder Agent.
 
 {context_info}
 
-================================================================================
+===============================================================================
 ## STOP! READ THIS FIRST!
-================================================================================
+===============================================================================
 
 You have tools to read files, execute commands, and search code.
 
@@ -385,7 +389,9 @@ You have tools to read files, execute commands, and search code.
 
 **RULE 4: When you have finished all work, you MUST call the `end` tool to end the workflow. Do not stop without a tool call!**
 
-================================================================================
+**RULE 5 (Foxcde): Your final response MUST always end with a concise summary of what was done. The summary must start with "📋 总结:" or "📋 Summary:" and cover completed work, key changes, and any next steps.**
+
+===============================================================================
 ## TOOLS
 ================================================================================
 
@@ -1735,7 +1741,14 @@ class FoxCodeAgent:
                 yield f"❌ Tool execution exception: {str(e)}\n\n"
                 self.session.add_user_message(error_msg)
 
-        # ==================== 7. 保存助手消息和统计 ====================
+        # ==================== 7. Foxcde 强制总结检测 ====================
+        # 检测响应末尾是否有总结，没有则强制追加
+        original_response = total_response
+        total_response = self._force_summary(total_response)
+        if total_response != original_response:
+            yield "\n" + total_response[len(original_response):]
+
+        # ==================== 8. 保存助手消息和统计 ====================
         # 计算input_tokens：包括整个对话历史 + system_prompt
         input_tokens = self._calculate_conversation_tokens()
 
@@ -2107,6 +2120,7 @@ class FoxCodeAgent:
         output_tools = [
             "run_command", "shell", "execute_command", "run",
             "check_command_status", "stop_command",
+            "shell_execute", "shell_check_status", "shell_stop",
         ]
         return tool_name.lower() in [t.lower() for t in output_tools]
 
@@ -2133,6 +2147,44 @@ class FoxCodeAgent:
 
         except Exception as e:
             logger.debug(f"Failed to track tool result: {e}", exc_info=True)
+
+    def _force_summary(self, response: str) -> str:
+        """
+        Foxcde 强制总结检测
+
+        检测响应末尾是否包含总结（📋 总结: 或 📋 Summary:），
+        如果没有则根据工具调用记录自动生成总结并追加到末尾。
+
+        Args:
+            response: AI 原始响应文本
+
+        Returns:
+            追加了总结（如需要）的响应文本
+        """
+        if not response:
+            return response
+
+        # 检查是否已有总结
+        tail = response.strip()[-500:] if len(response) > 500 else response.strip()
+        if "📋 总结:" in tail or "📋 Summary:" in tail:
+            return response
+
+        # 没有总结，从工具调用记录生成简单总结
+        executed = []
+        for (tname, _), count in self._executed_tools.items():
+            if tname != "end":
+                executed.append(f"{tname} ({count}x)")
+
+        if executed:
+            summary = (
+                "\n\n📋 总结: 完成了以下工作: "
+                + ", ".join(executed[:8])
+                + "。"
+            )
+        else:
+            summary = "\n\n📋 总结: 工作已完成。"
+
+        return response + summary
 
     def get_session_review_prompt(self) -> str:
         """

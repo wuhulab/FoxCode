@@ -11,7 +11,7 @@ from rich.text import Text
 from textual import events, on
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Button, OptionList, Static, TextArea
+from textual.widgets import OptionList, Static, TextArea
 
 from foxcode.tui.icons import ICONS
 from foxcode.tui.theme import get_theme
@@ -26,7 +26,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/help", "显示命令列表"),
     ("/clear", "清空聊天"),
     ("/save", "保存当前会话"),
-    ("/mode", "设置运行模式 yolo|plan|accept_edits"),
+    ("/mode", "设置运行模式 build|plan|accept_edits"),
     ("/new", "新建会话"),
     ("/sidebar", "切换侧边栏"),
     ("/fullscreen", "全屏 (别名 /fs)"),
@@ -37,9 +37,50 @@ COMMANDS: list[tuple[str, str]] = [
     ("/theme", "切换主题"),
     ("/history", "显示输入历史"),
     ("/quit", "退出 (别名 /exit)"),
+    ("/work", "Work模式 - 长时间任务管理 (on/off/status/list/records)"),
+    ("/workflow", "工作流程管理 (start/list/status/advance/skip)"),
     ("/openai", "调整模型供应商"),
     ("/shunxapi", "配置 ShunxAPI"),
+    ("/foxcode-free", "配置 FoxCode Free API"),
 ]
+
+# Sub-argument suggestions for specific commands (shown after command + space)
+SUB_ARG_SUGGESTIONS: dict[str, list[tuple[str, str]]] = {
+    "mode": [
+        ("build", "构建模式 - 自动执行代码更改"),
+        ("plan", "计划模式 - 只读分析，不修改代码"),
+        ("accept_edits", "接受编辑模式"),
+        ("work", "Work模式 - 长时间任务管理"),
+    ],
+    "log": [
+        ("on", "启用系统日志显示"),
+        ("off", "禁用系统日志显示"),
+    ],
+    "cli-log": [
+        ("on", "启用 CLI 日志显示"),
+        ("off", "禁用 CLI 日志显示"),
+    ],
+    "welcome": [
+        ("on", "启用欢迎界面"),
+        ("off", "禁用欢迎界面"),
+    ],
+    "theme": [
+        ("foxcode", "FoxCode 默认主题"),
+        ("dracula", "Dracula 主题"),
+        ("monokai", "Monokai 主题"),
+        ("nord", "Nord 主题"),
+    ],
+    "delete": [
+        ("all", "删除所有消息"),
+    ],
+    "work": [
+        ("on", "启用 Work 模式"),
+        ("off", "关闭 Work 模式"),
+        ("status", "查看 Work 模式状态"),
+        ("list", "列出所有任务"),
+        ("records", "查看任务记录"),
+    ],
+}
 
 
 class CommandSuggest(OptionList):
@@ -98,7 +139,25 @@ class _SendTextArea(TextArea):
             return
         if event.key == "enter":
             if suggest_active and prompt.suggest.selected_command:
-                prompt.accept_suggestion()
+                was_sub_arg = " " in self.text
+                cmd = prompt.suggest.selected_command
+                current = self.text
+                if " " in current:
+                    cmd_part = current[: current.index(" ")]
+                    new_text = cmd_part + " " + cmd + " "
+                else:
+                    new_text = cmd + " "
+                # 使用 insert 方式保持光标位置在末尾
+                self.text = new_text
+                self._cursor_to_end()
+                self.call_after_refresh(self._cursor_to_end)
+                self.set_timer(0, self._cursor_to_end)
+                prompt.update_suggestions(self.text)
+                self._cursor_to_end()
+                if prompt.suggest_visible() or was_sub_arg:
+                    event.stop()
+                    event.prevent_default()
+                    return
             self.post_message(self.Submitted(self.text))
             event.stop()
             event.prevent_default()
@@ -134,11 +193,16 @@ class _SendTextArea(TextArea):
         if prompt is not None:
             prompt.update_suggestions(self.text)
 
+    def _cursor_to_end(self):
+        """强制将光标移到文本末尾"""
+        lines = self.text.split("\n")
+        self.cursor = (len(lines) - 1, len(lines[-1]))
+
 
 class PromptInput(Vertical):
     """Multi-line prompt with TextArea, history, editing shortcuts."""
 
-    def __init__(self, mode: str = "yolo", *args, **kwargs):
+    def __init__(self, mode: str = "build", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._mode = mode
         self._history: list[str] = []
@@ -160,22 +224,14 @@ class PromptInput(Vertical):
             yield self.text_area
         # The popup is created here but NOT yielded into PromptInput.
         # It is moved to PromptInput's parent (#main-panel) in on_mount so
-        # its height is governed by the parent panel (~34 rows) instead of
-        # being squashed by PromptInput's max-height: 9.
+        # its height is governed by the parent panel instead of
+        # being squashed by PromptInput's height constraint.
         self.suggest = CommandSuggest()
         self.suggest._prompt = self
         self.suggest.display = False
-        self.send_btn = Button(f"{ICONS.send} Send", id="send")
-        yield self.send_btn
         self._cli_log_area = Static("", id="cli-log-area")
         self._cli_log_area.display = False
         yield self._cli_log_area
-        yield Static(
-            f"Enter send {ICONS.middle_dot} Shift+Enter newline {ICONS.middle_dot} "
-            f"/command local {ICONS.middle_dot} Ctrl+A/E/K/W edit {ICONS.middle_dot} "
-            f"Up/Down history {ICONS.middle_dot} F1 help",
-            classes="hint",
-        )
 
     async def on_mount(self):
         # Mount suggest as a sibling immediately before PromptInput inside
@@ -212,7 +268,6 @@ class PromptInput(Vertical):
 
     def set_busy(self, busy: bool):
         self.text_area.read_only = busy
-        self.send_btn.disabled = busy
 
     # ------------------------------------------------------------------
     # Slash-command autocomplete
@@ -222,7 +277,30 @@ class PromptInput(Vertical):
         if text.startswith("//") or not text.startswith("/"):
             self.hide_suggestions()
             return
-        query = text[1:].lower()
+        raw = text[1:]
+        # 如果已输入完整命令 + 空格，切换到子参数自动补全
+        if " " in raw:
+            cmd_part = raw[: raw.index(" ")].lower()
+            arg_prefix = raw[raw.index(" ") + 1 :].lower()
+            sub_args = SUB_ARG_SUGGESTIONS.get(cmd_part)
+            if sub_args:
+                matches = [
+                    (arg, desc)
+                    for arg, desc in sub_args
+                    if arg.lower().startswith(arg_prefix)
+                ]
+                if matches:
+                    self.suggest.set_options(matches)
+                    anchor = self.region.y - self.parent.region.y
+                    popup_height_guess = min(len(matches) + 2, 14)
+                    self.suggest.offset = (0, anchor - popup_height_guess)
+                    self.suggest.display = True
+                    self.call_after_refresh(self._position_suggestions)
+                    return
+            self.hide_suggestions()
+            return
+        # 普通命令自动补全
+        query = raw.lower()
         matches = [
             (cmd, desc)
             for cmd, desc in COMMANDS
@@ -267,9 +345,18 @@ class PromptInput(Vertical):
         if not cmd:
             self.hide_suggestions()
             return
-        self.text_area.text = cmd + " "
-        self.hide_suggestions()
+        current = self.text_area.text
+        if " " in current:
+            cmd_part = current[: current.index(" ")]
+            new_text = cmd_part + " " + cmd + " "
+        else:
+            new_text = cmd + " "
+        self.text_area.text = new_text
         self.text_area.focus()
+        self._cursor_end()
+        self.text_area.call_after_refresh(self._cursor_end)
+        self.set_timer(0, self._cursor_end)
+        self.hide_suggestions()
 
     def hide_suggestions(self):
         self.suggest.display = False
@@ -383,7 +470,7 @@ class PromptInput(Vertical):
         self.mode_indicator.update(self._render_mode_char())
 
     def _render_mode_char(self) -> str:
-        color_map = {"yolo": "#d29922", "plan": "#58a6ff", "accept_edits": "#d29922"}
+        color_map = {"build": "#d29922", "plan": "#58a6ff", "accept_edits": "#d29922", "work": "#3fb950"}
         color = color_map.get(self._mode, "#ffd56b")
         return f"{ICONS.prompt} "
 
@@ -391,13 +478,13 @@ class PromptInput(Vertical):
 class PromptInputModeIndicator(Static):
     """Standalone mode character indicator."""
 
-    def __init__(self, mode: str = "yolo", *, loading: bool = False):
+    def __init__(self, mode: str = "build", *, loading: bool = False):
         super().__init__()
         self._mode = mode
         self._loading = loading
 
     def render(self):
-        color_map = {"yolo": "#d29922", "plan": "#58a6ff", "accept_edits": "#d29922"}
+        color_map = {"build": "#d29922", "plan": "#58a6ff", "accept_edits": "#d29922", "work": "#3fb950"}
         color = color_map.get(self._mode, "#ffd56b")
         if self._loading:
             return Text(f"{ICONS.prompt} ", style=Style(color=color, dim=True))

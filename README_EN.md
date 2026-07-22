@@ -76,7 +76,7 @@ FoxCode is a terminal CLI AI coding assistant written in Python. It supports mul
 - **Security Sandbox**: Configurable command execution security policies
 - **Interactive Interface**: Modern TUI terminal interface
 - **Session Management**: Save and restore conversation history with encryption support
-- **Multiple Running Modes**: Default, YOLO, Plan mode, Auto-accept edits mode
+- **Multiple Running Modes**: Default, Build, Plan mode, Auto-accept edits mode
 - **Semantic Code Indexing**: Vector embedding-based code semantic search with incremental updates and dependency graph generation
 - **Knowledge Base Management**: Cross-session knowledge storage with categorization, tags, and semantic retrieval
 - **Context Compression**: Intelligent conversation compression and knowledge distillation for optimized long conversation handling
@@ -115,8 +115,8 @@ python -c "from foxcode.tui import run_tui; run_tui()"
 # Ask a question directly
 foxcode "Help me analyze the project structure"
 
-# YOLO mode (auto-execute)
-foxcode --yolo "Create a Flask application"
+# Build mode (auto-execute)
+foxcode --build "Create a Flask application"
 
 # Plan mode (read-only)
 foxcode --plan "Analyze security issues in the codebase"
@@ -142,7 +142,7 @@ FoxCode provides a full-featured TUI (Terminal User Interface) built with Textua
 | `Ctrl+N` | New session |
 | `Ctrl+S` | Save session |
 | `Ctrl+B` | Toggle sidebar |
-| `Ctrl+T` | Cycle modes (yolo/plan/accept) |
+| `Ctrl+T` | Cycle modes (build/plan/accept) |
 | `F1 / ?` | Help |
 | `F11` | Toggle fullscreen |
 | `PageUp / PageDown` | Scroll up/down |
@@ -172,7 +172,7 @@ Input starting with `/` is executed as a local instruction instead of being sent
 | `/help` | Show the TUI command list |
 | `/clear` | Clear the chat (cancels in-progress output) |
 | `/save` | Save the current session |
-| `/mode [name]` | Set run mode: `yolo` / `plan` / `accept_edits` |
+| `/mode [name]` | Set run mode: `build` / `plan` / `accept_edits` |
 | `/new` | Start a new session (cancels in-progress output) |
 | `/sidebar` | Toggle the sidebar |
 | `/fullscreen` or `/fs` | Toggle fullscreen |
@@ -201,8 +201,8 @@ Input starting with `/` is executed as a local instruction instead of being sent
 | Option | Description |
 |--------|-------------|
 | `--model, -m` | Specify AI model (supports aliases) |
-| `--mode` | Running mode (default/yolo/plan/accept_edits) |
-| `--yolo` | Quick enable YOLO mode |
+| `--mode` | Running mode (default/build/plan/accept_edits) |
+| `--build` | Quick enable Build mode |
 | `--plan` | Quick enable Plan mode |
 | `--resume, -r` | Resume last session |
 | `--session` | Specify session ID |

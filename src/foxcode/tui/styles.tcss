@@ -183,11 +183,56 @@ MessageWidget > .body {
 /* -------- Input panel -------- */
 PromptInput {
     height: auto;
-    max-height: 9;
     background: #161b22;
     border-top: solid #30363d;
     padding: 0 1;
     position: relative;
+}
+
+PromptInput .input-row {
+    height: auto;
+    align: right top;
+    min-height: 1;
+}
+
+PromptInput .prompt-char {
+    color: #ffd56b;
+    text-style: bold;
+    height: 1;
+    width: auto;
+    padding: 0 0 0 1;
+    content-align: center middle;
+}
+
+PromptInput TextArea {
+    background: #0d1117;
+    border: round #30363d;
+    color: #e6edf3;
+    height: auto;
+    min-height: 1;
+    max-height: 6;
+    min-width: 20;
+    padding: 0 1;
+    width: 1fr;
+}
+
+PromptInput TextArea:focus {
+    border: round #ffd56b;
+}
+
+PromptInput TextArea > .text-area--cursor {
+    color: #ffd56b;
+    background: transparent;
+    text-style: reverse;
+}
+
+PromptInput TextArea > .text-area--placeholder {
+    color: #545d68;
+    text-style: italic;
+}
+
+PromptInput TextArea > .text-area--selection {
+    background: #1f6feb;
 }
 
 /* -------- Status bar (below input) -------- */
@@ -230,76 +275,6 @@ PromptInput {
     background: #161b22;
     border: round #ffd56b;
     padding: 0 1;
-}
-
-PromptInput > .hint {
-    color: #7d8590;
-    height: 1;
-    padding: 0 1;
-}
-
-PromptInput TextArea {
-    background: #0d1117;
-    border: round #30363d;
-    color: #e6edf3;
-    min-height: 1;
-    max-height: 6;
-    min-width: 20;
-    padding: 0 1;
-    width: 1fr;
-}
-
-PromptInput TextArea:focus {
-    border: round #ffd56b;
-}
-
-PromptInput TextArea > .text-area--cursor {
-    color: #ffd56b;
-    background: transparent;
-    text-style: reverse;
-}
-
-PromptInput TextArea > .text-area--placeholder {
-    color: #545d68;
-    text-style: italic;
-}
-
-PromptInput TextArea > .text-area--selection {
-    background: #1f6feb;
-}
-
-PromptInput Button#send {
-    background: #ffd56b;
-    color: #0d1117;
-    text-style: bold;
-    border: none;
-    width: 12;
-    margin-top: 0;
-    min-width: 12;
-}
-
-PromptInput Button#send:hover {
-    background: #ffe18c;
-}
-
-PromptInput Button#send:disabled {
-    background: #30363d;
-    color: #7d8590;
-}
-
-PromptInput .input-row {
-    height: auto;
-    align: right top;
-    min-height: 1;
-}
-
-PromptInput .prompt-char {
-    color: #ffd56b;
-    text-style: bold;
-    height: 1;
-    width: auto;
-    padding: 0 0 0 1;
-    content-align: center middle;
 }
 
 /* -------- Welcome screen -------- */

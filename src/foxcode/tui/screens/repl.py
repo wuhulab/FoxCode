@@ -42,6 +42,7 @@ from foxcode.tui.theme import get_theme, status_color
 from foxcode.tui.widgets.dialog import HelpDialog, ConfirmDialog, TextInputDialog, MessageViewScreen
 from foxcode.tui.widgets.logo import WelcomeBanner
 from foxcode.tui.widgets.config_form import ConfigFormScreen
+from foxcode.tui.widgets.model_picker import ModelPickerScreen
 from foxcode.tui.widgets.message import ConfigPanelWidget, MessageWidget
 from foxcode.tui.widgets.message_list import VirtualMessageList
 from foxcode.tui.widgets.prompt_input import PromptInput
@@ -164,7 +165,7 @@ class REPLScreen(Screen):
 
     sidebar_visible: reactive[bool] = reactive(True)
     busy: reactive[bool] = reactive(False)
-    mode: reactive[str] = reactive("yolo")
+    mode: reactive[str] = reactive("build")
     fullscreen: reactive[bool] = reactive(False)
 
     def __init__(self, agent=None, config=None):
@@ -174,7 +175,7 @@ class REPLScreen(Screen):
         self._session_id: str = datetime.now().strftime("%Y%m%d_%H%M%S")
         self._session_messages: list[dict] = []
         self._run_mode_index: int = 0
-        self._run_modes: tuple[str, ...] = ("yolo", "plan", "accept_edits")
+        self._run_modes: tuple[str, ...] = ("build", "plan", "accept_edits", "work")
         self._token_count: int = 0
         self._model: str = "default"
         self._refreshing_sessions = False
@@ -325,7 +326,13 @@ class REPLScreen(Screen):
             sub = h.query_one("#subtitle", Static)
             sub.styles.color = status_color(self.mode)
             model = self._read_model()
-            self.sub_title = f"{model} {ICONS.middle_dot} {self.mode} {ICONS.middle_dot} {_fmt_tokens(self._token_count)} tok"
+            mode_display = self.mode
+            if self.mode == "work":
+                manager = self._get_work_manager()
+                if manager is not None and manager.is_enabled():
+                    s = manager.get_status()
+                    mode_display = f"work ({s['completed_tasks']}✓ {len(s['active_tasks'])}▶)"
+            self.sub_title = f"{model} {ICONS.middle_dot} {mode_display} {ICONS.middle_dot} {_fmt_tokens(self._token_count)} tok"
         except Exception:
             logger.warning("_refresh_header failed", exc_info=True)
         self._refresh_status()
@@ -334,8 +341,14 @@ class REPLScreen(Screen):
         """Update the status line shown below the input box."""
         try:
             model = self._read_model()
+            mode_display = self.mode
+            if self.mode == "work":
+                manager = self._get_work_manager()
+                if manager is not None and manager.is_enabled():
+                    s = manager.get_status()
+                    mode_display = f"work ({s['completed_tasks']}✓ {len(s['active_tasks'])}▶ {s['uptime_seconds']:.0f}s)"
             self.status_bar.update(
-                f"FoxCode TUI  模型: {model} | Token: {_fmt_tokens(self._token_count)} | 模式: {self.mode}"
+                f"FoxCode TUI  模型: {model} | Token: {_fmt_tokens(self._token_count)} | 模式: {mode_display}"
             )
         except Exception:
             logger.warning("_refresh_status failed", exc_info=True)
@@ -510,11 +523,6 @@ class REPLScreen(Screen):
     # ------------------------------------------------------------------
     # Events
     # ------------------------------------------------------------------
-
-    @on(Button.Pressed, "#send")
-    def _on_send_click(self, event: Button.Pressed):
-        with self.prevent(Button.Pressed):
-            self.action_send()
 
     @on(Button.Pressed, "#new-session")
     def _on_new_session_click(self, event: Button.Pressed):
@@ -716,6 +724,31 @@ class REPLScreen(Screen):
         self.prompt_input.set_mode(self.mode)
         self._refresh_header()
         self._system(f"Mode {ICONS.forward} {self.mode}", force=True)
+        if self.mode == "work":
+            self._try_enable_work_mode()
+
+    def _try_enable_work_mode(self):
+        """尝试启用Work模式（在切换到work模式时自动调用）"""
+        manager = self._get_work_manager()
+        if manager is None:
+            return
+        if manager.is_enabled():
+            status = manager.get_status()
+            self._system(
+                f"[WORK] Work模式已启用 | 活动任务: {len(status['active_tasks'])} | "
+                f"已完成: {status['completed_tasks']}",
+                force=True
+            )
+        else:
+            self._system("[WORK] 正在前台启用Work模式...", force=True)
+            try:
+                success, msg = asyncio.run(manager.enable())
+                if success:
+                    self._system(f"[WORK] ✅ {msg}\n使用 /work <任务> 启动任务, /work status 查看状态", force=True)
+                else:
+                    self._system(f"[WORK] ❌ 启用失败: {msg}", force=True)
+            except Exception as e:
+                self._system(f"[WORK] ❌ 启用异常: {e}", force=True)
 
     @safe
     def action_toggle_fullscreen(self):
@@ -884,7 +917,7 @@ class REPLScreen(Screen):
         ("/help", "show this command list"),
         ("/clear", "clear the chat (cancels in-progress output)"),
         ("/save", "save the current session"),
-        ("/mode [name]", "set run mode: yolo | plan | accept_edits"),
+        ("/mode [name]", "set run mode: build | plan | accept_edits"),
         ("/new", "start a new session"),
         ("/sidebar", "toggle the sidebar"),
         ("/fullscreen", "toggle fullscreen (alias /fs)"),
@@ -894,6 +927,8 @@ class REPLScreen(Screen):
         ("/delete [all]", "delete current/all messages (confirm required)"),
         ("/theme [name]", "switch theme"),
         ("/history", "show input history"),
+        ("/work", "Work模式 - 长时间任务管理 (on/off/status/list/records/stop)"),
+        ("/workflow", "工作流程管理 (start/list/status/advance/skip)"),
         ("/quit", "quit FoxCode (alias /exit)"),
         ("/<other>", "any other /command is forwarded to the CLI"),
     ]
@@ -913,6 +948,9 @@ class REPLScreen(Screen):
         "delete": "_cmd_delete",
         "theme": "_cmd_theme",
         "history": "_cmd_history",
+        "work": "_cmd_work",
+        "workflow": "_cmd_workflow",
+        "wf": "_cmd_workflow",
         "quit": "_cmd_quit",
         "exit": "_cmd_quit",
     }
@@ -926,6 +964,9 @@ class REPLScreen(Screen):
         args = parts[1:]
         if name in ("openai", "shunxapi"):
             self._run_interactive_config(name)
+            return
+        if name == "foxcode-free":
+            self._run_foxcode_free_picker()
             return
         method = self._COMMANDS.get(name)
         if method is not None:
@@ -1070,11 +1111,13 @@ class REPLScreen(Screen):
             try:
                 from foxcode import cli as fox_cli
 
+                url = result.get("url", "")
+                key = result.get("key", "")
                 save_msg = fox_cli.apply_model_settings(
                     cfg,
                     self.agent,
-                    url=result.get("url", ""),
-                    key=result.get("key", ""),
+                    url=url,
+                    key=key,
                     model=result.get("model", ""),
                     infer_provider=infer,
                 )
@@ -1086,6 +1129,43 @@ class REPLScreen(Screen):
             self.prompt_input.focus_input()
 
         self.app.push_screen(ConfigFormScreen(title=title, fields=fields), _on_result)
+
+    def _run_foxcode_free_picker(self):
+        """Fetch models and show a picker screen, then auto-configure openai."""
+        def _on_model_selected(model: str | None):
+            if not model:
+                self._system("已取消选择模型。")
+                return
+            try:
+                from foxcode import cli as fox_cli
+
+                api_url = "https://fai.shunx.top/v1"
+                api_key = "sk-C4Dy0S5OFKJ7QoPu8erQc2tTDklW2fBIry34CA8tmFcC1tGr"
+                save_msg = fox_cli.apply_model_settings(
+                    self.config,
+                    self.agent,
+                    url=api_url,
+                    key=api_key,
+                    model=model,
+                    infer_provider=False,
+                )
+            except Exception as exc:
+                logger.warning(f"foxcode-free 配置失败: {exc}", exc_info=True)
+                self._system(f"配置失败: {exc}")
+                return
+            cfg = self.config
+            body = (
+                f"URL: https://fai.shunx.top（免费）\n"
+                f"Key: 已设置\n"
+                f"Model: {getattr(cfg.model, 'model_name', '') or '未设置'}\n"
+                f"{save_msg}"
+            )
+            self.chat.add_message(
+                ConfigPanelWidget("✅ FoxCode Free 配置已更新", body, role="system")
+            )
+            self.prompt_input.focus_input()
+
+        self.app.push_screen(ModelPickerScreen(), _on_model_selected)
 
     def _show_config_panel(self, kind: str, save_msg: str):
         cfg = self.config
@@ -1202,6 +1282,180 @@ class REPLScreen(Screen):
             snippet = item if len(item) <= 60 else item[:57] + "..."
             lines.append(f"  {i}. {snippet}")
         self._system("\n".join(lines), force=True)
+
+    def _get_work_manager(self):
+        """获取或创建 WorkModeManager 实例（复用 CLI 逻辑）"""
+        agent = self.agent
+        config = self.config
+        if agent is None or config is None:
+            return None
+        if not hasattr(agent, "_work_mode_manager"):
+            from foxcode.core.work_mode import WorkModeManager
+            from foxcode.core.work_mode_config import AgentExecutionMode
+            agent._work_mode_manager = WorkModeManager(
+                config=config.work_mode,
+                working_dir=config.working_dir,
+                foxcode_config=config,
+                execution_mode=AgentExecutionMode.SINGLE_AGENT,
+            )
+        return agent._work_mode_manager
+
+    def _cmd_work(self, args):
+        """处理 /work 命令 - Work模式管理"""
+        manager = self._get_work_manager()
+        config = self.config
+        if manager is None or config is None:
+            self._system("/work 不可用: agent 或 config 未初始化", force=True)
+            return
+
+        cmd = args[0] if args else None
+        sub_arg = args[1] if len(args) > 1 else None
+
+        try:
+            if cmd is None:
+                # 不带参数: 显示状态或启用
+                if manager.is_enabled():
+                    status = manager.get_status()
+                    self._system(
+                        f"[WORK] Work模式已启用 | 活动: {len(status['active_tasks'])} "
+                        f"完成: {status['completed_tasks']} 失败: {status['failed_tasks']} "
+                        f"运行: {status['uptime_seconds']:.1f}s\n"
+                        "使用: /work off 关闭, /work <任务描述> 启动任务",
+                        force=True
+                    )
+                else:
+                    self._system("[WORK] 正在启用Work模式...", force=True)
+                    try:
+                        success, msg = asyncio.run(manager.enable())
+                        if success:
+                            self._system(f"[WORK] ✅ {msg}", force=True)
+                            self._system("[WORK] 使用 /work off 关闭, /work <任务描述> 启动任务", force=True)
+                        else:
+                            self._system(f"[WORK] ❌ 启用失败: {msg}", force=True)
+                    except Exception as e:
+                        self._system(f"[WORK] ❌ 启用异常: {e}", force=True)
+                return
+
+            if cmd == "off":
+                if not manager.is_enabled():
+                    self._system("[WORK] Work模式未启用", force=True)
+                    return
+                try:
+                    success, msg = asyncio.run(manager.disable())
+                    status_msg = f"[WORK] ✅ {msg}" if success else f"[WORK] ❌ 关闭失败: {msg}"
+                    self._system(status_msg, force=True)
+                except Exception as e:
+                    self._system(f"[WORK] ❌ 关闭异常: {e}", force=True)
+                return
+
+            if cmd == "status":
+                if not manager.is_enabled():
+                    self._system("[WORK] Work模式未启用 | 使用 /work 启用", force=True)
+                    return
+                status = manager.get_status()
+                lines = [
+                    f"[WORK] Work模式状态",
+                    f"  状态: {status['status']}",
+                    f"  活动任务: {len(status['active_tasks'])}",
+                    f"  完成任务: {status['completed_tasks']}",
+                    f"  失败任务: {status['failed_tasks']}",
+                    f"  运行时间: {status['uptime_seconds']:.1f}s",
+                ]
+                if status.get("active_tasks"):
+                    lines.append("  活动任务列表:")
+                    for tid in status["active_tasks"]:
+                        task = manager.get_task(tid)
+                        if task:
+                            lines.append(f"    • {tid}: {task.description[:50]}")
+                self._system("\n".join(lines), force=True)
+                return
+
+            if cmd == "list":
+                tasks = manager.list_tasks(limit=10)
+                if not tasks:
+                    self._system("[WORK] 暂无工作任务", force=True)
+                    return
+                lines = ["[WORK] 工作任务列表:"]
+                for t in tasks:
+                    lines.append(
+                        f"  • {t.id} | {t.description[:40]} | "
+                        f"{t.status} | 目标: {t.target_subfolder or '-'} | "
+                        f"阶段: {t.current_phase or '-'}"
+                    )
+                self._system("\n".join(lines), force=True)
+                return
+
+            if cmd == "records":
+                tasks = manager.list_tasks(limit=20)
+                if not tasks:
+                    self._system("[WORK] 暂无任务记录", force=True)
+                    return
+                lines = ["[WORK] 任务记录:"]
+                for t in tasks:
+                    lines.append(
+                        f"  • {t.id} | {t.description[:30]} | "
+                        f"{t.status} | 创建: {t.created_at[:16] or '-'} | "
+                        f"完成: {t.completed_at[:16] or '-'}"
+                    )
+                self._system("\n".join(lines), force=True)
+                return
+
+            if cmd == "stop" and sub_arg:
+                task = manager.get_task(sub_arg)
+                if not task:
+                    self._system(f"[WORK] 任务不存在: {sub_arg}", force=True)
+                    return
+                task.status = "failed"
+                task.error = "用户手动停止"
+                manager._save_records()
+                self._system(f"[WORK] 已停止任务: {sub_arg}", force=True)
+                return
+
+            # 其他场景: 启动新任务
+            if cmd not in ("off", "status", "list", "records", "stop"):
+                task_description = " ".join(args)
+                if not manager.is_enabled():
+                    try:
+                        success, msg = asyncio.run(manager.enable())
+                        if not success:
+                            self._system(f"[WORK] 启用Work模式失败: {msg}", force=True)
+                            return
+                    except Exception as e:
+                        self._system(f"[WORK] 启用异常: {e}", force=True)
+                        return
+
+                from foxcode.cli import _extract_target_subfolder
+                target = _extract_target_subfolder(task_description, config.working_dir)
+                task = manager.create_work_task(
+                    description=task_description,
+                    target_subfolder=target,
+                )
+                self._system(
+                    f"[WORK] 已创建任务: {task.id}\n"
+                    f"  描述: {task_description}\n"
+                    f"  目标: {target or '自动检测'}\n"
+                    f"  模式: {manager.execution_mode.value}",
+                    force=True
+                )
+                try:
+                    success = asyncio.run(manager.start_work_task(task))
+                    if success:
+                        self._system(f"[WORK] ✅ 任务已启动: {task.id}", force=True)
+                        self._system("[WORK] 使用 /work status 查看进度 | /work records 查看记录", force=True)
+                    else:
+                        self._system(f"[WORK] ❌ 启动任务失败", force=True)
+                except Exception as e:
+                    self._system(f"[WORK] ❌ 任务执行异常: {e}", force=True)
+                return
+
+        except Exception as e:
+            logger.warning(f"[WORK] 处理命令失败: {e}", exc_info=True)
+            self._system(f"[WORK] ❌ 错误: {e}", force=True)
+
+    def _cmd_workflow(self, args):
+        """处理 /workflow 命令 - 委托给 CLI 处理"""
+        text = "workflow " + " ".join(args)
+        self._run_cli_command(text)
 
     def _cmd_quit(self, args):
         self.action_quit()

@@ -217,7 +217,7 @@ class DesignCheckTool(BaseTool):
         violations = []
 
         # 检查硬编码颜色
-        hex_pattern = re.compile(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
+        hex_pattern = re.compile(r"(?<![#\w])#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
         for match in hex_pattern.finditer(code_snippet):
             found_color = match.group(0).lower()
             # 规范化为 6 位

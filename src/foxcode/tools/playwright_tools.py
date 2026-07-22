@@ -1193,7 +1193,7 @@ class PlaywrightScreenshotTool(BaseTool):
                 data={
                     "path": path,
                     "size": len(screenshot_bytes),
-                    "base64": screenshot_base64[:100] + "...",  # 只返回前100字符
+                    "base64": screenshot_base64,
                 },
             )
 

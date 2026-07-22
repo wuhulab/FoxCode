@@ -771,45 +771,7 @@ class WriteFileTool(BaseTool):
 
             path.parent.mkdir(parents=True, exist_ok=True)
 
-            # 注释保护：在写入前读取原始内容，让保护器处理
-            original_content = None
-            if path.exists() and path.is_file():
-                try:
-                    async with aiofiles.open(path, "rb") as f:
-                        raw_data = await f.read()
-                    original_content, _ = decode_bytes(raw_data)
-                except Exception:
-                    logger.warning("读取原始文件内容用于注释保护失败", exc_info=True)
-                    original_content = None
-
-            # 应用注释保护
             protect_notice = ""
-            try:
-                from foxcode.core.comment_protect_manager import get_manager
-
-                manager = get_manager()
-                if manager.is_enabled():
-                    protected_content, prot_result = manager.protect_file(
-                        path, content, original_content
-                    )
-                    logger.info(
-                        f"注释保护: restored={prot_result.restored_count}, "
-                        f"kept={prot_result.kept_count}, lost={prot_result.lost_count}"
-                    )
-                    if prot_result.restored_count > 0 or prot_result.kept_count > 0:
-                        logger.debug(
-                            f"Protected content (first 500 chars): {protected_content[:500]!r}"
-                        )
-                        content = protected_content
-                        if manager.get_stats().files_protected == 1 and (
-                            prot_result.restored_count > 0
-                        ):
-                            protect_notice = (
-                                f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
-                            )
-            except Exception as e:
-                logger.warning(f"注释保护异常: {e}", exc_info=True)
-
             expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
             async with aiofiles.open(path, "w", encoding="utf-8", newline="") as f:
@@ -1033,7 +995,7 @@ class EditFileTool(BaseTool):
                 if has_trailing_nl:
                     new_content += "\n"
 
-                protect_notice = await self._apply_comment_protection(
+                new_content, protect_notice = await self._apply_comment_protection(
                     path, new_content, existing
                 )
 
@@ -1061,7 +1023,7 @@ class EditFileTool(BaseTool):
                 if old_text == "":
                     path.parent.mkdir(parents=True, exist_ok=True)
                     new_content = new_text
-                    protect_notice = await self._apply_comment_protection(
+                    new_content, protect_notice = await self._apply_comment_protection(
                         path, new_content, ""
                     )
                     await self._write_text(path, new_content, "utf-8")
@@ -1116,7 +1078,7 @@ class EditFileTool(BaseTool):
                     )
                 new_content = existing.replace(old_text, new_text, 1)
 
-            protect_notice = await self._apply_comment_protection(
+            new_content, protect_notice = await self._apply_comment_protection(
                 path, new_content, existing
             )
 
@@ -1144,8 +1106,8 @@ class EditFileTool(BaseTool):
 
     async def _apply_comment_protection(
         self, path: Any, new_content: str, original_content: str
-    ) -> str:
-        """对编辑结果应用注释恢复，返回提示信息（空字符串表示无操作）"""
+    ) -> tuple[str, str]:
+        """对编辑结果应用注释恢复，返回 (protected_content, notice)"""
         try:
             from foxcode.core.comment_protect_manager import get_manager
 
@@ -1155,11 +1117,10 @@ class EditFileTool(BaseTool):
                     path, new_content, original_content
                 )
                 if prot_result.restored_count > 0:
-                    new_content = protected_content
-                    return f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
+                    return protected_content, f"\n[protect] 已恢复 {prot_result.restored_count} 个原始注释"
         except Exception as e:
             logger.warning(f"注释保护异常: {e}", exc_info=True)
-        return ""
+        return new_content, ""
 
     async def _write_text(self, path: Any, text: str, encoding: str) -> None:
         """写入文本并修正权限（newline='' 以保留 LF，避免 Windows CRLF 破坏）"""
@@ -1215,7 +1176,18 @@ class ListDirectoryTool(BaseTool):
     ) -> ToolResult:
         """执行目录列出"""
         try:
-            dir_path = Path(path)
+            path_validator = get_path_validator()
+            is_valid, error_msg, resolved_path = path_validator.validate_path(
+                path, operation="read"
+            )
+            if not is_valid:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"路径安全验证失败: {error_msg}",
+                )
+
+            dir_path = resolved_path
 
             if not dir_path.exists():
                 return ToolResult(
@@ -1327,7 +1299,18 @@ class SearchInFileTool(BaseTool):
         import re
 
         try:
-            path = Path(file_path)
+            path_validator = get_path_validator()
+            is_valid, error_msg, resolved_path = path_validator.validate_path(
+                file_path, operation="read"
+            )
+            if not is_valid:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"路径安全验证失败: {error_msg}",
+                )
+
+            path = resolved_path
 
             if not path.exists():
                 return ToolResult(
@@ -1539,7 +1522,18 @@ class GlobTool(BaseTool):
     ) -> ToolResult:
         """执行 glob 搜索"""
         try:
-            base_path = Path(path).resolve()
+            path_validator = get_path_validator()
+            is_valid, error_msg, resolved_path = path_validator.validate_path(
+                path, operation="read"
+            )
+            if not is_valid:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"路径安全验证失败: {error_msg}",
+                )
+
+            base_path = resolved_path
 
             if not base_path.exists():
                 return ToolResult(

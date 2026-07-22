@@ -104,9 +104,9 @@ class MCPToolWrapper(BaseTool):
         """映射 JSON Schema 类型到工具参数类型"""
         type_mapping = {
             "string": "string",
-            "number": "float",
-            "integer": "int",
-            "boolean": "bool",
+            "number": "number",
+            "integer": "integer",
+            "boolean": "boolean",
             "array": "array",
             "object": "dict",
         }

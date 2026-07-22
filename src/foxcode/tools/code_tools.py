@@ -53,6 +53,7 @@ from foxcode.tools.base import (
     tool,
 )
 from foxcode.utils.ainotread import is_ainotread
+from foxcode.utils.encoding import decode_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -186,8 +187,10 @@ class GrepTool(BaseTool):
 
             for file_path in files[:1000]:  # 限制搜索文件数量
                 try:
-                    async with aiofiles.open(file_path, encoding="utf-8") as f:
-                        lines = await f.readlines()
+                    async with aiofiles.open(file_path, "rb") as f:
+                        raw_data = await f.read()
+                    content, _ = decode_bytes(raw_data)
+                    lines = content.splitlines(keepends=True)
 
                     matches_in_file = []
                     for i, line in enumerate(lines):

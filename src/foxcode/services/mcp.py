@@ -131,8 +131,9 @@ def validate_arguments_security(args: list[str]) -> tuple[bool, str]:
         return True, "参数为空"
 
     # 危险模式列表
+    # MCP 参数通过 create_subprocess_exec(shell=False) 传递，
+    # 不经过 shell 解释，因此 &&, ||, ; 等 shell 组合符是安全的字符串值。
     dangerous_patterns = [
-        "&&", "||", "|", ";", "`", "$(", "${",  # 命令连接和替换
         ">", ">>", "<", "<<",  # 重定向
         "../", "..\\",  # 路径穿越
     ]

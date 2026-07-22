@@ -308,7 +308,15 @@ class ConfirmationManager:
             return f"停止命令: {cmd_id}"
 
         else:
-            return f"执行 {tool_name}"
+            # 通用描述：提取关键参数（路径/命令/id 等）
+            summary_params = []
+            for key in ("file_path", "path", "command", "command_id", "url", "name"):
+                val = params.get(key)
+                if val is not None:
+                    summary_params.append(f"{key}={val}")
+                    break
+            param_info = f" ({', '.join(summary_params)})" if summary_params else ""
+            return f"执行 {tool_name}{param_info}"
 
 
 _confirmation_manager: ConfirmationManager | None = None
@@ -522,24 +530,29 @@ class BaseTool(abc.ABC):
                     raise ValueError(f"参数 {param.name} 包含非法空字节")
 
             if param.name in ('command', 'cmd'):
-                # Shell 语法模式：直接字符串匹配
-                shell_syntax_patterns = [
+                # Shell 命令注入模式检测
+                # 合法复合命令操作符（&&, ||, ;, |）为正常 shell 组合用法，不拦截
+                # 此处仅拦截真正的注入/混淆模式
+                injection_patterns = [
                     '$((', '`', '${', '$(',
-                    '||', '&&', ';',
                     '$IFS', '$(printf', '$(eval',
                 ]
-                for pattern in shell_syntax_patterns:
+                for pattern in injection_patterns:
                     if pattern in value:
                         raise ValueError(
                             f"参数 {param.name} 包含危险的命令模式 '{pattern}'，已拒绝执行"
                         )
-                
-                # 独立命令词：使用单词边界匹配，避免误报（如 "code" 包含 "od"）
-                standalone_commands = ['base64', 'xxd', 'od']
-                for cmd in standalone_commands:
-                    if re.search(rf'\b{re.escape(cmd)}\b', value):
+
+                # 编码命令仅在危险上下文中阻止（解码后 pipe 到执行）
+                encoding_injection_patterns = [
+                    r'base64\s+(?:-d|--decode)\s*\|',
+                    r'xxd\s+-r\s*\|',
+                    r'\|\s*(?:bash|sh|zsh|dash|fish)(?:\s|$)',
+                ]
+                for pattern in encoding_injection_patterns:
+                    if re.search(pattern, value, re.IGNORECASE):
                         raise ValueError(
-                            f"参数 {param.name} 包含危险的命令 '{cmd}'，已拒绝执行"
+                            f"参数 {param.name} 包含危险的命令组合模式，已拒绝执行"
                         )
 
         elif param.type == "integer":
@@ -857,7 +870,17 @@ class ToolRegistry:
         try:
             # 验证参数
             validated_params = tool.validate_parameters(**kwargs)
-            
+
+            # 危险操作确认
+            cm = get_confirmation_manager()
+            request = cm.needs_confirmation(name, validated_params, tool.dangerous)
+            if request and not cm.confirm(request):
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error="用户拒绝了危险操作",
+                )
+
             # 执行工具
             result = await tool.execute(**validated_params)
 

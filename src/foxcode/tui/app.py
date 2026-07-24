@@ -87,6 +87,13 @@ class FoxCodeApp(App):
     def on_exception(self, exc: Exception) -> bool:
         log_exception(type(exc), exc, exc.__traceback__, context="tui_app")
         logger.error("TUI App 未处理异常", exc_info=exc)
+        import traceback
+        tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        if hasattr(self, "_repl") and self._repl is not None:
+            try:
+                self._repl._system(f"未处理异常:\n{tb}", force=True)
+            except Exception:
+                pass
         return False
 
     def action_quit(self):

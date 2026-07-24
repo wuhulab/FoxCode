@@ -118,10 +118,9 @@ def safe(fn):
             return fn(self, *args, **kwargs)
         except Exception as exc:
             log_exception(context=f"safe:{fn.__name__}")
+            tb = traceback.format_exc()
             logger.warning(f"Error in {fn.__name__}: {exc}", exc_info=True)
-            self._system(f"Error in {fn.__name__}: {exc}")
-            if "--debug" in __import__("sys").argv:
-                traceback.print_exc()
+            self._system(f"Error in {fn.__name__}:\n{tb}")
     return wrapper
 
 
@@ -405,7 +404,7 @@ class REPLScreen(Screen):
             path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception as exc:
             logger.warning(f"_save_session failed: {exc}", exc_info=True)
-            self._system(f"Save failed: {exc}")
+            self._system(f"Save failed:\n{traceback.format_exc()}")
 
     def _restore_session(self):
         try:
@@ -417,7 +416,7 @@ class REPLScreen(Screen):
             self._load_tui_session(sid, announce=False)
         except Exception as exc:
             logger.warning(f"_restore_session failed: {exc}", exc_info=True)
-            self._system(f"Restore failed: {exc}")
+            self._system(f"Restore failed:\n{traceback.format_exc()}")
 
     # ------------------------------------------------------------------
     # Session list (sidebar history)
@@ -476,7 +475,7 @@ class REPLScreen(Screen):
             data = json.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
             logger.warning(f"_load_tui_session load failed: {exc}", exc_info=True)
-            self._system(f"Load failed: {exc}")
+            self._system(f"Load failed:\n{traceback.format_exc()}")
             return
 
         messages = data.get("messages", [])
@@ -609,7 +608,7 @@ class REPLScreen(Screen):
                 self._system(f"已重命名为：{new_name}")
             except Exception as exc:
                 logger.warning(f"_rename_session save failed: {exc}", exc_info=True)
-                self._system(f"重命名失败: {exc}")
+                self._system(f"重命名失败:\n{traceback.format_exc()}")
 
         self.app.push_screen(
             TextInputDialog(title="重命名会话", prompt="新名称", initial=current),
@@ -638,7 +637,7 @@ class REPLScreen(Screen):
                 self._system(f"已删除会话 {sid[:8]}")
             except Exception as exc:
                 logger.warning(f"_delete_session failed: {exc}", exc_info=True)
-                self._system(f"删除失败: {exc}")
+                self._system(f"删除失败:\n{traceback.format_exc()}")
 
         self.app.push_screen(
             ConfirmDialog(title="删除会话", body=f"确定删除会话 {sid[:8]}？此操作不可撤销。", confirm_text="删除"),
@@ -722,10 +721,19 @@ class REPLScreen(Screen):
         self._run_mode_index = (self._run_mode_index + 1) % len(self._run_modes)
         self.mode = self._run_modes[self._run_mode_index]
         self.prompt_input.set_mode(self.mode)
-        self._refresh_header()
-        self._system(f"Mode {ICONS.forward} {self.mode}", force=True)
         if self.mode == "work":
             self._try_enable_work_mode()
+        else:
+            cfg = self.config
+            if cfg is not None and hasattr(cfg, "run_mode"):
+                try:
+                    from foxcode.core.config import RunMode
+                    cfg.run_mode = RunMode(self.mode)
+                    cfg.save_mode_settings()
+                except Exception:
+                    logger.warning("action_cycle_mode set run_mode failed", exc_info=True)
+        self._refresh_header()
+        self._system(f"Mode {ICONS.forward} {self.mode}", force=True)
 
     def _try_enable_work_mode(self):
         """尝试启用Work模式（在切换到work模式时自动调用）"""
@@ -974,7 +982,7 @@ class REPLScreen(Screen):
                 getattr(self, method)(args)
             except Exception as exc:
                 logger.warning(f"Command error (/{name}): {exc}", exc_info=True)
-                self._system(f"Command error (/{name}): {exc}", force=True)
+                self._system(f"Command error (/{name}):\n{traceback.format_exc()}", force=True)
             return
         self._run_cli_command(raw)
 
@@ -1006,7 +1014,8 @@ class REPLScreen(Screen):
         sys.stdout = buf
         sys.stdin = io.StringIO("\n" * 64)
         result = True
-        exc_info = None
+        exc_info: Exception | None = None
+        exc_tb = ""
         try:
             result = fox_cli._handle_command(cli_text, self.agent, self.config)
         except EOFError:
@@ -1014,6 +1023,7 @@ class REPLScreen(Screen):
         except Exception as exc:
             logger.warning(f"_run_cli_command failed: {exc}", exc_info=True)
             exc_info = exc
+            exc_tb = traceback.format_exc()
         finally:
             fox_cli.console = old_console
             sys.stdout = old_stdout
@@ -1026,7 +1036,7 @@ class REPLScreen(Screen):
             return
 
         if exc_info is not None:
-            self._system(f"CLI command error (/{name}): {exc_info}", force=True)
+            self._system(f"CLI command error (/{name}):\n{exc_tb}", force=True)
             return
 
         raw = _STRIP_TAGS.sub("", buf.getvalue())
@@ -1123,7 +1133,7 @@ class REPLScreen(Screen):
                 )
             except Exception as exc:
                 logger.warning(f"_run_interactive_config failed: {exc}", exc_info=True)
-                self._system(f"配置失败: {exc}")
+                self._system(f"配置失败:\n{traceback.format_exc()}")
                 return
             self._show_config_panel(kind, save_msg)
             self.prompt_input.focus_input()
@@ -1151,7 +1161,7 @@ class REPLScreen(Screen):
                 )
             except Exception as exc:
                 logger.warning(f"foxcode-free 配置失败: {exc}", exc_info=True)
-                self._system(f"配置失败: {exc}")
+                self._system(f"配置失败:\n{traceback.format_exc()}")
                 return
             cfg = self.config
             body = (
@@ -1226,18 +1236,23 @@ class REPLScreen(Screen):
         self._run_mode_index = self._run_modes.index(target)
         self.mode = target
         self.prompt_input.set_mode(self.mode)
-        cfg = self.config
-        if cfg is not None:
-            if hasattr(cfg, "run_mode"):
-                try:
-                    cfg.run_mode = target
-                except Exception:
-                    logger.warning("_cmd_mode set run_mode failed", exc_info=True)
-            elif hasattr(cfg, "mode"):
-                try:
-                    cfg.mode = target
-                except Exception:
-                    logger.warning("_cmd_mode set cfg.mode failed", exc_info=True)
+        if target == "work":
+            self._try_enable_work_mode()
+        else:
+            cfg = self.config
+            if cfg is not None:
+                if hasattr(cfg, "run_mode"):
+                    try:
+                        from foxcode.core.config import RunMode
+                        cfg.run_mode = RunMode(target)
+                        cfg.save_mode_settings()
+                    except Exception:
+                        logger.warning("_cmd_mode set run_mode failed", exc_info=True)
+                elif hasattr(cfg, "mode"):
+                    try:
+                        cfg.mode = target
+                    except Exception:
+                        logger.warning("_cmd_mode set cfg.mode failed", exc_info=True)
         if self.agent and hasattr(self.agent, "set_mode"):
             try:
                 self.agent.set_mode(target)
@@ -1434,7 +1449,7 @@ class REPLScreen(Screen):
                     f"[WORK] 已创建任务: {task.id}\n"
                     f"  描述: {task_description}\n"
                     f"  目标: {target or '自动检测'}\n"
-                    f"  模式: {manager.execution_mode.value}",
+                    f"  模式: {getattr(manager.execution_mode, 'value', manager.execution_mode)}",
                     force=True
                 )
                 try:
@@ -1683,12 +1698,13 @@ class REPLScreen(Screen):
             raise
         except Exception as exc:
             log_exception(context="_stream_worker")
+            tb = traceback.format_exc()
             logger.warning(f"_stream_worker failed: {exc}", exc_info=True)
-            err = f"\n\n[error] {exc}"
+            err = f"\n\n[error]\n{tb}"
             if assistant_widget:
                 assistant_widget.append_text(err)
                 assistant_full += err
-            self._system(f"Error: {exc}")
+            self._system(f"Error:\n{tb}")
         finally:
             if assistant_widget and hasattr(assistant_widget, "finalize"):
                 assistant_widget.finalize()

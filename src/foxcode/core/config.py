@@ -707,9 +707,10 @@ class Config(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="FOXCODE_",
+        env_prefix="FOXCODE__",
         env_nested_delimiter="__",
         extra="ignore",
+        validate_assignment=True,
     )
 
     # 基本配置
@@ -1071,6 +1072,43 @@ class Config(BaseSettings):
             logging.getLogger(__name__).error(f"保存 TUI 配置失败: {e}", exc_info=True)
             return False
 
+    def save_mode_settings(self) -> bool:
+        """
+        保存 run_mode 和 work_mode 设置到配置文件
+
+        Returns:
+            是否保存成功
+        """
+        try:
+            config_path = self.get_config_file_path()
+            existing_config = {}
+            if config_path.exists():
+                try:
+                    with open(config_path, "rb") as f:
+                        existing_config = tomllib.load(f)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).warning("读取现有配置失败", exc_info=True)
+                    existing_config = {}
+
+            existing_config["run_mode"] = getattr(self.run_mode, "value", self.run_mode)
+            existing_config["work_mode"] = {
+                "enabled": self.work_mode.enabled,
+                "execution_mode": getattr(self.work_mode.execution_mode, "value", self.work_mode.execution_mode),
+            }
+
+            try:
+                import tomli_w
+                with open(config_path, "wb") as f:
+                    tomli_w.dump(existing_config, f)
+                return True
+            except ImportError:
+                return self._write_simple_config(config_path, existing_config)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"保存模式配置失败: {e}", exc_info=True)
+            return False
+
     def _get_base_config_dict(self) -> dict[str, Any]:
         """
         获取基础配置字典（用于保存配置时保留现有设置）
@@ -1080,7 +1118,7 @@ class Config(BaseSettings):
         """
         return {
             "output_topic": self.output_topic.value,
-            "run_mode": self.run_mode.value,
+            "run_mode": getattr(self.run_mode, "value", self.run_mode),
             "debug": self.debug,
             "log_level": self.log_level,
             "model": {

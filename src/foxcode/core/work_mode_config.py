@@ -53,6 +53,8 @@ class WorkModeConfig(BaseModel):
     
     简化的配置模型，专注于代码编写任务管理
     """
+    model_config = {"validate_assignment": True}
+
     # 模式状态
     enabled: bool = Field(default=True, description="是否启用Work模式（默认启用）")
     status: WorkModeStatus = Field(

@@ -819,7 +819,7 @@ class FoxCodeAgent:
         # 基础参数
         base_params = {
             "working_dir": str(self.config.working_dir),
-            "run_mode": self.config.run_mode.value,
+            "run_mode": getattr(self.config.run_mode, "value", self.config.run_mode),
         }
 
         # 如果未启用长时间运行模式，使用默认提示词
@@ -1661,7 +1661,6 @@ class FoxCodeAgent:
                     "When you have completed all work, you MUST call the `end` tool to finish. "
                     "Do not reply with free text. Call the end tool now."
                 )
-                yield "\n[info] 等待结束工具调用...\n"
                 continue
 
             # ==================== 5. 检查重复调用 ====================

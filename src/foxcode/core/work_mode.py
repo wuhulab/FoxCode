@@ -47,6 +47,11 @@ from foxcode.core.work_mode_config import (
 logger = logging.getLogger(__name__)
 
 
+def _enum_val(obj):
+    """Safely get enum value; return as-is if not an enum."""
+    return obj.value if hasattr(obj, "value") else obj
+
+
 @dataclass
 class WorkTask:
     """工作任务"""
@@ -94,7 +99,7 @@ class WorkModeState:
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         return {
-            "status": self.status.value,
+            "status": _enum_val(self.status),
             "active_tasks": self.active_tasks,
             "completed_tasks": self.completed_tasks,
             "failed_tasks": self.failed_tasks,
@@ -137,7 +142,8 @@ class WorkModeManager:
         self.config = config
         self.working_dir = working_dir or Path.cwd()
         # 使用传入的执行模式或配置中的模式
-        self.execution_mode = execution_mode or config.execution_mode
+        raw_mode = execution_mode or config.execution_mode
+        self.execution_mode = AgentExecutionMode(raw_mode) if not isinstance(raw_mode, AgentExecutionMode) else raw_mode
 
         # FoxCode 配置（用于创建 Agent）
         self._foxcode_config = foxcode_config
@@ -164,7 +170,7 @@ class WorkModeManager:
         # 加载任务记录
         self._load_records()
 
-        logger.info(f"Work模式管理器初始化完成，执行模式: {self.execution_mode.value}")
+        logger.info(f"Work模式管理器初始化完成，执行模式: {_enum_val(self.execution_mode)}")
 
     def _load_state(self) -> None:
         """加载状态"""
@@ -176,7 +182,7 @@ class WorkModeManager:
                 self.state.status = WorkModeStatus(data.get("status", "enabled"))
                 self.state.completed_tasks = data.get("completed_tasks", 0)
                 self.state.failed_tasks = data.get("failed_tasks", 0)
-                logger.debug(f"加载状态: {self.state.status.value}")
+                logger.debug(f"加载状态: {_enum_val(self.state.status)}")
             except Exception as e:
                 logger.warning(f"加载状态失败: {e}", exc_info=True)
 
@@ -753,7 +759,7 @@ class WorkModeManager:
         """
         logger.info(f"[WORK] 执行任务: {task.description}")
         logger.info(f"[WORK] 目标路径: {task.target_subfolder}")
-        logger.info(f"[WORK] 执行模式: {self.execution_mode.value}")
+        logger.info(f"[WORK] 执行模式: {_enum_val(self.execution_mode)}")
 
         # 根据执行模式选择执行方式
         if self.execution_mode == AgentExecutionMode.SIMULATION:
@@ -765,7 +771,7 @@ class WorkModeManager:
         else:
             return {
                 "success": False,
-                "error": f"未知的执行模式: {self.execution_mode.value}",
+                "error": f"未知的执行模式: {_enum_val(self.execution_mode)}",
             }
 
     async def _phase_execute_simulation(self, task: WorkTask) -> dict[str, Any]:
@@ -1739,7 +1745,7 @@ class WorkModeManager:
             f"- **总阶段数**: {len(task.phases)}",
             f"- **完成阶段**: {sum(1 for p in task.phases if p.get('status') == 'completed')}",
             f"- **执行时长**: {total_duration:.2f} 秒" if total_duration > 0 else "- **执行时长**: N/A",
-            f"- **执行模式**: {self.execution_mode.value}",
+            f"- **执行模式**: {_enum_val(self.execution_mode)}",
         ]
         report_parts.extend(stats_lines)
         report_parts.append("")
@@ -1774,7 +1780,7 @@ class WorkModeManager:
                 "total_phases": len(task.phases),
                 "completed_phases": sum(1 for p in task.phases if p.get("status") == "completed"),
                 "duration": total_duration,
-                "execution_mode": self.execution_mode.value,
+                "execution_mode": _enum_val(self.execution_mode),
             },
         }
 
@@ -2043,8 +2049,8 @@ class WorkModeManager:
         Args:
             mode: Agent 执行模式
         """
-        self.execution_mode = mode
-        logger.info(f"执行模式已切换为: {mode.value}")
+        self.execution_mode = AgentExecutionMode(mode) if not isinstance(mode, AgentExecutionMode) else mode
+        logger.info(f"执行模式已切换为: {_enum_val(self.execution_mode)}")
 
     def set_report_callback(self, callback: Callable) -> None:
         """
@@ -2113,7 +2119,7 @@ class WorkModeManager:
         lines = [
             "# Work模式状态报告",
             "",
-            f"**状态**: {self.state.status.value}",
+            f"**状态**: {_enum_val(self.state.status)}",
             f"**运行时间**: {self.state.uptime_seconds:.1f} 秒",
             f"**活动任务**: {len(self.state.active_tasks)}",
             f"**完成任务**: {self.state.completed_tasks}",

@@ -996,7 +996,7 @@ def main(
                     f"[bold]配置信息[/bold]\n\n"
                     f"模型: {app_config.model.model_name}\n"
                     f"提供者: {app_config.model.provider.value}\n"
-                    f"运行模式: {app_config.run_mode.value}\n"
+                    f"运行模式: {getattr(app_config.run_mode, 'value', app_config.run_mode)}\n"
                     f"工作目录: {app_config.working_dir}\n"
                     f"会话目录: {app_config.session_dir}",
                     title="FoxCode 配置",
@@ -1361,7 +1361,7 @@ async def _run_interactive(agent: FoxCodeAgent, config: Config) -> None:
             f"[bold cyan]FoxCode[/bold cyan] | "
             f"模型: [yellow]{config.model.model_name}[/yellow] | "
             f"Token: [green]{total_tokens}[/green] | "
-            f"模式: [cyan]{config.run_mode.value}[/cyan] > "
+            f"模式: [cyan]{getattr(config.run_mode, 'value', config.run_mode)}[/cyan] > "
         )
 
     session = PromptSession(
@@ -1583,11 +1583,17 @@ def _handle_command(command: str, agent: FoxCodeAgent, config: Config) -> bool:
             console.print(f"[red]会话不存在: {cmd_arg}[/red]")
 
     elif cmd_name == "/mode" and cmd_arg:
-        try:
-            config.run_mode = RunMode(cmd_arg)
-            console.print(f"[green]已切换到 {cmd_arg} 模式[/green]")
-        except ValueError:
-            console.print(f"[red]无效的模式: {cmd_arg}[/red]")
+        if cmd_arg.lower() == "work":
+            config.work_mode.enabled = True
+            config.save_mode_settings()
+            console.print("[green]已切换到 work 模式（Work模式已启用）[/green]")
+        else:
+            try:
+                config.run_mode = RunMode(cmd_arg)
+                config.save_mode_settings()
+                console.print(f"[green]已切换到 {cmd_arg} 模式[/green]")
+            except ValueError:
+                console.print(f"[red]无效的模式: {cmd_arg}[/red]")
 
     elif cmd_name == "/model" and cmd_arg:
         config.model.model_name = cmd_arg
@@ -2591,7 +2597,7 @@ def _handle_work_command(agent: FoxCodeAgent, config: Config, cmd_arg: str | Non
                     f"[bold cyan]描述:[/bold cyan] {task_description}\n"
                     f"[bold cyan]目标子文件夹:[/bold cyan] {target_subfolder or '自动检测'}\n"
                     f"[bold cyan]状态:[/bold cyan] 待执行\n"
-                    f"[bold cyan]执行模式:[/bold cyan] {manager.execution_mode.value}",
+                    f"[bold cyan]执行模式:[/bold cyan] {getattr(manager.execution_mode, 'value', manager.execution_mode)}",
                     title="[WORK] 创建工作任务",
                     style="cyan",
                 )
